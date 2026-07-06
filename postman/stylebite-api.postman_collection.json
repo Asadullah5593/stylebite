@@ -1,0 +1,1406 @@
+{
+  "info": {
+    "_postman_id": "3fba7ae0-78bc-4f7e-a5b0-b4b3c93a7f1c",
+    "name": "Stylebite API",
+    "description": "Postman collection for all API routes currently registered in routes/api.php.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api"
+    },
+    {
+      "key": "auth_token",
+      "value": ""
+    },
+    {
+      "key": "verify_user_id",
+      "value": "1"
+    },
+    {
+      "key": "verify_token",
+      "value": ""
+    },
+    {
+      "key": "post_id",
+      "value": "1"
+    },
+    {
+      "key": "comment_id",
+      "value": "1"
+    },
+    {
+      "key": "reply_id",
+      "value": "1"
+    },
+    {
+      "key": "memory_id",
+      "value": "1"
+    },
+    {
+      "key": "username",
+      "value": "elara_vibe"
+    },
+    {
+      "key": "target_user_id",
+      "value": "2"
+    },
+    {
+      "key": "notification_id",
+      "value": "1"
+    },
+    {
+      "key": "media_id",
+      "value": "1"
+    },
+    {
+      "key": "search_query",
+      "value": "karachi"
+    },
+    {
+      "key": "username_check",
+      "value": "fresh_name"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Asif Younas\",\n  \"email\": \"asif@example.com\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\",\n  \"device_id\": \"device-register-1\",\n  \"platform\": \"android\",\n  \"push_token\": \"push-token-register-1\",\n  \"app_version\": \"1.0.0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"asif@example.com\",\n  \"password\": \"password123\",\n  \"device_id\": \"device-login-1\",\n  \"platform\": \"android\",\n  \"push_token\": \"push-token-login-1\",\n  \"app_version\": \"1.0.0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('auth_token', json.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"asif@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/auth/forgot-password"
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"asif@example.com\",\n  \"code\": \"123456\",\n  \"password\": \"newpassword123\",\n  \"password_confirmation\": \"newpassword123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/auth/reset-password"
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/verify-email/{{verify_user_id}}/{{verify_token}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Feed",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Home Feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/home?type=outfit&page=1"
+          }
+        },
+        {
+          "name": "Feed Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/posts/{{post_id}}?comments_page=1"
+          }
+        },
+        {
+          "name": "Feed Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/posts/{{post_id}}/comments?page=1"
+          }
+        },
+        {
+          "name": "Like Feed Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/posts/{{post_id}}/like"
+          }
+        },
+        {
+          "name": "Save Feed Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/posts/{{post_id}}/save"
+          }
+        },
+        {
+          "name": "Share Feed Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"share_channel\": \"copy_link\",\n  \"target_user_id\": {{target_user_id}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/feed/posts/{{post_id}}/share"
+          }
+        },
+        {
+          "name": "Vote Feed Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating_value\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/feed/posts/{{post_id}}/vote"
+          }
+        },
+        {
+          "name": "Add Feed Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Nice post\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/feed/posts/{{post_id}}/comments"
+          }
+        },
+        {
+          "name": "Like Feed Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/comments/{{comment_id}}/like"
+          }
+        },
+        {
+          "name": "Reply Feed Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Thanks!\",\n  \"parent_reply_id\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/feed/comments/{{comment_id}}/replies"
+          }
+        },
+        {
+          "name": "Like Feed Reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/feed/replies/{{reply_id}}/like"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reels",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Reels List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/reels?type=outfit&page=1"
+          }
+        },
+        {
+          "name": "Reel Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/reels/{{post_id}}?comments_page=1"
+          }
+        },
+        {
+          "name": "Reel Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/reels/{{post_id}}/comments?page=1"
+          }
+        },
+        {
+          "name": "Like Reel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/reels/{{post_id}}/like"
+          }
+        },
+        {
+          "name": "Save Reel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/reels/{{post_id}}/save"
+          }
+        },
+        {
+          "name": "Share Reel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"share_channel\": \"copy_link\",\n  \"target_user_id\": {{target_user_id}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/reels/{{post_id}}/share"
+          }
+        },
+        {
+          "name": "Vote Reel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating_value\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/reels/{{post_id}}/vote"
+          }
+        },
+        {
+          "name": "Add Reel Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Great reel\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/reels/{{post_id}}/comments"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Posts",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Create Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "post_type",
+                  "value": "outfit",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "caption",
+                  "value": "Weekend outfit",
+                  "type": "text"
+                },
+                {
+                  "key": "tags",
+                  "value": "Casual,Summer",
+                  "type": "text"
+                },
+                {
+                  "key": "location",
+                  "value": "Karachi",
+                  "type": "text"
+                },
+                {
+                  "key": "visibility",
+                  "value": "public",
+                  "type": "text"
+                },
+                {
+                  "key": "lat",
+                  "value": "24.8607",
+                  "type": "text"
+                },
+                {
+                  "key": "lng",
+                  "value": "67.0011",
+                  "type": "text"
+                },
+                {
+                  "key": "rating_enabled",
+                  "value": "1",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{base_url}}/posts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "My Profile Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me?tab=outfits&page=1"
+          }
+        },
+        {
+          "name": "Public Profile Default",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"asif_younas\",\n  \"full_name\": \"Asif Younas\",\n  \"phone_country_code\": \"+92\",\n  \"phone_number\": \"3011234567\",\n  \"locale\": \"en\",\n  \"timezone\": \"Asia/Karachi\",\n  \"display_name\": \"Asif\",\n  \"headline\": \"Digital Fashion Enthusiast\",\n  \"bio\": \"Creator profile\",\n  \"website_url\": \"https://example.com\",\n  \"city\": \"Karachi\",\n  \"country\": \"Pakistan\",\n  \"gender\": \"male\",\n  \"birth_date\": \"1995-01-15\",\n  \"visibility\": \"public\",\n  \"is_private\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Username Availability",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/username-availability?username={{username_check}}"
+          }
+        },
+        {
+          "name": "My Profile Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/overview?outfits_page=1&food_page=1&saved_page=1"
+          }
+        },
+        {
+          "name": "Update Profile Headline",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/overview",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"headline\": \"Digital Fashion Enthusiast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify Profile Badge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/verify"
+          }
+        },
+        {
+          "name": "My Profile Images",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/images"
+          }
+        },
+        {
+          "name": "My Profile Avatar",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/avatar"
+          }
+        },
+        {
+          "name": "Upload Avatar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/avatar",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "My Profile Cover",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/cover"
+          }
+        },
+        {
+          "name": "Upload Cover",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me/cover",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "My Profile - Outfits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me?tab=outfits&page=1"
+          }
+        },
+        {
+          "name": "My Profile - Saved",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me?tab=saved&page=1"
+          }
+        },
+        {
+          "name": "My Profile - Food",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me?tab=food&page=1"
+          }
+        },
+        {
+          "name": "My Profile - Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profile/me?tab=memories&page=1"
+          }
+        },
+        {
+          "name": "Public Profile Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}/overview?outfits_page=1&food_page=1&saved_page=1"
+          }
+        },
+        {
+          "name": "Public Profile - Outfits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}?tab=outfits&page=1"
+          }
+        },
+        {
+          "name": "Public Profile - Food",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}?tab=food&page=1"
+          }
+        },
+        {
+          "name": "Public Profile - Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}?tab=memories&page=1"
+          }
+        },
+        {
+          "name": "Follow User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}/follow"
+          }
+        },
+        {
+          "name": "Unfollow User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}/follow"
+          }
+        },
+        {
+          "name": "Followers List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}/followers?page=1"
+          }
+        },
+        {
+          "name": "Following List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/profiles/{{username}}/following?page=1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Memories",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "List Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories?page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Memory Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories/{{memory_id}}"
+          }
+        },
+        {
+          "name": "Create Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "Trip to Hunza",
+                  "type": "text"
+                },
+                {
+                  "key": "short_title",
+                  "value": "Hunza Trip",
+                  "type": "text"
+                },
+                {
+                  "key": "short_description",
+                  "value": "A beautiful mountain trip.",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "We visited Hunza and enjoyed the weather.",
+                  "type": "text"
+                },
+                {
+                  "key": "note",
+                  "value": "Best trip so far",
+                  "type": "text"
+                },
+                {
+                  "key": "memory_date",
+                  "value": "2026-04-12",
+                  "type": "text"
+                },
+                {
+                  "key": "location",
+                  "value": "Hunza Valley",
+                  "type": "text"
+                },
+                {
+                  "key": "city",
+                  "value": "Hunza",
+                  "type": "text"
+                },
+                {
+                  "key": "country",
+                  "value": "Pakistan",
+                  "type": "text"
+                },
+                {
+                  "key": "lat",
+                  "value": "36.3167",
+                  "type": "text"
+                },
+                {
+                  "key": "lng",
+                  "value": "74.6500",
+                  "type": "text"
+                },
+                {
+                  "key": "rating",
+                  "value": "4.5",
+                  "type": "text"
+                },
+                {
+                  "key": "is_favorite",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "visibility",
+                  "value": "public",
+                  "type": "text"
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "type": "text"
+                },
+                {
+                  "key": "comments[]",
+                  "value": "Amazing experience",
+                  "type": "text"
+                },
+                {
+                  "key": "comments[]",
+                  "value": "Will visit again",
+                  "type": "text"
+                },
+                {
+                  "key": "images[]",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "images[]",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Memory",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories/{{memory_id}}",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "title",
+                  "value": "Updated Memory Title",
+                  "type": "text"
+                },
+                {
+                  "key": "location",
+                  "value": "Skardu",
+                  "type": "text"
+                },
+                {
+                  "key": "city",
+                  "value": "Skardu",
+                  "type": "text"
+                },
+                {
+                  "key": "country",
+                  "value": "Pakistan",
+                  "type": "text"
+                },
+                {
+                  "key": "visibility",
+                  "value": "public",
+                  "type": "text"
+                },
+                {
+                  "key": "comments[]",
+                  "value": "Fresh comment",
+                  "type": "text"
+                },
+                {
+                  "key": "retain_media_ids[]",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "images[]",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Memory",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories/{{memory_id}}"
+          }
+        },
+        {
+          "name": "Delete Memory Media",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories/{{memory_id}}/media/{{media_id}}"
+          }
+        },
+        {
+          "name": "Toggle Favorite Memory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/memories/{{memory_id}}/favorite"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Earnings",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Earnings Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/earnings/overview"
+          }
+        },
+        {
+          "name": "Earning Breakdowns",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/earnings/breakdowns?page=1"
+          }
+        },
+        {
+          "name": "Withdrawals List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/earnings/withdrawals?page=1"
+          }
+        },
+        {
+          "name": "Submit Withdrawal Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/earnings/withdrawals",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 12000,\n  \"method\": \"bank_transfer\",\n  \"account_ref\": \"****4201\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Notifications List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/notifications?page=1"
+          }
+        },
+        {
+          "name": "Read One Notification",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/notifications/{{notification_id}}/read"
+          }
+        },
+        {
+          "name": "Read All Notifications",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/notifications/read-all"
+          }
+        },
+        {
+          "name": "Clear Notifications",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/notifications/clear"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{auth_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Search Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/users/search?query={{search_query}}&page=1"
+          }
+        },
+        {
+          "name": "List Public Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/users/search?page=1"
+          }
+        }
+      ]
+    }
+  ]
+}
