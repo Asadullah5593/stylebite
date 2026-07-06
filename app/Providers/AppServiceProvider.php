@@ -19,6 +19,9 @@ use App\Models\Notification;
 use App\Models\PushNotificationLog;
 use App\Models\Report;
 use App\Models\WithdrawalRequest;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
@@ -38,6 +41,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Scramble::configure()
+            ->withDocumentTransformers(function (OpenApi $openApi): void {
+                $openApi->secure(SecurityScheme::http('bearer'));
+            });
+
         Paginator::useBootstrapFive();
 
         View::composer('admin.users.*', function ($view) {
