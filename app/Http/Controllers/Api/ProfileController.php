@@ -22,7 +22,7 @@ class ProfileController extends Controller
 {
     public function me(Request $request): JsonResponse
     {
-        return $this->show($request, (string) $request->user()->username);
+        return $this->showProfile($request, (string) $request->user()->username);
     }
 
     public function overview(Request $request): JsonResponse
@@ -340,6 +340,11 @@ class ProfileController extends Controller
     }
 
     public function show(Request $request, string $username): JsonResponse
+    {
+        return $this->showProfile($request, $username);
+    }
+
+    private function showProfile(Request $request, string $username): JsonResponse
     {
         $viewer = $request->user();
         $validated = $request->validate([

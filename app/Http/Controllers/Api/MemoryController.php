@@ -8,6 +8,7 @@ use App\Models\Memory;
 use App\Models\MemoryComment;
 use App\Models\MemoryMedia;
 use App\Models\MemoryRating;
+use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -91,6 +92,26 @@ class MemoryController extends Controller
         ]);
     }
 
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('title', required: true, type: 'string', example: 'Trip to Hunza')]
+    #[BodyParameter('short_title', type: 'string', example: 'Hunza')]
+    #[BodyParameter('short_description', type: 'string', example: 'A beautiful mountain trip.')]
+    #[BodyParameter('description', type: 'string', example: 'We visited Hunza and enjoyed the weather.')]
+    #[BodyParameter('note', type: 'string', example: 'Best trip ever.')]
+    #[BodyParameter('memory_date', required: true, type: 'string', format: 'date', example: '2026-06-15')]
+    #[BodyParameter('location', type: 'string', example: 'Hunza Valley')]
+    #[BodyParameter('city', type: 'string', example: 'Hunza')]
+    #[BodyParameter('country', type: 'string', example: 'Pakistan')]
+    #[BodyParameter('lat', description: 'Required when lng is provided.', type: 'number', example: 36.3167)]
+    #[BodyParameter('lng', description: 'Required when lat is provided.', type: 'number', example: 74.65)]
+    #[BodyParameter('rating', description: '0 to 5.', type: 'number', example: 4.5)]
+    #[BodyParameter('is_favorite', type: 'boolean', example: true)]
+    #[BodyParameter('visibility', description: 'One of: public, private, followers_only.', type: 'string', example: 'public')]
+    #[BodyParameter('status', description: 'One of: active, archived, deleted.', type: 'string', example: 'active')]
+    #[BodyParameter('images', description: 'Image files (jpg, jpeg, png, webp). At least one is required. Send as images[].', required: true, type: 'array')]
+    #[BodyParameter('comments', description: 'Comment texts. Send as comments[].', type: 'array')]
     public function store(Request $request): JsonResponse
     {
         $validated = $this->validateMemory($request);
@@ -133,6 +154,27 @@ class MemoryController extends Controller
         ], Response::HTTP_CREATED);
     }
 
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('title', type: 'string', example: 'Updated Memory Title')]
+    #[BodyParameter('short_title', type: 'string', example: 'Hunza')]
+    #[BodyParameter('short_description', type: 'string', example: 'A beautiful mountain trip.')]
+    #[BodyParameter('description', type: 'string', example: 'We visited Hunza and enjoyed the weather.')]
+    #[BodyParameter('note', type: 'string', example: 'Best trip ever.')]
+    #[BodyParameter('memory_date', type: 'string', format: 'date', example: '2026-06-15')]
+    #[BodyParameter('location', type: 'string', example: 'Hunza Valley')]
+    #[BodyParameter('city', type: 'string', example: 'Hunza')]
+    #[BodyParameter('country', type: 'string', example: 'Pakistan')]
+    #[BodyParameter('lat', description: 'Required when lng is provided.', type: 'number', example: 36.3167)]
+    #[BodyParameter('lng', description: 'Required when lat is provided.', type: 'number', example: 74.65)]
+    #[BodyParameter('rating', description: '0 to 5.', type: 'number', example: 4.5)]
+    #[BodyParameter('is_favorite', type: 'boolean', example: true)]
+    #[BodyParameter('visibility', description: 'One of: public, private, followers_only.', type: 'string', example: 'public')]
+    #[BodyParameter('status', description: 'One of: active, archived, deleted.', type: 'string', example: 'active')]
+    #[BodyParameter('images', description: 'New image files to add (jpg, jpeg, png, webp). Send as images[].', type: 'array')]
+    #[BodyParameter('retain_media_ids', description: 'IDs of existing media to keep. Send as retain_media_ids[].', type: 'array')]
+    #[BodyParameter('comments', description: 'Comment texts. Send as comments[].', type: 'array')]
     public function update(Request $request, int $memoryId): JsonResponse
     {
         $memory = $this->findOwnedMemory($request, $memoryId);

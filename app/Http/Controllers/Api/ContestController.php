@@ -17,6 +17,7 @@ use App\Models\Tag;
 use App\Models\User;
 use App\Models\UserFollow;
 use Carbon\Carbon;
+use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ContestController extends Controller
 {
+    /**
+     * @deprecated 1 vs 1 contests are no longer supported; always returns 422.
+     */
     public function createOneVsOne(Request $request): JsonResponse
     {
         return $this->error('1 vs 1 contests are no longer supported.');
@@ -87,6 +91,9 @@ class ContestController extends Controller
         ], Response::HTTP_CREATED);
     }
 
+    /**
+     * @deprecated 1 vs 1 contests are no longer supported; always returns 422.
+     */
     public function requestJoinOneVsOne(Request $request, int $contestId): JsonResponse
     {
         return $this->error('1 vs 1 contests are no longer supported.');
@@ -177,6 +184,9 @@ class ContestController extends Controller
         ]);
     }
 
+    /**
+     * @deprecated 1 vs 1 contests are no longer supported; always returns 422.
+     */
     public function selectOneVsOneOpponent(Request $request, int $contestId): JsonResponse
     {
         return $this->error('1 vs 1 contests are no longer supported.');
@@ -225,6 +235,11 @@ class ContestController extends Controller
         ]);
     }
 
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('caption', type: 'string', example: 'My contest outfit.')]
+    #[BodyParameter('asset', description: 'Outfit media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm).', required: true, type: 'string', format: 'binary')]
     public function joinAdminContest(Request $request, int $contestId): JsonResponse
     {
         $contest = Contest::query()->findOrFail($contestId);
@@ -237,10 +252,20 @@ class ContestController extends Controller
             return $this->error('Admin contests must be city contests.');
         }
 
-        return $this->submitContestOutfit($request, $contestId);
+        return $this->storeContestSubmission($request, $contestId);
     }
 
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('caption', type: 'string', example: 'My contest outfit.')]
+    #[BodyParameter('asset', description: 'Outfit media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm).', required: true, type: 'string', format: 'binary')]
     public function submitContestOutfit(Request $request, int $contestId): JsonResponse
+    {
+        return $this->storeContestSubmission($request, $contestId);
+    }
+
+    private function storeContestSubmission(Request $request, int $contestId): JsonResponse
     {
         $validated = $request->validate([
             'caption' => ['nullable', 'string', 'max:500'],

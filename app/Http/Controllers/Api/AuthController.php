@@ -12,6 +12,7 @@ use App\Models\UserAuthProvider;
 use App\Models\UserSession;
 use App\Models\UserSetting;
 use Carbon\Carbon;
+use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -150,11 +151,35 @@ class AuthController extends Controller
         ]);
     }
 
+    #[BodyParameter('provider_user_id', description: 'Unique user ID issued by Google.', required: true, type: 'string', example: '112233445566778899000')]
+    #[BodyParameter('email', type: 'string', example: 'user@example.com')]
+    #[BodyParameter('name', type: 'string', example: 'Asad Ullah')]
+    #[BodyParameter('id_token', description: 'Google ID token (JWT).', type: 'string', example: 'eyJhbGciOiJSUzI1NiIs...')]
+    #[BodyParameter('identity_token', type: 'string')]
+    #[BodyParameter('access_token', type: 'string')]
+    #[BodyParameter('refresh_token', type: 'string')]
+    #[BodyParameter('token_expires_at', type: 'string', format: 'date-time', example: '2026-08-01T00:00:00Z')]
+    #[BodyParameter('device_id', description: 'Required when push_token is provided.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    #[BodyParameter('platform', description: 'One of: ios, android, web, desktop.', type: 'string', example: 'android')]
+    #[BodyParameter('push_token', type: 'string', example: 'fcm_token_abc123')]
+    #[BodyParameter('app_version', type: 'string', example: '1.4.2')]
     public function googleLogin(Request $request): JsonResponse
     {
         return $this->providerLogin($request, 'google');
     }
 
+    #[BodyParameter('provider_user_id', description: 'Unique user ID issued by Apple.', required: true, type: 'string', example: '001122.aabbccddeeff.0011')]
+    #[BodyParameter('email', type: 'string', example: 'user@example.com')]
+    #[BodyParameter('name', type: 'string', example: 'Asad Ullah')]
+    #[BodyParameter('id_token', type: 'string')]
+    #[BodyParameter('identity_token', description: 'Apple identity token (JWT).', type: 'string', example: 'eyJraWQiOiJXNlJIL...')]
+    #[BodyParameter('access_token', type: 'string')]
+    #[BodyParameter('refresh_token', type: 'string')]
+    #[BodyParameter('token_expires_at', type: 'string', format: 'date-time', example: '2026-08-01T00:00:00Z')]
+    #[BodyParameter('device_id', description: 'Required when push_token is provided.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    #[BodyParameter('platform', description: 'One of: ios, android, web, desktop.', type: 'string', example: 'ios')]
+    #[BodyParameter('push_token', type: 'string', example: 'apns_token_abc123')]
+    #[BodyParameter('app_version', type: 'string', example: '1.4.2')]
     public function appleLogin(Request $request): JsonResponse
     {
         return $this->providerLogin($request, 'apple');
