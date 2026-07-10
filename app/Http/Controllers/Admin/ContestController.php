@@ -732,6 +732,7 @@ class ContestController extends Controller
             $contest ??= Contest::create([
                 'slug' => $this->uniqueContestSlug($validated['title']),
                 'creator_user_id' => auth()->id(),
+                'title' => $validated['title'],
                 'category' => 'admin',
                 'contest_type' => 'city',
             ]);
