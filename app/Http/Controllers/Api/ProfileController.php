@@ -135,6 +135,11 @@ class ProfileController extends Controller
             'birth_date' => ['nullable', 'date'],
             'is_private' => ['nullable', 'boolean'],
             'visibility' => ['nullable', 'string', 'in:public,private,followers_only'],
+        ], [
+            'username.min' => 'Your username must be at least 3 characters long.',
+            'username.max' => 'Your username may not be greater than 50 characters.',
+            'username.regex' => 'Usernames may only contain lowercase letters, numbers, and underscores.',
+            'username.unique' => 'This username is already in use. Please choose another one.',
         ]);
 
         $user = $request->user();

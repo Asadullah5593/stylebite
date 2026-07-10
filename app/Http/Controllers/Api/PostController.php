@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\OptimizePostMedia;
 use App\Models\MediaUpload;
 use App\Models\Post;
 use App\Models\PostMedia;
@@ -103,7 +104,7 @@ class PostController extends Controller
                 'size_bytes' => $uploadedFile['size_bytes'],
                 'storage_type' => 'local',
                 'sort_order' => 0,
-                'processing_status' => 'ready',
+                'processing_status' => 'pending',
             ]);
 
             $tagIds = $this->syncTags($validated['tags'] ?? null);
@@ -112,6 +113,10 @@ class PostController extends Controller
 
             return $post->fresh(['media', 'tags']);
         });
+
+        foreach ($post->media as $media) {
+            OptimizePostMedia::dispatch($media->id)->afterCommit();
+        }
 
         return response()->json([
             'status_code' => 1,
@@ -360,7 +365,7 @@ class PostController extends Controller
 
         $post->media()->delete();
 
-        PostMedia::create([
+        $media = PostMedia::create([
             'post_id' => $post->id,
             'upload_id' => $upload->id,
             'media_type' => $mediaType,
@@ -371,12 +376,14 @@ class PostController extends Controller
             'size_bytes' => $uploadedFile['size_bytes'],
             'storage_type' => 'local',
             'sort_order' => 0,
-            'processing_status' => 'ready',
+            'processing_status' => 'pending',
         ]);
 
         $post->forceFill([
             'media_kind' => $mediaType,
         ])->save();
+
+        OptimizePostMedia::dispatch($media->id)->afterCommit();
     }
 
     private function resolveLocationDetails(array $validated): array
