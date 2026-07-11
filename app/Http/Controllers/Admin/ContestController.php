@@ -18,6 +18,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ContestController extends Controller
@@ -710,7 +712,12 @@ class ContestController extends Controller
     private function persistContest(Request $request, ?Contest $contest = null): Contest
     {
         $validated = $request->validate([
-            'title' => ['required', 'string', 'max:191'],
+            'title' => [
+                'required', 'string', 'max:191',
+                Rule::unique('contests', 'title')
+                    ->where(fn ($query) => $query->where('category', 'admin')->whereNull('deleted_at'))
+                    ->ignore($contest?->id),
+            ],
             'subtitle' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'status' => ['required', 'in:draft,active,upcoming,completed,cancelled,archived'],
@@ -726,9 +733,26 @@ class ContestController extends Controller
             'cover_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
             'banner_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
             'rules_text' => ['nullable', 'string'],
+        ], [
+            'title.unique' => 'A contest with this title already exists.',
         ]);
 
         return DB::transaction(function () use ($validated, $contest, $request) {
+            if ($contest === null) {
+                // Re-check inside the transaction: catches a rapid resubmit that
+                // slipped past validation before the first request committed.
+                $alreadyExists = Contest::query()
+                    ->where('category', 'admin')
+                    ->where('title', $validated['title'])
+                    ->exists();
+
+                if ($alreadyExists) {
+                    throw ValidationException::withMessages([
+                        'title' => 'A contest with this title already exists.',
+                    ]);
+                }
+            }
+
             $contest ??= Contest::create([
                 'slug' => $this->uniqueContestSlug($validated['title']),
                 'creator_user_id' => auth()->id(),

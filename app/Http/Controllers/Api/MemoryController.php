@@ -27,6 +27,9 @@ class MemoryController extends Controller
             'status' => ['nullable', 'string', 'in:active,archived,deleted'],
             'visibility' => ['nullable', 'string', 'in:public,private,followers_only'],
             'search' => ['nullable', 'string'],
+            'date_filter' => ['nullable', 'string', 'in:last_week,last_month'],
+        ], [
+            'date_filter.in' => 'The date filter must be one of: last_week, last_month.',
         ]);
 
         $user = $request->user();
@@ -39,6 +42,15 @@ class MemoryController extends Controller
             ->where('user_id', $user->id)
             ->when(isset($validated['status']), fn (Builder $query) => $query->where('status', $validated['status']))
             ->when(isset($validated['visibility']), fn (Builder $query) => $query->where('visibility', $validated['visibility']))
+            ->when(isset($validated['date_filter']), function (Builder $query) use ($validated) {
+                // Rolling window over the user-facing memory date:
+                // last_week = past 7 days, last_month = past 1 month (incl. today).
+                $cutoff = $validated['date_filter'] === 'last_week'
+                    ? now()->subWeek()->toDateString()
+                    : now()->subMonth()->toDateString();
+
+                $query->whereDate('memory_date', '>=', $cutoff);
+            })
             ->when(isset($validated['search']), function (Builder $query) use ($validated) {
                 $search = trim((string) $validated['search']);
 

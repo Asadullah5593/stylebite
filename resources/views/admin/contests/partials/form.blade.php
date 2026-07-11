@@ -6,7 +6,7 @@
     $submitLabel = $submitLabel ?? 'Create Contest';
 @endphp
 
-<form method="POST" action="{{ $action }}" class="row g-3" enctype="multipart/form-data">
+<form method="POST" action="{{ $action }}" class="row g-3" enctype="multipart/form-data" data-contest-form>
     @csrf
     @if ($method !== 'POST')
         @method($method)
@@ -148,5 +148,25 @@
 
         bindImagePreview('cover-image-input', 'cover-image-preview');
         bindImagePreview('banner-image-input', 'banner-image-preview');
+
+        // Prevent duplicate contests from double-click / repeat submits while
+        // the (slow, image-upload) request is still in flight.
+        document.querySelectorAll('form[data-contest-form]').forEach(function (form) {
+            form.addEventListener('submit', function (event) {
+                if (form.dataset.submitted === 'true') {
+                    event.preventDefault();
+                    return;
+                }
+
+                form.dataset.submitted = 'true';
+
+                const submitButton = form.querySelector('button[type="submit"]');
+
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+                }
+            });
+        });
     })();
 </script>
