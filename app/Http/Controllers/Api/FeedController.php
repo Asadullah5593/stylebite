@@ -451,6 +451,38 @@ class FeedController extends Controller
     }
 
     /**
+     * Remember the viewer's coordinates for the nearby-feed fallback.
+     * Throttled: skips the write when the fix is fresh (<15 min) and the user
+     * hasn't moved meaningfully (~55m), so scrolling pages doesn't spam writes.
+     */
+    private function rememberViewerLocation($user, float $lat, float $lng): void
+    {
+        $profile = $user->profile;
+
+        $isFresh = $profile !== null
+            && $profile->last_known_lat !== null
+            && $profile->last_known_lng !== null
+            && abs((float) $profile->last_known_lat - $lat) < 0.0005
+            && abs((float) $profile->last_known_lng - $lng) < 0.0005
+            && $profile->last_located_at !== null
+            && $profile->last_located_at->gt(now()->subMinutes(15));
+
+        if ($isFresh) {
+            return;
+        }
+
+        $profile ??= $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'last_known_lat' => $lat,
+            'last_known_lng' => $lng,
+            'last_located_at' => now(),
+        ])->save();
+
+        $user->setRelation('profile', $profile);
+    }
+
+    /**
      * Geo-fence the feed to a radius (km) around the viewer: cheap bounding-box
      * prefilter (uses the (location_lat, location_lng) index), then an exact
      * haversine cutoff, sorted nearest-first.
@@ -945,10 +977,30 @@ class FeedController extends Controller
         $perPage = (int) ($validated['per_page'] ?? 10);
         $page = (int) ($validated['page'] ?? 1);
         $requestedType = $validated['type'] ?? $this->resolvePostTypeFromTab($validated['tab'] ?? null) ?? 'outfit';
-        // Nearby applies only when the client sends its coordinates; otherwise
-        // fall back to the regular latest feed (per product decision).
-        $wantsNearby = ($validated['discover_type'] ?? 'for_you') === 'nearby'
-            && isset($validated['lat'], $validated['lng']);
+        // Coordinates sent with any feed call are remembered on the profile so
+        // a later nearby request without GPS can fall back to the last fix;
+        // with neither, the regular latest feed is served.
+        $hasRequestCoords = isset($validated['lat'], $validated['lng']);
+
+        if ($hasRequestCoords) {
+            $this->rememberViewerLocation($user, (float) $validated['lat'], (float) $validated['lng']);
+        }
+
+        $viewerCoords = null;
+        $locationSource = null;
+
+        if ($hasRequestCoords) {
+            $viewerCoords = [(float) $validated['lat'], (float) $validated['lng']];
+            $locationSource = 'request';
+        } elseif (($validated['discover_type'] ?? null) === 'nearby'
+            && $user->profile?->last_known_lat !== null
+            && $user->profile?->last_known_lng !== null
+        ) {
+            $viewerCoords = [(float) $user->profile->last_known_lat, (float) $user->profile->last_known_lng];
+            $locationSource = 'last_known';
+        }
+
+        $wantsNearby = ($validated['discover_type'] ?? 'for_you') === 'nearby' && $viewerCoords !== null;
         $nearbyRadiusKm = null;
 
         // Slim feed list: only the relations a feed card needs (author + media).
@@ -970,7 +1022,7 @@ class FeedController extends Controller
                 $nearbyRadiusKm = 10.0;
             }
 
-            $this->applyNearbyScope($query, (float) $validated['lat'], (float) $validated['lng'], $nearbyRadiusKm);
+            $this->applyNearbyScope($query, $viewerCoords[0], $viewerCoords[1], $nearbyRadiusKm);
         } else {
             $query->latest('published_at')->latest('id');
         }
@@ -1007,6 +1059,7 @@ class FeedController extends Controller
             'type' => $requestedType,
             'discover_type' => $wantsNearby ? 'nearby' : 'for_you',
             'nearby_radius_km' => $nearbyRadiusKm,
+            'location_source' => $wantsNearby ? $locationSource : null,
             $payloadKey => $paginator->getCollection()->map(fn (Post $post) => $this->feedListPayload(
                 $post,
                 $likedPostIds->contains($post->id),
