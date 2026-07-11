@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\OptimizePostMedia;
 use App\Models\MediaUpload;
 use App\Models\Post;
 use App\Models\PostMedia;
 use App\Models\PostTag;
 use App\Models\Tag;
+use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +19,24 @@ use Illuminate\Validation\Rule;
 
 class PostController extends Controller
 {
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('post_type', description: 'One of: outfit, food (legacy: 1 = outfit, 2 = food).', required: true, type: 'string', example: 'outfit')]
+    #[BodyParameter('file', description: 'Media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm).', required: true, type: 'string', format: 'binary')]
+    #[BodyParameter('caption', type: 'string', example: 'My summer look.')]
+    #[BodyParameter('tags', description: 'Comma-separated tag names.', type: 'string', example: 'fashion,summer')]
+    #[BodyParameter('location', type: 'string', example: 'Lahore, Pakistan')]
+    #[BodyParameter('visibility', description: 'One of: public, private, followers_only.', type: 'string', example: 'public')]
+    #[BodyParameter('lat', description: 'Required when lng is provided.', type: 'number', example: 31.5204)]
+    #[BodyParameter('lng', description: 'Required when lat is provided.', type: 'number', example: 74.3587)]
+    #[BodyParameter('rating_enabled', type: 'boolean', example: true)]
+    #[BodyParameter('dish_name', description: 'Required when post_type is food.', type: 'string', example: 'Chicken Karahi')]
+    #[BodyParameter('restaurant', description: 'Required when post_type is food.', type: 'string', example: 'Monal')]
+    #[BodyParameter('food_rating', description: '1 to 5. Required when post_type is food.', type: 'integer', example: 5)]
+    #[BodyParameter('service_rating', description: '1 to 5. Required when post_type is food.', type: 'integer', example: 4)]
+    #[BodyParameter('staff_rating', description: '1 to 5. Required when post_type is food.', type: 'integer', example: 4)]
+    #[BodyParameter('ambience_rating', description: '1 to 5. Required when post_type is food.', type: 'integer', example: 5)]
     public function store(Request $request): JsonResponse
     {
         $validated = $this->validatePost($request);
@@ -84,7 +104,7 @@ class PostController extends Controller
                 'size_bytes' => $uploadedFile['size_bytes'],
                 'storage_type' => 'local',
                 'sort_order' => 0,
-                'processing_status' => 'ready',
+                'processing_status' => 'pending',
             ]);
 
             $tagIds = $this->syncTags($validated['tags'] ?? null);
@@ -94,6 +114,10 @@ class PostController extends Controller
             return $post->fresh(['media', 'tags']);
         });
 
+        foreach ($post->media as $media) {
+            OptimizePostMedia::dispatch($media->id)->afterCommit();
+        }
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Post created successfully.',
@@ -101,6 +125,24 @@ class PostController extends Controller
         ], 201);
     }
 
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('post_type', description: 'One of: outfit, food (legacy: 1 = outfit, 2 = food).', type: 'string', example: 'outfit')]
+    #[BodyParameter('file', description: 'Replacement media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm).', type: 'string', format: 'binary')]
+    #[BodyParameter('caption', type: 'string', example: 'My summer look.')]
+    #[BodyParameter('tags', description: 'Comma-separated tag names.', type: 'string', example: 'fashion,summer')]
+    #[BodyParameter('location', type: 'string', example: 'Lahore, Pakistan')]
+    #[BodyParameter('visibility', description: 'One of: public, private, followers_only.', type: 'string', example: 'public')]
+    #[BodyParameter('lat', description: 'Required when lng is provided.', type: 'number', example: 31.5204)]
+    #[BodyParameter('lng', description: 'Required when lat is provided.', type: 'number', example: 74.3587)]
+    #[BodyParameter('rating_enabled', type: 'boolean', example: true)]
+    #[BodyParameter('dish_name', description: 'For food posts.', type: 'string', example: 'Chicken Karahi')]
+    #[BodyParameter('restaurant', description: 'For food posts.', type: 'string', example: 'Monal')]
+    #[BodyParameter('food_rating', description: '1 to 5. For food posts.', type: 'integer', example: 5)]
+    #[BodyParameter('service_rating', description: '1 to 5. For food posts.', type: 'integer', example: 4)]
+    #[BodyParameter('staff_rating', description: '1 to 5. For food posts.', type: 'integer', example: 4)]
+    #[BodyParameter('ambience_rating', description: '1 to 5. For food posts.', type: 'integer', example: 5)]
     public function update(Request $request, int $postId): JsonResponse
     {
         $post = $this->findOwnedPost($request, $postId);
@@ -323,7 +365,7 @@ class PostController extends Controller
 
         $post->media()->delete();
 
-        PostMedia::create([
+        $media = PostMedia::create([
             'post_id' => $post->id,
             'upload_id' => $upload->id,
             'media_type' => $mediaType,
@@ -334,12 +376,14 @@ class PostController extends Controller
             'size_bytes' => $uploadedFile['size_bytes'],
             'storage_type' => 'local',
             'sort_order' => 0,
-            'processing_status' => 'ready',
+            'processing_status' => 'pending',
         ]);
 
         $post->forceFill([
             'media_kind' => $mediaType,
         ])->save();
+
+        OptimizePostMedia::dispatch($media->id)->afterCommit();
     }
 
     private function resolveLocationDetails(array $validated): array

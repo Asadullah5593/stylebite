@@ -11,7 +11,9 @@ use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSession;
 use App\Models\UserSetting;
+use App\Services\MediaOptimizer;
 use Carbon\Carbon;
+use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,12 +25,27 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('name', description: 'Full name.', required: true, type: 'string', example: 'Asad Ullah')]
+    #[BodyParameter('username', description: 'Optional. Lowercase letters, numbers, underscores. Auto-generated when omitted.', type: 'string', example: 'asadullah')]
+    #[BodyParameter('email', required: true, type: 'string', example: 'user@example.com')]
+    #[BodyParameter('password', required: true, type: 'string', example: 'Sup3rSecret!')]
+    #[BodyParameter('password_confirmation', required: true, type: 'string', example: 'Sup3rSecret!')]
+    #[BodyParameter('avatar', description: 'Optional profile image (jpg, jpeg, png, webp, max 5MB). Compressed on upload.', type: 'string', format: 'binary')]
+    #[BodyParameter('device_id', description: 'Required when push_token is provided.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    #[BodyParameter('platform', description: 'One of: ios, android, web, desktop.', type: 'string', example: 'android')]
+    #[BodyParameter('push_token', type: 'string', example: 'fcm_token_abc123')]
+    #[BodyParameter('app_version', type: 'string', example: '1.4.2')]
     public function register(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
+            'username' => ['nullable', 'string', 'min:3', 'max:50', 'regex:/^[a-z0-9_]+$/', 'unique:users,username'],
             'email' => ['required', 'string', 'email', 'max:191', 'unique:users,email'],
             'password' => ['required', 'confirmed', Password::min(8)],
+            'avatar' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'device_id' => ['nullable', 'string', 'max:191', 'required_with:push_token'],
             'platform' => ['nullable', 'string', 'in:ios,android,web,desktop'],
             'push_token' => ['nullable', 'string', 'max:512'],
@@ -38,7 +55,9 @@ class AuthController extends Controller
         $user = DB::transaction(function () use ($validated): User {
             $user = User::create([
                 'email' => Str::lower($validated['email']),
-                'username' => $this->generateUniqueUsername($validated['name'], $validated['email']),
+                'username' => isset($validated['username'])
+                    ? Str::lower($validated['username'])
+                    : $this->generateUniqueUsername($validated['name'], $validated['email']),
                 'password_hash' => Hash::make($validated['password']),
                 'full_name' => $validated['name'],
                 'locale' => 'en',
@@ -57,6 +76,8 @@ class AuthController extends Controller
 
             return $user;
         });
+
+        $this->storeRegistrationAvatar($user, $request);
 
         $session = $this->createSession($user, $request);
         $this->sendVerificationEmail($user);
@@ -150,11 +171,35 @@ class AuthController extends Controller
         ]);
     }
 
+    #[BodyParameter('provider_user_id', description: 'Unique user ID issued by Google.', required: true, type: 'string', example: '112233445566778899000')]
+    #[BodyParameter('email', type: 'string', example: 'user@example.com')]
+    #[BodyParameter('name', type: 'string', example: 'Asad Ullah')]
+    #[BodyParameter('id_token', description: 'Google ID token (JWT).', type: 'string', example: 'eyJhbGciOiJSUzI1NiIs...')]
+    #[BodyParameter('identity_token', type: 'string')]
+    #[BodyParameter('access_token', type: 'string')]
+    #[BodyParameter('refresh_token', type: 'string')]
+    #[BodyParameter('token_expires_at', type: 'string', format: 'date-time', example: '2026-08-01T00:00:00Z')]
+    #[BodyParameter('device_id', description: 'Required when push_token is provided.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    #[BodyParameter('platform', description: 'One of: ios, android, web, desktop.', type: 'string', example: 'android')]
+    #[BodyParameter('push_token', type: 'string', example: 'fcm_token_abc123')]
+    #[BodyParameter('app_version', type: 'string', example: '1.4.2')]
     public function googleLogin(Request $request): JsonResponse
     {
         return $this->providerLogin($request, 'google');
     }
 
+    #[BodyParameter('provider_user_id', description: 'Unique user ID issued by Apple.', required: true, type: 'string', example: '001122.aabbccddeeff.0011')]
+    #[BodyParameter('email', type: 'string', example: 'user@example.com')]
+    #[BodyParameter('name', type: 'string', example: 'Asad Ullah')]
+    #[BodyParameter('id_token', type: 'string')]
+    #[BodyParameter('identity_token', description: 'Apple identity token (JWT).', type: 'string', example: 'eyJraWQiOiJXNlJIL...')]
+    #[BodyParameter('access_token', type: 'string')]
+    #[BodyParameter('refresh_token', type: 'string')]
+    #[BodyParameter('token_expires_at', type: 'string', format: 'date-time', example: '2026-08-01T00:00:00Z')]
+    #[BodyParameter('device_id', description: 'Required when push_token is provided.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    #[BodyParameter('platform', description: 'One of: ios, android, web, desktop.', type: 'string', example: 'ios')]
+    #[BodyParameter('push_token', type: 'string', example: 'apns_token_abc123')]
+    #[BodyParameter('app_version', type: 'string', example: '1.4.2')]
     public function appleLogin(Request $request): JsonResponse
     {
         return $this->providerLogin($request, 'apple');
@@ -248,6 +293,33 @@ class AuthController extends Controller
             'message' => 'Email verified successfully.',
             'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
         ]);
+    }
+
+    private function storeRegistrationAvatar(User $user, Request $request): void
+    {
+        if (! $request->hasFile('avatar')) {
+            return;
+        }
+
+        $file = $request->file('avatar');
+
+        $rendition = app(MediaOptimizer::class)->storeOptimizedImageFromPath(
+            $file->getRealPath(),
+            'users/'.$user->id.'/avatar',
+            MediaOptimizer::AVATAR_MAX_DIMENSION,
+            MediaOptimizer::AVATAR_QUALITY,
+            $file->getClientOriginalExtension() ?: $file->extension(),
+        );
+
+        if ($rendition === null) {
+            // Optimization failed (e.g. unsupported encoder) — fall back to the raw upload.
+            $uploaded = stylebite_upload_file($file, 'users/'.$user->id.'/avatar');
+            $rendition = ['path' => $uploaded['file_path']];
+        }
+
+        $user->forceFill([
+            'avatar_url' => $rendition['path'],
+        ])->save();
     }
 
     private function createSession(User $user, Request $request): array
@@ -553,12 +625,19 @@ class AuthController extends Controller
         return [
             'name.required' => 'Please enter your full name.',
             'name.max' => 'Your full name may not be greater than 120 characters.',
+            'username.min' => 'Your username must be at least 3 characters long.',
+            'username.max' => 'Your username may not be greater than 50 characters.',
+            'username.regex' => 'Usernames may only contain lowercase letters, numbers, and underscores.',
+            'username.unique' => 'This username is already in use. Please choose another one.',
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address.',
             'email.unique' => 'An account with this email already exists.',
             'password.required' => 'Please enter a password.',
             'password.confirmed' => 'Password confirmation does not match.',
             'password.min' => 'Your password must be at least 8 characters long.',
+            'avatar.image' => 'The profile image must be a valid image file.',
+            'avatar.mimes' => 'The profile image must be a JPG, PNG, or WebP file.',
+            'avatar.max' => 'The profile image may not be larger than 5MB.',
             'device_id.required_with' => 'Device ID is required when a push token is provided.',
             'platform.in' => 'Please choose a valid platform.',
             'push_token.max' => 'Push token is too long. Please try again.',

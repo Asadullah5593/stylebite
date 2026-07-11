@@ -91,7 +91,7 @@ if (! function_exists('api_validation_first_message')) {
                 ? 'An account with this email already exists.'
                 : $message,
             'username' => str_contains(Str::lower($message), 'taken')
-                ? 'This username is already in use.'
+                ? 'This username is already in use. Please choose another one.'
                 : $message,
             default => $message,
         };
