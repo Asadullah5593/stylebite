@@ -349,6 +349,47 @@ class ProfileController extends Controller
         return $this->showProfile($request, $username);
     }
 
+    public function ratingsDistribution(Request $request, string $username): JsonResponse
+    {
+        $viewer = $request->user();
+        $user = User::query()
+            ->where('username', $username)
+            ->firstOrFail();
+
+        $this->ensureProfileAccessible($viewer->id, $user, 'outfits');
+
+        // Star ratings (1-5) received across the user's published posts.
+        $counts = DB::table('post_ratings')
+            ->join('posts', 'posts.id', '=', 'post_ratings.post_id')
+            ->where('posts.user_id', $user->id)
+            ->where('posts.status', 'published')
+            ->whereNull('posts.deleted_at')
+            ->selectRaw('post_ratings.rating_value, COUNT(*) as total')
+            ->groupBy('post_ratings.rating_value')
+            ->pluck('total', 'rating_value');
+
+        $distribution = [];
+        $totalRatings = 0;
+        $weightedSum = 0;
+
+        foreach ([5, 4, 3, 2, 1] as $star) {
+            $count = (int) ($counts[$star] ?? 0);
+            $distribution[(string) $star] = $count;
+            $totalRatings += $count;
+            $weightedSum += $star * $count;
+        }
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Rating distribution fetched successfully',
+            'data' => [
+                'average_rating' => $totalRatings > 0 ? round($weightedSum / $totalRatings, 1) : 0,
+                'total_ratings' => $totalRatings,
+                'distribution' => $distribution,
+            ],
+        ]);
+    }
+
     private function showProfile(Request $request, string $username): JsonResponse
     {
         $viewer = $request->user();
