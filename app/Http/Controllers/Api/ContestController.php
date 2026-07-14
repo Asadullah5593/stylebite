@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\OptimizePostMedia;
 use App\Models\Contest;
 use App\Models\ContestInvitation;
 use App\Models\ContestParticipant;
@@ -240,6 +241,12 @@ class ContestController extends Controller
      */
     #[BodyParameter('caption', type: 'string', example: 'My contest outfit.')]
     #[BodyParameter('asset', description: 'Outfit media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm).', required: true, type: 'string', format: 'binary')]
+    /**
+     * @requestMediaType multipart/form-data
+     */
+    #[BodyParameter('caption', description: 'Used only when uploading a new asset; ignored when post_id is provided (the post\'s own caption is used).', type: 'string', example: 'My contest outfit.')]
+    #[BodyParameter('post_id', description: 'ID of one of your existing published posts to submit. When provided, asset is not required — the post\'s media and caption are used automatically.', type: 'integer', example: 123)]
+    #[BodyParameter('asset', description: 'Outfit media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm). Required unless post_id is provided.', type: 'string', format: 'binary')]
     public function joinAdminContest(Request $request, int $contestId): JsonResponse
     {
         $contest = Contest::query()->findOrFail($contestId);
@@ -258,8 +265,9 @@ class ContestController extends Controller
     /**
      * @requestMediaType multipart/form-data
      */
-    #[BodyParameter('caption', type: 'string', example: 'My contest outfit.')]
-    #[BodyParameter('asset', description: 'Outfit media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm).', required: true, type: 'string', format: 'binary')]
+    #[BodyParameter('caption', description: 'Used only when uploading a new asset; ignored when post_id is provided (the post\'s own caption is used).', type: 'string', example: 'My contest outfit.')]
+    #[BodyParameter('post_id', description: 'ID of one of your existing published posts to submit. When provided, asset is not required — the post\'s media and caption are used automatically.', type: 'integer', example: 123)]
+    #[BodyParameter('asset', description: 'Outfit media file (jpg, jpeg, png, webp, mp4, mov, avi, mkv, webm). Required unless post_id is provided.', type: 'string', format: 'binary')]
     public function submitContestOutfit(Request $request, int $contestId): JsonResponse
     {
         return $this->storeContestSubmission($request, $contestId);
@@ -269,7 +277,10 @@ class ContestController extends Controller
     {
         $validated = $request->validate([
             'caption' => ['nullable', 'string', 'max:500'],
-            'asset' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
+            'post_id' => ['nullable', 'integer'],
+            'asset' => ['required_without:post_id', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
+        ], [
+            'asset.required_without' => 'Either an asset file or a post_id must be provided.',
         ]);
 
         $contest = Contest::query()->findOrFail($contestId);
@@ -307,69 +318,110 @@ class ContestController extends Controller
             return $this->error('You have already submitted one post for this contest.');
         }
 
-        $file = $request->file('asset');
-        $mediaType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
-        $uploaded = stylebite_upload_file($file, 'posts/'.$user->id);
+        if (isset($validated['post_id'])) {
+            // Submit one of the user's existing posts: its media and caption
+            // are reused as-is; no new post or upload is created.
+            $existingPost = Post::query()
+                ->with(['media' => fn ($query) => $query->orderBy('sort_order')])
+                ->whereKey($validated['post_id'])
+                ->where('user_id', $user->id)
+                ->where('status', 'published')
+                ->where('is_blocked', false)
+                ->first();
 
-        $post = DB::transaction(function () use ($contest, $user, $validated, $uploaded, $mediaType) {
-            $post = Post::create([
-                'user_id' => $user->id,
-                'post_type' => 'outfit',
-                'content_type' => 'fashion',
-                'media_kind' => $mediaType,
-                'feed_type' => 'style',
-                'caption' => $validated['caption'] ?? null,
-                'visibility' => 'public',
-                'status' => 'published',
-                'rating_enabled' => true,
-                'posted_at' => now(),
-                'published_at' => now(),
-            ]);
+            if (! $existingPost) {
+                return $this->error('Selected post was not found or does not belong to you.');
+            }
 
-            $upload = MediaUpload::create([
-                'user_id' => $user->id,
-                'source' => 'gallery',
-                'upload_type' => 'contest_asset',
-                'media_type' => $mediaType,
-                'original_file_name' => $uploaded['original_file_name'],
-                'file_path' => $uploaded['file_path'],
-                'file_url' => $uploaded['file_url'],
-                'mime_type' => $uploaded['mime_type'],
-                'size_bytes' => $uploaded['size_bytes'],
-                'storage_type' => 'local',
-                'upload_status' => 'ready',
-                'uploaded_at' => now(),
-            ]);
+            if ($existingPost->media->isEmpty()) {
+                return $this->error('Selected post has no media attached.');
+            }
 
-            PostMedia::create([
-                'post_id' => $post->id,
-                'upload_id' => $upload->id,
-                'media_type' => $mediaType,
-                'media_role' => 'original',
-                'file_path' => $uploaded['file_path'],
-                'file_url' => $uploaded['file_url'],
-                'mime_type' => $uploaded['mime_type'],
-                'size_bytes' => $uploaded['size_bytes'],
-                'storage_type' => 'local',
-                'sort_order' => 0,
-                'processing_status' => 'ready',
-            ]);
+            $post = DB::transaction(function () use ($contest, $user, $existingPost) {
+                ContestSubmission::create([
+                    'contest_id' => $contest->id,
+                    'user_id' => $user->id,
+                    'contest_team_id' => $this->findContestTeamIdForUser($contest->id, $user->id),
+                    'post_id' => $existingPost->id,
+                    'submission_status' => 'submitted',
+                    'submitted_at' => now(),
+                ]);
 
-            ContestSubmission::create([
-                'contest_id' => $contest->id,
-                'user_id' => $user->id,
-                'contest_team_id' => $this->findContestTeamIdForUser($contest->id, $user->id),
-                'post_id' => $post->id,
-                'submission_status' => 'submitted',
-                'submitted_at' => now(),
-            ]);
+                $contest->update([
+                    'submission_count' => ContestSubmission::query()->where('contest_id', $contest->id)->count(),
+                ]);
 
-            $contest->update([
-                'submission_count' => ContestSubmission::query()->where('contest_id', $contest->id)->count(),
-            ]);
+                return $existingPost;
+            });
+        } else {
+            $file = $request->file('asset');
+            $mediaType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
+            $uploaded = stylebite_upload_file($file, 'posts/'.$user->id);
 
-            return $post;
-        });
+            $post = DB::transaction(function () use ($contest, $user, $validated, $uploaded, $mediaType) {
+                $post = Post::create([
+                    'user_id' => $user->id,
+                    'post_type' => 'outfit',
+                    'content_type' => 'fashion',
+                    'media_kind' => $mediaType,
+                    'feed_type' => 'style',
+                    'caption' => $validated['caption'] ?? null,
+                    'visibility' => 'public',
+                    'status' => 'published',
+                    'rating_enabled' => true,
+                    'posted_at' => now(),
+                    'published_at' => now(),
+                ]);
+
+                $upload = MediaUpload::create([
+                    'user_id' => $user->id,
+                    'source' => 'gallery',
+                    'upload_type' => 'contest_asset',
+                    'media_type' => $mediaType,
+                    'original_file_name' => $uploaded['original_file_name'],
+                    'file_path' => $uploaded['file_path'],
+                    'file_url' => $uploaded['file_url'],
+                    'mime_type' => $uploaded['mime_type'],
+                    'size_bytes' => $uploaded['size_bytes'],
+                    'storage_type' => 'local',
+                    'upload_status' => 'ready',
+                    'uploaded_at' => now(),
+                ]);
+
+                PostMedia::create([
+                    'post_id' => $post->id,
+                    'upload_id' => $upload->id,
+                    'media_type' => $mediaType,
+                    'media_role' => 'original',
+                    'file_path' => $uploaded['file_path'],
+                    'file_url' => $uploaded['file_url'],
+                    'mime_type' => $uploaded['mime_type'],
+                    'size_bytes' => $uploaded['size_bytes'],
+                    'storage_type' => 'local',
+                    'sort_order' => 0,
+                    'processing_status' => 'pending',
+                ]);
+
+                ContestSubmission::create([
+                    'contest_id' => $contest->id,
+                    'user_id' => $user->id,
+                    'contest_team_id' => $this->findContestTeamIdForUser($contest->id, $user->id),
+                    'post_id' => $post->id,
+                    'submission_status' => 'submitted',
+                    'submitted_at' => now(),
+                ]);
+
+                $contest->update([
+                    'submission_count' => ContestSubmission::query()->where('contest_id', $contest->id)->count(),
+                ]);
+
+                return $post;
+            });
+
+            foreach ($post->media()->get() as $media) {
+                OptimizePostMedia::dispatch($media->id)->afterCommit();
+            }
+        }
 
         $contest->update([
             'participant_count' => ContestParticipant::query()
