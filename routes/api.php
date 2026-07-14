@@ -67,6 +67,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::delete('/profiles/{username}/follow', [FollowController::class, 'unfollow']);
     Route::get('/profiles/{username}/followers', [FollowController::class, 'followers']);
     Route::get('/profiles/{username}/following', [FollowController::class, 'following']);
+    Route::get('/profiles/{username}/ratings-distribution', [ProfileController::class, 'ratingsDistribution']);
     Route::post('/posts', [PostController::class, 'store']);
     Route::match(['put', 'patch'], '/posts/{postId}', [PostController::class, 'update']);
     Route::delete('/posts/{postId}', [PostController::class, 'destroy']);

@@ -20,6 +20,9 @@ class Profile extends StylebiteModel
             'contest_wins' => 'integer',
             'contest_entries' => 'integer',
             'battle_wins' => 'integer',
+            'last_known_lat' => 'decimal:7',
+            'last_known_lng' => 'decimal:7',
+            'last_located_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
     }

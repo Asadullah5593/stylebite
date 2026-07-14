@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\AppConfig;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -60,6 +61,7 @@ class SettingsController extends Controller
             'earnings' => AppConfig::query()->where('config_key', 'like', 'earnings.%')->count(),
             'legal' => AppConfig::query()->where('config_key', 'like', 'legal.%')->count(),
             'uploads' => AppConfig::query()->where('config_key', 'like', 'uploads.%')->count(),
+            'feed' => AppConfig::query()->where('config_key', 'like', 'feed.%')->count(),
         ];
 
         $configGroupCounts['other'] = max(AppConfig::count() - array_sum($configGroupCounts), 0);
@@ -126,6 +128,8 @@ class SettingsController extends Controller
             'new_value' => $config->config_value,
         ]);
 
+        Cache::forget('stylebite_app_configs');
+
         return back()->with('status', 'Config updated successfully.');
     }
 
@@ -166,6 +170,8 @@ class SettingsController extends Controller
             'value_type' => $config->value_type,
         ]);
 
+        Cache::forget('stylebite_app_configs');
+
         return back()->with('status', 'Config created successfully.');
     }
 
@@ -177,6 +183,8 @@ class SettingsController extends Controller
         ]);
 
         $config->delete();
+
+        Cache::forget('stylebite_app_configs');
 
         return back()->with('status', 'Config deleted successfully.');
     }
@@ -249,6 +257,8 @@ class SettingsController extends Controller
                 'upload' => true,
             ]);
         }
+
+        Cache::forget('stylebite_app_configs');
 
         return redirect()
             ->route('admin.settings.configs', ['preset_group' => $validated['preset_group'] ?? null])
@@ -556,6 +566,12 @@ class SettingsController extends Controller
                     'uploads.max_video_mb' => ['label' => 'Max Video Size (MB)', 'type' => 'number', 'placeholder' => '100'],
                     'uploads.allowed_image_types' => ['label' => 'Allowed Image Types (JSON)', 'type' => 'json', 'placeholder' => '["jpg","png","webp"]'],
                     'uploads.allowed_video_types' => ['label' => 'Allowed Video Types (JSON)', 'type' => 'json', 'placeholder' => '["mp4","mov"]'],
+                ],
+            ],
+            'feed' => [
+                'label' => 'Feed',
+                'fields' => [
+                    'feed.nearby_radius_km' => ['label' => 'Nearby Feed Radius (km)', 'type' => 'number', 'placeholder' => '10'],
                 ],
             ],
             'legal' => [

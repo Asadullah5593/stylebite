@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AppConfig;
 use App\Models\DeviceToken;
 use App\Models\Notification;
 use App\Models\PushNotificationLog;
@@ -12,6 +13,41 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+
+if (! function_exists('stylebite_app_config')) {
+    /**
+     * Read an admin-managed setting from app_configs (Admin → Settings),
+     * cast per its value_type. Cached briefly; admin saves bust the cache.
+     */
+    function stylebite_app_config(string $key, mixed $default = null): mixed
+    {
+        $configs = Cache::remember(
+            'stylebite_app_configs',
+            300,
+            fn () => AppConfig::query()
+                ->get(['config_key', 'config_value', 'value_type'])
+                ->keyBy('config_key')
+                ->map(fn (AppConfig $config) => [
+                    'value' => $config->config_value,
+                    'type' => $config->value_type,
+                ])
+                ->all()
+        );
+
+        if (! isset($configs[$key]) || $configs[$key]['value'] === null || $configs[$key]['value'] === '') {
+            return $default;
+        }
+
+        $value = $configs[$key]['value'];
+
+        return match ($configs[$key]['type']) {
+            'number' => (float) $value,
+            'boolean' => filter_var($value, FILTER_VALIDATE_BOOLEAN),
+            'json' => json_decode($value, true) ?? $default,
+            default => $value,
+        };
+    }
+}
 
 if (! function_exists('stylebite_send_email')) {
     function stylebite_send_email(

@@ -450,6 +450,65 @@ class FeedController extends Controller
         ]);
     }
 
+    /**
+     * Remember the viewer's coordinates for the nearby-feed fallback.
+     * Throttled: skips the write when the fix is fresh (<15 min) and the user
+     * hasn't moved meaningfully (~55m), so scrolling pages doesn't spam writes.
+     */
+    private function rememberViewerLocation($user, float $lat, float $lng): void
+    {
+        $profile = $user->profile;
+
+        $isFresh = $profile !== null
+            && $profile->last_known_lat !== null
+            && $profile->last_known_lng !== null
+            && abs((float) $profile->last_known_lat - $lat) < 0.0005
+            && abs((float) $profile->last_known_lng - $lng) < 0.0005
+            && $profile->last_located_at !== null
+            && $profile->last_located_at->gt(now()->subMinutes(15));
+
+        if ($isFresh) {
+            return;
+        }
+
+        $profile ??= $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'last_known_lat' => $lat,
+            'last_known_lng' => $lng,
+            'last_located_at' => now(),
+        ])->save();
+
+        $user->setRelation('profile', $profile);
+    }
+
+    /**
+     * Geo-fence the feed to a radius (km) around the viewer: cheap bounding-box
+     * prefilter (uses the (location_lat, location_lng) index), then an exact
+     * haversine cutoff, sorted nearest-first.
+     */
+    private function applyNearbyScope(Builder $query, float $lat, float $lng, float $radiusKm): void
+    {
+        $haversine = '(6371 * ACOS(LEAST(1.0,'
+            .' COS(RADIANS(?)) * COS(RADIANS(location_lat)) * COS(RADIANS(location_lng) - RADIANS(?))'
+            .' + SIN(RADIANS(?)) * SIN(RADIANS(location_lat)))))';
+
+        $latDelta = $radiusKm / 111.045;
+        $lngDelta = $radiusKm / (111.045 * max(cos(deg2rad($lat)), 0.01));
+
+        $query
+            ->whereNotNull('location_lat')
+            ->whereNotNull('location_lng')
+            ->whereBetween('location_lat', [$lat - $latDelta, $lat + $latDelta])
+            ->whereBetween('location_lng', [$lng - $lngDelta, $lng + $lngDelta])
+            ->whereRaw($haversine.' <= ?', [$lat, $lng, $lat, $radiusKm])
+            ->select('posts.*')
+            ->selectRaw($haversine.' as distance_km', [$lat, $lng, $lat])
+            ->orderBy('distance_km')
+            ->latest('published_at')
+            ->latest('id');
+    }
+
     private function resolvePostTypeFromTab(?string $tab): ?string
     {
         return match ($tab) {
@@ -748,6 +807,7 @@ class FeedController extends Controller
             'media_kind' => $post->media_kind,
             'caption' => $post->caption,
             'location' => $post->location_name,
+            'distance_km' => isset($post->distance_km) ? round((float) $post->distance_km, 2) : null,
             'dish_name' => $post->dish_name,
             'restaurant' => $post->restaurant,
             'author' => [
@@ -903,6 +963,13 @@ class FeedController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:15'],
             'type' => ['nullable', 'string', 'in:outfit,food'],
             'tab' => ['nullable', 'string', 'in:style,bite'],
+            'discover_type' => ['nullable', 'string', 'in:for_you,nearby'],
+            'lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:lng'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:lat'],
+        ], [
+            'discover_type.in' => 'The discover type must be one of: for_you, nearby.',
+            'lat.required_with' => 'Both lat and lng are required together.',
+            'lng.required_with' => 'Both lat and lng are required together.',
         ]);
 
         $user = $request->user();
@@ -910,6 +977,31 @@ class FeedController extends Controller
         $perPage = (int) ($validated['per_page'] ?? 10);
         $page = (int) ($validated['page'] ?? 1);
         $requestedType = $validated['type'] ?? $this->resolvePostTypeFromTab($validated['tab'] ?? null) ?? 'outfit';
+        // Coordinates sent with any feed call are remembered on the profile so
+        // a later nearby request without GPS can fall back to the last fix;
+        // with neither, the regular latest feed is served.
+        $hasRequestCoords = isset($validated['lat'], $validated['lng']);
+
+        if ($hasRequestCoords) {
+            $this->rememberViewerLocation($user, (float) $validated['lat'], (float) $validated['lng']);
+        }
+
+        $viewerCoords = null;
+        $locationSource = null;
+
+        if ($hasRequestCoords) {
+            $viewerCoords = [(float) $validated['lat'], (float) $validated['lng']];
+            $locationSource = 'request';
+        } elseif (($validated['discover_type'] ?? null) === 'nearby'
+            && $user->profile?->last_known_lat !== null
+            && $user->profile?->last_known_lng !== null
+        ) {
+            $viewerCoords = [(float) $user->profile->last_known_lat, (float) $user->profile->last_known_lng];
+            $locationSource = 'last_known';
+        }
+
+        $wantsNearby = ($validated['discover_type'] ?? 'for_you') === 'nearby' && $viewerCoords !== null;
+        $nearbyRadiusKm = null;
 
         // Slim feed list: only the relations a feed card needs (author + media).
         $query = Post::query()
@@ -921,9 +1013,19 @@ class FeedController extends Controller
             ->when($videoOnly, fn (Builder $query) => $query->whereHas('media', fn (Builder $media) => $media->where('media_type', 'video')))
             ->when(! $videoOnly, fn (Builder $query) => $query->where('user_id', '!=', $user->id))
             ->tap(fn (Builder $query) => $this->applyFeedVisibilityScope($query, $user->id))
-            ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $user->id))
-            ->latest('published_at')
-            ->latest('id');
+            ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $user->id));
+
+        if ($wantsNearby) {
+            $nearbyRadiusKm = (float) stylebite_app_config('feed.nearby_radius_km', 10);
+
+            if ($nearbyRadiusKm <= 0) {
+                $nearbyRadiusKm = 10.0;
+            }
+
+            $this->applyNearbyScope($query, $viewerCoords[0], $viewerCoords[1], $nearbyRadiusKm);
+        } else {
+            $query->latest('published_at')->latest('id');
+        }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
 
@@ -955,6 +1057,9 @@ class FeedController extends Controller
             'status_code' => 1,
             'message' => $videoOnly ? 'Reels fetched successfully.' : 'Home feed fetched successfully.',
             'type' => $requestedType,
+            'discover_type' => $wantsNearby ? 'nearby' : 'for_you',
+            'nearby_radius_km' => $nearbyRadiusKm,
+            'location_source' => $wantsNearby ? $locationSource : null,
             $payloadKey => $paginator->getCollection()->map(fn (Post $post) => $this->feedListPayload(
                 $post,
                 $likedPostIds->contains($post->id),
