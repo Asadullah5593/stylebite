@@ -49,6 +49,53 @@ if (! function_exists('stylebite_app_config')) {
     }
 }
 
+if (! function_exists('stylebite_currency_for_country')) {
+    /**
+     * Map a profile's free-text country to an ISO 4217 currency code.
+     * Returns null when the country is blank or unrecognized so callers
+     * can apply their own default.
+     */
+    function stylebite_currency_for_country(?string $country): ?string
+    {
+        $normalized = Str::of((string) $country)->lower()->squish()->value();
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        $map = [
+            'PKR' => ['pakistan', 'pk'],
+            'INR' => ['india', 'in'],
+            'BDT' => ['bangladesh', 'bd'],
+            'USD' => ['united states', 'united states of america', 'usa', 'us', 'america'],
+            'GBP' => ['united kingdom', 'uk', 'great britain', 'britain', 'england', 'scotland', 'wales', 'northern ireland'],
+            'EUR' => ['germany', 'france', 'italy', 'spain', 'netherlands', 'belgium', 'austria', 'ireland', 'portugal', 'greece', 'finland'],
+            'AED' => ['united arab emirates', 'uae'],
+            'SAR' => ['saudi arabia', 'ksa', 'kingdom of saudi arabia'],
+            'QAR' => ['qatar'],
+            'KWD' => ['kuwait'],
+            'BHD' => ['bahrain'],
+            'OMR' => ['oman'],
+            'TRY' => ['turkey', 'turkiye', 'türkiye'],
+            'CAD' => ['canada'],
+            'AUD' => ['australia'],
+            'MYR' => ['malaysia'],
+            'IDR' => ['indonesia'],
+            'SGD' => ['singapore'],
+            'CNY' => ['china'],
+            'JPY' => ['japan'],
+        ];
+
+        foreach ($map as $currency => $countries) {
+            if (in_array($normalized, $countries, true)) {
+                return $currency;
+            }
+        }
+
+        return null;
+    }
+}
+
 if (! function_exists('stylebite_send_email')) {
     function stylebite_send_email(
         string $toEmail,
