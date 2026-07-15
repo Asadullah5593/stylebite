@@ -574,6 +574,12 @@ class SettingsController extends Controller
                     'feed.nearby_radius_km' => ['label' => 'Nearby Feed Radius (km)', 'type' => 'number', 'placeholder' => '10'],
                 ],
             ],
+            'earnings' => [
+                'label' => 'Earnings',
+                'fields' => [
+                    'earnings.default_currency_code' => ['label' => 'Default Wallet Currency (when country unknown)', 'type' => 'string', 'placeholder' => 'PKR'],
+                ],
+            ],
             'legal' => [
                 'label' => 'Legal',
                 'fields' => [

@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 class EarningsController extends Controller
@@ -178,10 +179,16 @@ class EarningsController extends Controller
 
     private function walletForUser(User $user): EarningsWallet
     {
+        // Currency is fixed at wallet creation: resolved from the user's
+        // profile country, falling back to the admin-configured default.
+        // Existing wallets keep their currency (balances are denominated in it).
+        $currencyCode = stylebite_currency_for_country($user->profile?->country)
+            ?? Str::upper((string) stylebite_app_config('earnings.default_currency_code', 'PKR'));
+
         return EarningsWallet::query()->firstOrCreate(
             ['user_id' => $user->id],
             [
-                'currency_code' => 'PKR',
+                'currency_code' => $currencyCode,
                 'available_balance' => 0,
                 'pending_balance' => 0,
                 'lifetime_earned' => 0,
