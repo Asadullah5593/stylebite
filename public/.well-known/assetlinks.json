@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.stylebite.app",
+      "sha256_cert_fingerprints": [
+        "E6:BD:6D:42:04:2C:3F:49:20:9A:A5:BB:75:6C:C1:89:10:10:FF:5D:69:87:DF:30:E7:B3:DA:20:FE:91:B4:B8"
+      ]
+    }
+  }
+]

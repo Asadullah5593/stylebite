@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "H9JG228U6A.com.stylebite.app",
+        "paths": ["/profile/*", "/post/*"]
+      }
+    ]
+  }
+}
