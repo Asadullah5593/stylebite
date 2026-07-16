@@ -578,6 +578,7 @@ class SettingsController extends Controller
                 'label' => 'Earnings',
                 'fields' => [
                     'earnings.default_currency_code' => ['label' => 'Default Wallet Currency (when country unknown)', 'type' => 'string', 'placeholder' => 'PKR'],
+                    'earnings.base_currency_code' => ['label' => 'Reward Base Currency (rewards are entered in this)', 'type' => 'string', 'placeholder' => 'USD'],
                 ],
             ],
             'legal' => [

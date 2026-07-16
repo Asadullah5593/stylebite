@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
 use App\Models\WithdrawalRequest;
+use App\Services\CurrencyConverter;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -53,7 +54,7 @@ class EarningsController extends Controller
         return view('admin.earnings.WalletsPage', compact('wallets', 'currencyOptions', 'walletStats'));
     }
 
-    public function showWallet(EarningsWallet $wallet): View
+    public function showWallet(EarningsWallet $wallet, CurrencyConverter $converter): View
     {
         $wallet->load([
             'user:id,username,full_name,email,avatar_url',
@@ -85,7 +86,18 @@ class EarningsController extends Controller
                 ->sum('amount'), 2),
         ];
 
-        return view('admin.earnings.ShowWalletPage', compact('wallet', 'walletAudit'));
+        // Adjustments are entered in the base currency; show the admin what it
+        // converts to for this wallet before they submit.
+        $baseCurrency = $converter->baseCurrency();
+        $sample = $converter->convert(1, $baseCurrency, $wallet->currency_code);
+        $fx = [
+            'base_currency' => $baseCurrency,
+            'rate' => $sample['rate'] ?? null,
+            'rate_at' => $sample['rate_at'] ?? null,
+            'rates_fetched_at' => $converter->ratesFetchedAt(),
+        ];
+
+        return view('admin.earnings.ShowWalletPage', compact('wallet', 'walletAudit', 'fx'));
     }
 
     public function transactions(Request $request): View
@@ -399,7 +411,7 @@ class EarningsController extends Controller
         return back()->with('status', 'Withdrawal updated successfully.');
     }
 
-    public function storeAdjustment(Request $request, EarningsWallet $wallet)
+    public function storeAdjustment(Request $request, EarningsWallet $wallet, CurrencyConverter $converter)
     {
         $validated = $request->validate([
             'transaction_type' => ['required', 'in:credit,debit'],
@@ -407,10 +419,21 @@ class EarningsController extends Controller
             'note' => ['required', 'string', 'max:255'],
         ]);
 
-        DB::transaction(function () use ($wallet, $validated) {
+        // Amounts are entered in the base currency (e.g. USD) and converted to
+        // the wallet's currency using today's rate. The converted value is
+        // frozen on the transaction — it is never re-converted later.
+        $baseCurrency = $converter->baseCurrency();
+        $baseAmount = round((float) $validated['amount'], 2);
+        $conversion = $converter->convert($baseAmount, $baseCurrency, $wallet->currency_code);
+
+        if ($conversion === null) {
+            return back()->with('status', "No exchange rate available for {$baseCurrency} → {$wallet->currency_code}. Run stylebite:sync-currency-rates and try again.");
+        }
+
+        DB::transaction(function () use ($wallet, $validated, $baseCurrency, $baseAmount, $conversion) {
             $wallet->refresh();
 
-            $amount = round((float) $validated['amount'], 2);
+            $amount = round((float) $conversion['amount'], 2);
 
             if ($validated['transaction_type'] === 'debit' && (float) $wallet->available_balance < $amount) {
                 abort(422, 'Insufficient available balance for this manual debit.');
@@ -423,6 +446,10 @@ class EarningsController extends Controller
                 'source_type' => 'adjustment',
                 'amount' => $amount,
                 'currency_code' => $wallet->currency_code,
+                'base_amount' => $baseAmount,
+                'base_currency_code' => $baseCurrency,
+                'fx_rate' => $conversion['rate'],
+                'fx_rate_at' => $conversion['rate_at'],
                 'status' => 'completed',
                 'note' => $validated['note'],
                 'metadata_json' => [
@@ -448,11 +475,17 @@ class EarningsController extends Controller
         $this->logActivity('wallet_manual_adjustment_created', 'earnings_wallet', $wallet->id, [
             'user_id' => $wallet->user_id,
             'transaction_type' => $validated['transaction_type'],
-            'amount' => round((float) $validated['amount'], 2),
+            'base_amount' => $baseAmount,
+            'base_currency_code' => $baseCurrency,
+            'amount' => round((float) $conversion['amount'], 2),
+            'currency_code' => $wallet->currency_code,
+            'fx_rate' => $conversion['rate'],
             'note' => $validated['note'],
         ]);
 
-        return back()->with('status', 'Manual adjustment applied successfully.');
+        $converted = number_format((float) $conversion['amount'], 2).' '.$wallet->currency_code;
+
+        return back()->with('status', "Manual adjustment applied: {$baseAmount} {$baseCurrency} = {$converted} (rate ".rtrim(rtrim(number_format($conversion['rate'], 6, '.', ''), '0'), '.').').');
     }
 
     public function reverseTransaction(EarningTransaction $transaction)
@@ -487,6 +520,11 @@ class EarningsController extends Controller
                 'source_id' => $transaction->id,
                 'amount' => $amount,
                 'currency_code' => $transaction->currency_code,
+                // Mirror the original conversion so the reversal is auditable too.
+                'base_amount' => $transaction->base_amount,
+                'base_currency_code' => $transaction->base_currency_code,
+                'fx_rate' => $transaction->fx_rate,
+                'fx_rate_at' => $transaction->fx_rate_at,
                 'status' => 'completed',
                 'note' => 'Reversal for transaction #'.$transaction->id,
                 'metadata_json' => [

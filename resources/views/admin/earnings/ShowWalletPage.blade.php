@@ -70,18 +70,68 @@
         <div class="col-12 col-lg-4">
             <div class="glass rounded-4 p-4 h-100">
                 <h2 class="h6 fw-bold mb-3">Manual Adjustment</h2>
+                @if (empty($fx['rate']))
+                    <div class="alert alert-warning rounded-3 small py-2">
+                        No exchange rate available for <strong>{{ $fx['base_currency'] }} → {{ $wallet->currency_code }}</strong>.
+                        Run <code>php artisan stylebite:sync-currency-rates</code> first.
+                    </div>
+                @endif
                 <form method="POST" action="{{ route('admin.earnings.adjustments.store', $wallet) }}" class="d-flex flex-column gap-3">
                     @csrf
                     <select name="transaction_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted">
                         <option value="credit">Credit</option>
                         <option value="debit">Debit</option>
                     </select>
-                    <input type="number" step="0.01" min="0.01" name="amount" class="form-control border-0 bg-dark-soft rounded-3" placeholder="Amount">
+                    <div>
+                        <label class="form-label small text-muted">Amount in {{ $fx['base_currency'] }}</label>
+                        <input type="number" step="0.01" min="0.01" name="amount" id="adjustment-amount"
+                               class="form-control border-0 bg-dark-soft rounded-3"
+                               placeholder="Amount in {{ $fx['base_currency'] }}">
+                        <div class="form-text text-muted" id="adjustment-preview">
+                            @if ($fx['rate'])
+                                Converted to <strong>{{ $wallet->currency_code }}</strong> at today's rate
+                                (1 {{ $fx['base_currency'] }} = {{ rtrim(rtrim(number_format($fx['rate'], 6, '.', ''), '0'), '.') }} {{ $wallet->currency_code }}).
+                            @endif
+                        </div>
+                        @if ($fx['rates_fetched_at'])
+                            <div class="form-text text-muted small">Rates updated {{ $fx['rates_fetched_at']->diffForHumans() }}.</div>
+                        @endif
+                    </div>
                     <textarea name="note" rows="3" class="form-control border-0 bg-dark-soft rounded-3" placeholder="Reason for adjustment"></textarea>
-                    <button type="submit" class="btn btn-outline-dynamic rounded-3 px-3">
+                    <button type="submit" class="btn btn-outline-dynamic rounded-3 px-3" @disabled(empty($fx['rate']))>
                         <i class="bi bi-plus-circle me-2"></i>Apply adjustment
                     </button>
                 </form>
+                @if ($fx['rate'])
+                    <script>
+                        (function () {
+                            const rate = {{ $fx['rate'] }};
+                            const input = document.getElementById('adjustment-amount');
+                            const preview = document.getElementById('adjustment-preview');
+                            const baseCode = @json($fx['base_currency']);
+                            const walletCode = @json($wallet->currency_code);
+
+                            if (!input || !preview) return;
+
+                            const baseText = preview.innerHTML;
+
+                            input.addEventListener('input', function () {
+                                const value = parseFloat(input.value);
+
+                                if (!value || value <= 0) {
+                                    preview.innerHTML = baseText;
+                                    return;
+                                }
+
+                                const converted = (value * rate).toLocaleString(undefined, {
+                                    minimumFractionDigits: 2, maximumFractionDigits: 2,
+                                });
+
+                                preview.innerHTML = '<strong>' + value + ' ' + baseCode + ' = ' + converted + ' ' + walletCode + '</strong> will be applied.';
+                            });
+                        })();
+                    </script>
+                @endif
             </div>
         </div>
     </div>

@@ -10,6 +10,9 @@ class EarningTransaction extends StylebiteModel
     {
         return [
             'amount' => 'decimal:2',
+            'base_amount' => 'decimal:2',
+            'fx_rate' => 'decimal:10',
+            'fx_rate_at' => 'datetime',
             'metadata_json' => 'array',
             'processed_at' => 'datetime',
         ];
