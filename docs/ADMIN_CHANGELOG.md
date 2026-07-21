@@ -18,6 +18,36 @@ Both are required. Without the daily rate sync, **admin crediting is blocked** (
 
 ---
 
+## 2026-07-21 — Ad eligibility & contest thresholds are now configurable
+
+**Settings:** Admin → Settings → **Ads** (new tab)
+
+| Key | Meaning | Default |
+|---|---|---|
+| `ads.min_followers` | Minimum followers a creator needs to be ad-eligible | **500** |
+| `ads.min_watch_hours` | Minimum watch hours a creator needs to be ad-eligible | **1000** |
+
+Ads aren't built yet — these are the criteria the ad system will read when it ships. A helper, `stylebite_ad_eligibility($userId)`, already evaluates a creator against them and returns `eligible`, plus each metric with its threshold and pass/fail. It is read-only and nothing calls it yet.
+
+> ⚠️ **Watch hours read 0 today.** They're summed from `post_views.watch_seconds`, and **nothing populates that column yet** — the app doesn't report watch time. Until it does, no creator can meet the watch-hours criterion. The follower criterion works today. This needs a mobile-side change (report watch seconds per view) before the watch-hours rule is meaningful.
+
+**Settings:** Admin → Settings → **Contests** (new tab)
+
+| Key | Meaning | Default |
+|---|---|---|
+| `contests.min_participants` | Lowest `max_participants` a user may set when creating a contest | **2** |
+| `contests.max_participants` | Highest `max_participants` a user may set | **100000** |
+
+Applied to the user-facing contest creation API (`POST /contests/city-vs-city`). **Defaults are exactly the values that were previously hardcoded, so behaviour is unchanged until an admin edits them.** A nonsensical config (min > max) is clamped rather than throwing.
+
+> The **admin panel's own** contest form still uses its existing rule (`min:1`, no upper bound) — deliberately left untouched so admin workflows don't change. Tell the backend if you want the admin form bounded by these settings too.
+>
+> Contest **vote score** range (1–5) was deliberately **not** made configurable — the mobile app's star UI and the ratings-distribution endpoint both assume a 5-point scale, so changing it would break them.
+
+Also fixed: the settings "Other" filter was omitting `feed.%` (and now `ads.%`), so those keys could show up under Other.
+
+---
+
 ## 2026-07-17 — Rewards are entered in USD and converted per creator
 
 **Where:** Admin → Earnings → open a wallet → *Manual Adjustment*
@@ -112,6 +142,7 @@ Resolved by baselining: 13 migrations were recorded as run (after verifying the 
 
 ## 🚧 Open items
 
+0. **Watch time is never recorded.** `post_views.watch_seconds` exists but nothing writes to it, so `ads.min_watch_hours` can never be satisfied. Needs the mobile app to report watch seconds per view before ad eligibility can use it.
 1. **Run `stylebite:dedupe-contests`** on live to clear existing duplicate contests (report first).
 2. **Security hardening:** `.env`, `stylebite_db.sql`, `Archive.zip` etc. sit inside `public_html` (project root = docroot) and may be web-readable. Needs `.htaccess` deny rules. Check `https://stylebiteapp.com/.env`.
 3. **Test data on live:** test user id **41** (`avatartest_…@example.com`) + two test images in `public_html/users/41/avatar/`.
