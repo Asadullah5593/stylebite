@@ -56,4 +56,10 @@ return [
         'play_store_url' => env('PLAY_STORE_URL', '#'),
     ],
 
+    // ExchangeRate-API open access endpoint (no API key required).
+    // Rates powered by https://www.exchangerate-api.com
+    'exchange_rates' => [
+        'base_url' => env('EXCHANGE_RATES_BASE_URL', 'https://open.er-api.com/v6/latest'),
+    ],
+
 ];

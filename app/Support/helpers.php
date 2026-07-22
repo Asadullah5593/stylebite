@@ -49,6 +49,52 @@ if (! function_exists('stylebite_app_config')) {
     }
 }
 
+if (! function_exists('stylebite_ad_eligibility')) {
+    /**
+     * Evaluate a creator against the admin-configured ad eligibility criteria
+     * (Admin → Settings → Ads). Read-only: nothing is stored or changed.
+     *
+     * NOTE: watch hours are summed from post_views.watch_seconds, which is not
+     * populated yet — until the app starts reporting watch time, watch_hours
+     * will read 0 and no creator will meet the watch-hours criterion.
+     *
+     * @return array{
+     *     eligible:bool,
+     *     followers:int, min_followers:int, meets_followers:bool,
+     *     watch_hours:float, min_watch_hours:float, meets_watch_hours:bool
+     * }
+     */
+    function stylebite_ad_eligibility(int $userId): array
+    {
+        $minFollowers = (int) stylebite_app_config('ads.min_followers', 500);
+        $minWatchHours = (float) stylebite_app_config('ads.min_watch_hours', 1000);
+
+        $followers = (int) (\App\Models\Profile::query()
+            ->where('user_id', $userId)
+            ->value('follower_count') ?? 0);
+
+        $watchSeconds = (int) (\Illuminate\Support\Facades\DB::table('post_views')
+            ->join('posts', 'posts.id', '=', 'post_views.post_id')
+            ->where('posts.user_id', $userId)
+            ->whereNull('posts.deleted_at')
+            ->sum('post_views.watch_seconds') ?? 0);
+
+        $watchHours = round($watchSeconds / 3600, 2);
+        $meetsFollowers = $followers >= $minFollowers;
+        $meetsWatchHours = $watchHours >= $minWatchHours;
+
+        return [
+            'eligible' => $meetsFollowers && $meetsWatchHours,
+            'followers' => $followers,
+            'min_followers' => $minFollowers,
+            'meets_followers' => $meetsFollowers,
+            'watch_hours' => $watchHours,
+            'min_watch_hours' => $minWatchHours,
+            'meets_watch_hours' => $meetsWatchHours,
+        ];
+    }
+}
+
 if (! function_exists('stylebite_currency_for_country')) {
     /**
      * Map a profile's free-text country to an ISO 4217 currency code.

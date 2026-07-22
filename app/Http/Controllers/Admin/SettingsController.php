@@ -40,7 +40,9 @@ class SettingsController extends Controller
                             ->where('config_key', 'not like', 'contests.%')
                             ->where('config_key', 'not like', 'earnings.%')
                             ->where('config_key', 'not like', 'legal.%')
-                            ->where('config_key', 'not like', 'uploads.%');
+                            ->where('config_key', 'not like', 'uploads.%')
+                            ->where('config_key', 'not like', 'feed.%')
+                            ->where('config_key', 'not like', 'ads.%');
                     });
 
                     return;
@@ -62,6 +64,7 @@ class SettingsController extends Controller
             'legal' => AppConfig::query()->where('config_key', 'like', 'legal.%')->count(),
             'uploads' => AppConfig::query()->where('config_key', 'like', 'uploads.%')->count(),
             'feed' => AppConfig::query()->where('config_key', 'like', 'feed.%')->count(),
+            'ads' => AppConfig::query()->where('config_key', 'like', 'ads.%')->count(),
         ];
 
         $configGroupCounts['other'] = max(AppConfig::count() - array_sum($configGroupCounts), 0);
@@ -574,10 +577,25 @@ class SettingsController extends Controller
                     'feed.nearby_radius_km' => ['label' => 'Nearby Feed Radius (km)', 'type' => 'number', 'placeholder' => '10'],
                 ],
             ],
+            'contests' => [
+                'label' => 'Contests',
+                'fields' => [
+                    'contests.min_participants' => ['label' => 'Minimum Participants Allowed', 'type' => 'number', 'placeholder' => '2'],
+                    'contests.max_participants' => ['label' => 'Maximum Participants Allowed', 'type' => 'number', 'placeholder' => '100000'],
+                ],
+            ],
             'earnings' => [
                 'label' => 'Earnings',
                 'fields' => [
                     'earnings.default_currency_code' => ['label' => 'Default Wallet Currency (when country unknown)', 'type' => 'string', 'placeholder' => 'PKR'],
+                    'earnings.base_currency_code' => ['label' => 'Reward Base Currency (rewards are entered in this)', 'type' => 'string', 'placeholder' => 'USD'],
+                ],
+            ],
+            'ads' => [
+                'label' => 'Ads',
+                'fields' => [
+                    'ads.min_followers' => ['label' => 'Minimum Followers for Ad Eligibility', 'type' => 'number', 'placeholder' => '500'],
+                    'ads.min_watch_hours' => ['label' => 'Minimum Watch Hours for Ad Eligibility', 'type' => 'number', 'placeholder' => '1000'],
                 ],
             ],
             'legal' => [

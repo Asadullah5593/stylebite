@@ -37,11 +37,16 @@ class ContestController extends Controller
 
     public function createCityVsCity(Request $request): JsonResponse
     {
+        // Participant bounds are admin-configurable (Admin → Settings → Contests).
+        // Defaults match the previously hardcoded limits.
+        $minParticipants = max(1, (int) stylebite_app_config('contests.min_participants', 2));
+        $maxParticipants = max($minParticipants, (int) stylebite_app_config('contests.max_participants', 100000));
+
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:191'],
             'tags' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string'],
-            'max_participants' => ['nullable', 'integer', 'min:2', 'max:100000'],
+            'max_participants' => ['nullable', 'integer', 'min:'.$minParticipants, 'max:'.$maxParticipants],
             'city_one' => ['required', 'string', 'max:120', 'different:city_two'],
             'city_two' => ['required', 'string', 'max:120'],
             'enrollment_end_at' => ['required', 'date', 'after:now'],
