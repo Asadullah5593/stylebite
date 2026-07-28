@@ -13,8 +13,40 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 |---|---|---|
 | **Every minute** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan queue:work --stop-when-empty --max-time=50 --tries=3` | Processes queued jobs (image optimization) |
 | **Daily** (e.g. 01:00) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:sync-currency-rates` | Refreshes FX rates for earnings conversion |
+| **Hourly (or daily)** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:settle-ad-earnings` | Credits reel owners their accumulated ad-revenue share |
 
 Both are required. Without the daily rate sync, **admin crediting is blocked** (by design — the system never credits an unconverted amount).
+
+---
+
+## 2026-07-28 — Ads & monetization system (backend)
+
+Reel-based ads: eligible creators enable ads on their reels and earn a share of the revenue.
+
+**Settings → Ads** (all admin-editable):
+| Key | Meaning | Default |
+|---|---|---|
+| `ads.min_followers` | Followers needed to be ad-eligible | 500 |
+| `ads.min_watch_hours` | Watch hours needed to be ad-eligible | 1000 |
+| `ads.reel_owner_share_percent` | Reel owner's cut of **mid-reel** ad revenue (rest to admin) | 30 |
+| `ads.mid_reel_trigger_percent` | Watch % that triggers a mid-reel ad (app reads this) | 30 |
+| `ads.min_payout_threshold` | Minimum accrued ad revenue (base currency) before it's credited | 1 |
+
+**Ad types & split:**
+- **Scroll ads** (between reels) — platform ads, **100% admin**, not tied to any reel.
+- **Mid-reel ads** — tied to a reel, split **`reel_owner_share_percent`% to the owner / rest to admin**. Only reels whose owner has ads enabled earn; owners don't earn from ads shown to themselves.
+
+**How money flows:** the app reports AdMob paid-event revenue per impression (in USD). Impressions are stored in `ad_impressions`; the owner's share accrues as `pending`. A scheduled command converts each owner's pending total once (USD → their wallet currency, frozen via the FX system) and credits a single `ad_revenue` earning transaction — shown in the app's Ad Earnings section.
+
+**New command:** `php artisan stylebite:settle-ad-earnings` (`--dry-run` to preview)
+- Holds a single atomic lock and locks rows during crediting, so overlapping runs can't double-pay. Safe to run hourly or daily.
+
+**Money-safety:** validated by a 19-agent adversarial review; the confirmed race conditions (overlapping-run double-credit, mid-run lost credit), self-crediting, duplicate-key 500s, currency-blind revenue cap, and 0%-share orphan rows were all fixed and re-tested.
+
+> ⚠️ **Known limitations (by design — client-reported revenue):**
+> - Revenue/impressions come from the app and are inherently spoofable. The intended defense is **AdMob Reporting-API reconciliation (Phase 3, not built yet)** — pull AdMob totals server-side and flag discrepancies. Until then, trust + the per-impression cap + `impression_ref` de-dup are the only guards.
+> - Watch hours can be inflated by re-watching (each view is capped at the video duration, but view count isn't). Same reconciliation caveat.
+> - `ads_enabled` is checked at toggle time; if a creator later drops below the follower threshold, ads stay on until they toggle off (no auto-revoke yet).
 
 ---
 

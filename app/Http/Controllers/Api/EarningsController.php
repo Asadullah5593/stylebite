@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdImpression;
 use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
 use App\Models\Profile;
@@ -102,6 +103,60 @@ class EarningsController extends Controller
             'message' => 'Withdrawals fetched successfully.',
             'withdrawals' => $paginator->getCollection()
                 ->map(fn (WithdrawalRequest $withdrawal) => $this->withdrawalPayload($withdrawal))
+                ->values(),
+            'pagination' => $this->paginationPayload($paginator),
+        ]);
+    }
+
+    public function ads(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $page = (int) ($validated['page'] ?? 1);
+        $perPage = 10;
+        $user = $request->user()->loadMissing('profile');
+        $wallet = $this->walletForUser($user);
+
+        // Credited (settled) ad earnings, in the wallet's currency.
+        $lifetimeAdEarned = (float) EarningTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('source_type', 'ad_revenue')
+            ->where('transaction_type', 'credit')
+            ->sum('amount');
+
+        // Pending share not yet settled, in the impression (base) currency.
+        $pending = AdImpression::query()
+            ->where('owner_user_id', $user->id)
+            ->where('status', 'pending')
+            ->where('owner_share', '>', 0)
+            ->selectRaw('currency_code, SUM(owner_share) as total, COUNT(*) as impressions')
+            ->groupBy('currency_code')
+            ->get();
+
+        $paginator = EarningTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('source_type', 'ad_revenue')
+            ->latest('processed_at')
+            ->latest('id')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Ad earnings fetched successfully.',
+            'summary' => [
+                'currency_code' => $wallet->currency_code,
+                'lifetime_ad_earned' => round($lifetimeAdEarned, 2),
+                'ads_enabled' => (bool) ($user->profile?->ads_enabled ?? false),
+                'pending' => $pending->map(fn ($row) => [
+                    'currency_code' => $row->currency_code,
+                    'amount' => round((float) $row->total, 2),
+                    'impressions' => (int) $row->impressions,
+                ])->values(),
+            ],
+            'earnings' => $paginator->getCollection()
+                ->map(fn (EarningTransaction $transaction) => $this->earningTransactionPayload($transaction))
                 ->values(),
             'pagination' => $this->paginationPayload($paginator),
         ]);
@@ -293,6 +348,7 @@ class EarningsController extends Controller
             'contest_reward' => 'Contest Reward',
             'engagement_bonus' => 'Creator Bonus',
             'referral_bonus' => 'Referral Bonus',
+            'ad_revenue' => 'Ad Revenue',
             'withdrawal' => 'Withdrawal',
             default => 'Adjustment',
         };
@@ -304,6 +360,7 @@ class EarningsController extends Controller
             'contest_reward' => 'Contest Win',
             'engagement_bonus' => 'Engagement Reward',
             'referral_bonus' => 'Referral Reward',
+            'ad_revenue' => 'Reel Ad Revenue',
             'withdrawal' => 'Withdrawal Request',
             default => 'Balance Adjustment',
         };

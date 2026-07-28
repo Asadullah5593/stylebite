@@ -8,6 +8,65 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-07-28 — Ads & monetization (watch time, eligibility, impressions)
+
+New endpoints the app calls for the reel ad system. Revenue split is admin-configurable (no hard rule).
+
+### `POST /api/views/batch` — report watch time (required for eligibility)
+Batch it (e.g. every ~30s or 10 views), never one call per view. Drives view counts + the watch hours used for ad eligibility.
+```json
+{ "views": [ { "post_id": 123, "watch_seconds": 18, "view_source": "reel" } ] }
+```
+- Send the **viewer's** watch seconds per reel — it credits the reel's **author**. `view_source`: `feed|reel|detail|explore|profile` (optional, default `reel`).
+- Server caps each `watch_seconds` at the video's duration, so don't worry about over-reporting. Response: `{ recorded, skipped }`.
+- Per-item hard limit: `watch_seconds` ≤ 86400. Unknown/deleted `post_id` is skipped (not an error).
+
+### `GET /api/ads/eligibility` — read eligibility + config
+```json
+{ "status_code": 1, "data": {
+  "eligible": false,
+  "followers": 320, "min_followers": 500, "meets_followers": false,
+  "watch_hours": 640.5, "min_watch_hours": 1000, "meets_watch_hours": false,
+  "ads_enabled": false,
+  "config": { "reel_owner_share_percent": 30, "mid_reel_trigger_percent": 30 }
+} }
+```
+Use `config.mid_reel_trigger_percent` as the watch-% that triggers a mid-reel ad (don't hardcode it).
+
+### `POST /api/ads/toggle` — enable/disable ads on the creator's reels
+```json
+{ "enabled": true }
+```
+Only show the switch when `eligibility.eligible` is true. Enabling while ineligible → `422`. Response: `{ ads_enabled }`.
+
+### `POST /api/ads/impressions` — report ad impressions + revenue
+```json
+{ "impressions": [
+  { "ad_type": "scroll",   "revenue": 0.0123, "currency": "USD", "impression_ref": "<admob-impression-id>" },
+  { "ad_type": "mid_reel", "post_id": 123, "revenue": 0.02, "currency": "USD", "ad_unit_id": "ca-app-pub-…", "impression_ref": "<admob-impression-id>" }
+] }
+```
+- `ad_type`: **`scroll`** (platform ad, 100% admin — no `post_id`) or **`mid_reel`** (tied to a reel, split with its owner). `post_id` is **required for `mid_reel`**.
+- `revenue`: use AdMob's **paid-event (impression-level) revenue** (`OnPaidEvent` / `paidEventHandler`); `currency` = the AdMob account currency (default USD).
+- **Always send a unique `impression_ref`** (AdMob impression id or a per-ad UUID). It de-dupes retries — without it, retried batches double-count.
+- Response: `{ accepted, duplicates, rejected }`. Owners aren't credited for ads shown to themselves.
+
+### `GET /api/earnings/ads` — the Ad Earnings section
+```json
+{ "summary": {
+    "currency_code": "PKR", "lifetime_ad_earned": 83.45, "ads_enabled": true,
+    "pending": [ { "currency_code": "USD", "amount": 0.30, "impressions": 5 } ]
+  },
+  "earnings": [ /* ad_revenue transactions, wallet currency */ ],
+  "pagination": { … }
+}
+```
+Amounts come back in the creator's wallet currency (already converted). `pending` is revenue earned but not yet paid out (settled on a schedule).
+
+**Client-side (your side, no backend involvement):** scroll-ad placement, the mid-reel `mid_reel_trigger_percent` → timer → ad trigger, AdMob consent (UMP/GDPR) and store policy.
+
+---
+
 ## 2026-07-17 — Earnings currency is now per-country and properly converted
 
 **Affects:** `GET /profile/me`, `GET /earnings/*`

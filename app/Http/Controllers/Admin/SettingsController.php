@@ -596,6 +596,9 @@ class SettingsController extends Controller
                 'fields' => [
                     'ads.min_followers' => ['label' => 'Minimum Followers for Ad Eligibility', 'type' => 'number', 'placeholder' => '500'],
                     'ads.min_watch_hours' => ['label' => 'Minimum Watch Hours for Ad Eligibility', 'type' => 'number', 'placeholder' => '1000'],
+                    'ads.reel_owner_share_percent' => ['label' => 'Reel Owner Revenue Share % (mid-reel ads)', 'type' => 'number', 'placeholder' => '30'],
+                    'ads.mid_reel_trigger_percent' => ['label' => 'Mid-Reel Ad Trigger (watch %)', 'type' => 'number', 'placeholder' => '30'],
+                    'ads.min_payout_threshold' => ['label' => 'Minimum Ad Payout Before Crediting (base currency)', 'type' => 'number', 'placeholder' => '1'],
                 ],
             ],
             'legal' => [

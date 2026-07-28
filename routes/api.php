@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\ContestController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\UserBlockController;
 use App\Http\Controllers\Api\UserSearchController;
+use App\Http\Controllers\Api\ViewController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function (): void {
@@ -30,6 +32,13 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/earnings/breakdowns', [EarningsController::class, 'breakdowns']);
     Route::get('/earnings/withdrawals', [EarningsController::class, 'withdrawals']);
     Route::post('/earnings/withdrawals', [EarningsController::class, 'storeWithdrawal']);
+    Route::get('/earnings/ads', [EarningsController::class, 'ads']);
+
+    // Views + Ads / monetization
+    Route::post('/views/batch', [ViewController::class, 'batch']);
+    Route::get('/ads/eligibility', [AdController::class, 'eligibility']);
+    Route::post('/ads/toggle', [AdController::class, 'toggle']);
+    Route::post('/ads/impressions', [AdController::class, 'impressions']);
     Route::get('/feed/posts/{postId}', [FeedController::class, 'show']);
     Route::get('/feed/posts/{postId}/comments', [FeedController::class, 'comments']);
     Route::post('/feed/posts/{postId}/like', [FeedController::class, 'toggleLike']);
