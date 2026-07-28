@@ -10,8 +10,16 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ## 2026-07-28 — Signup email OTP + `show_ad` on reels
 
-### Signup now verifies email with a 6-digit OTP (not a link)
-`POST /auth/register` now emails a **6-digit code** instead of a verification link. Two new endpoints:
+### Signup now verifies email with a 6-digit OTP (not a link) ⚠️ flow change
+`POST /auth/register` now emails a **6-digit code** instead of a verification link.
+
+**The account is not usable until the email is verified:**
+- `register` **no longer returns an `access_token`** — it returns `{ requires_verification: true, user }`. Send the user to the OTP screen.
+- **`verify-email-otp` returns the `access_token`** on success (auto-login). That's where you get the token now.
+- `login` before verifying → **`403`** `{ requires_verification: true, email }` — route to the OTP screen and call `resend-email-otp`.
+- (Existing already-active accounts are unaffected — only new signups require verification. Google/Apple logins are pre-verified.)
+
+Two new endpoints:
 
 **`POST /auth/verify-email-otp`**
 ```json
@@ -30,6 +38,9 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ### Reels/feed items now include `show_ad`
 Each item in `GET /feed/home` and `GET /reels` now has **`show_ad`** (boolean) — `true` when that reel's creator is ad-eligible (monetized). Use it to decide whether to run a mid-reel ad on the reel. Scroll ads (between reels) are unaffected — those are your own placement.
+
+### `GET /reels` no longer returns the viewer's own reels
+Own reels are now excluded from the reels feed (matching `/feed/home`). Use the profile endpoints to show a user their own reels.
 
 > Note: if the API docs (`/docs/api`) look out of date, it's a **deploy lag** — Scramble regenerates them from the live code. After the backend deploys, the new endpoints appear.
 

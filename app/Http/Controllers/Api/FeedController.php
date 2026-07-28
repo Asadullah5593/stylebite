@@ -1013,7 +1013,7 @@ class FeedController extends Controller
             ])
             ->where('post_type', $requestedType)
             ->when($videoOnly, fn (Builder $query) => $query->whereHas('media', fn (Builder $media) => $media->where('media_type', 'video')))
-            ->when(! $videoOnly, fn (Builder $query) => $query->where('user_id', '!=', $user->id))
+            ->where('user_id', '!=', $user->id)
             ->tap(fn (Builder $query) => $this->applyFeedVisibilityScope($query, $user->id))
             ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $user->id));
 

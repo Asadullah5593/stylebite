@@ -66,6 +66,8 @@ class AuthController extends Controller
                     : $this->generateUniqueUsername($validated['name'], $validated['email']),
                 'password_hash' => Hash::make($validated['password']),
                 'full_name' => $validated['name'],
+                // Account stays inactive until the emailed OTP is verified.
+                'status' => 'inactive',
                 'locale' => 'en',
                 'timezone' => config('app.timezone', 'UTC'),
             ]);
@@ -85,16 +87,16 @@ class AuthController extends Controller
 
         $this->storeRegistrationAvatar($user, $request);
 
-        $session = $this->createSession($user, $request);
+        // No session/token yet — the account is not usable until the email is
+        // verified. The client should go to the OTP screen; verify-email-otp
+        // returns the access token on success.
         $this->sendVerificationEmail($user);
 
         return response()->json([
             'status_code' => 1,
-            'message' => 'Registration successful.',
-            'token_type' => 'Bearer',
-            'access_token' => $session['plain_text_token'],
-            'bearer_token' => 'Bearer '.$session['plain_text_token'],
-            'user' => $this->userPayload($session['user']),
+            'message' => 'Registration successful. Please verify your email with the 6-digit code we just sent.',
+            'requires_verification' => true,
+            'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
         ], 201);
     }
 
@@ -165,6 +167,16 @@ class AuthController extends Controller
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
+        }
+
+        // Unverified accounts can't log in — tell the client to run the OTP flow.
+        if ($user->email_verified_at === null && $user->status === 'inactive') {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'Please verify your email to continue. We can resend a code to your inbox.',
+                'requires_verification' => true,
+                'email' => $user->email,
+            ], Response::HTTP_FORBIDDEN);
         }
 
         if ($user->status !== 'active') {
@@ -372,10 +384,16 @@ class AuthController extends Controller
             ])->save();
         });
 
+        // Verification activates the account — log the user in and return a token.
+        $session = $this->createSession($user->fresh(), $request);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Email verified successfully.',
-            'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
+            'token_type' => 'Bearer',
+            'access_token' => $session['plain_text_token'],
+            'bearer_token' => 'Bearer '.$session['plain_text_token'],
+            'user' => $this->userPayload($session['user']),
         ]);
     }
 
