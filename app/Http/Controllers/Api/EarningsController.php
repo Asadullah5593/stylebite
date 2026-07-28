@@ -148,7 +148,7 @@ class EarningsController extends Controller
             'summary' => [
                 'currency_code' => $wallet->currency_code,
                 'lifetime_ad_earned' => round($lifetimeAdEarned, 2),
-                'ads_enabled' => (bool) ($user->profile?->ads_enabled ?? false),
+                'eligible' => (bool) stylebite_ad_eligibility($user->id)['eligible'],
                 'pending' => $pending->map(fn ($row) => [
                     'currency_code' => $row->currency_code,
                     'amount' => round((float) $row->total, 2),

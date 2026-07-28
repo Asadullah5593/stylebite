@@ -9,7 +9,6 @@ use App\Services\CurrencyConverter;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\Response;
 
 class AdController extends Controller
 {
@@ -18,19 +17,18 @@ class AdController extends Controller
     private const MAX_REVENUE_PER_IMPRESSION = 10.0;
 
     /**
-     * Ad eligibility + current ads toggle + the config the app needs to render
-     * the monetization screen and trigger mid-reel ads.
+     * Ad eligibility + the config the app needs to render the monetization
+     * screen and trigger mid-reel ads. Once `eligible` is true the creator
+     * earns automatically — there is no opt-in switch.
      */
     public function eligibility(Request $request): JsonResponse
     {
-        $user = $request->user()->loadMissing('profile');
-        $eligibility = stylebite_ad_eligibility($user->id);
+        $eligibility = stylebite_ad_eligibility($request->user()->id);
 
         return response()->json([
             'status_code' => 1,
             'message' => 'Ad eligibility fetched successfully.',
             'data' => array_merge($eligibility, [
-                'ads_enabled' => (bool) ($user->profile?->ads_enabled ?? false),
                 'config' => [
                     'reel_owner_share_percent' => (float) stylebite_app_config('ads.reel_owner_share_percent', 30),
                     'mid_reel_trigger_percent' => (float) stylebite_app_config('ads.mid_reel_trigger_percent', 30),
@@ -40,49 +38,11 @@ class AdController extends Controller
     }
 
     /**
-     * Turn ads on/off for the creator's reels. Enabling requires meeting the
-     * eligibility criteria; disabling is always allowed.
-     */
-    public function toggle(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'enabled' => ['required', 'boolean'],
-        ]);
-
-        $user = $request->user();
-        $enabled = (bool) $validated['enabled'];
-
-        if ($enabled) {
-            $eligibility = stylebite_ad_eligibility($user->id);
-
-            if (! $eligibility['eligible']) {
-                return response()->json([
-                    'status_code' => 0,
-                    'message' => 'You do not meet the ad eligibility criteria yet.',
-                    'data' => $eligibility,
-                ], Response::HTTP_UNPROCESSABLE_ENTITY);
-            }
-        }
-
-        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
-        $profile->forceFill([
-            'ads_enabled' => $enabled,
-            'ads_enabled_at' => $enabled ? now() : $profile->ads_enabled_at,
-        ])->save();
-
-        return response()->json([
-            'status_code' => 1,
-            'message' => $enabled ? 'Ads enabled on your reels.' : 'Ads disabled on your reels.',
-            'ads_enabled' => $enabled,
-        ]);
-    }
-
-    /**
      * Ingest ad impressions with their AdMob paid-event revenue. Scroll ads are
      * 100% platform (admin). Mid-reel ads are tied to a reel and split with its
-     * owner (when the owner has ads enabled) at the admin-configured percentage.
-     * Impressions are stored 'pending'; a scheduled command credits owners in
-     * batches. De-dup is by impression_ref; absurd revenue is rejected.
+     * owner at the admin-configured percentage — but only when the owner is
+     * currently ad-eligible. Impressions are stored 'pending'; a scheduled
+     * command credits owners in batches. De-dup is by impression_ref.
      */
     public function impressions(Request $request, CurrencyConverter $converter): JsonResponse
     {
@@ -102,7 +62,7 @@ class AdController extends Controller
         $baseCurrency = $converter->baseCurrency();
         $sharePercent = max(0, min(100, (float) stylebite_app_config('ads.reel_owner_share_percent', 30)));
 
-        // Resolve reel owners (only reels with ads enabled earn a share).
+        // Resolve reel owners for the mid_reel impressions in this batch.
         $postIds = collect($validated['impressions'])
             ->where('ad_type', 'mid_reel')
             ->pluck('post_id')
@@ -112,9 +72,16 @@ class AdController extends Controller
 
         $owners = Post::query()
             ->whereIn('id', $postIds)
-            ->with('user.profile:user_id,ads_enabled')
-            ->get()
+            ->get(['id', 'user_id'])
             ->keyBy('id');
+
+        // A reel earns only if its owner is currently ad-eligible. Compute
+        // eligibility once per distinct owner in this batch (not per impression).
+        $ownerEligibility = collect($owners)
+            ->pluck('user_id')
+            ->unique()
+            ->reject(fn ($ownerId) => (int) $ownerId === $viewerId)
+            ->mapWithKeys(fn ($ownerId) => [(int) $ownerId => stylebite_ad_eligibility((int) $ownerId)['eligible']]);
 
         // Skip refs we've already recorded (idempotent retries).
         $refs = collect($validated['impressions'])->pluck('impression_ref')->filter()->unique()->all();
@@ -160,18 +127,18 @@ class AdController extends Controller
 
             if ($imp['ad_type'] === 'mid_reel') {
                 $post = $owners->get((int) $imp['post_id']);
-                $ownerEnabled = (bool) ($post?->user?->profile?->ads_enabled ?? false);
+                $postOwnerId = $post ? (int) $post->user_id : null;
 
-                // Owners don't earn from ads shown to themselves.
-                if ($post && $ownerEnabled && (int) $post->user_id !== $viewerId) {
-                    $ownerUserId = (int) $post->user_id;
+                // Owner earns only if eligible and it's not their own view.
+                if ($postOwnerId !== null && $postOwnerId !== $viewerId && ($ownerEligibility->get($postOwnerId) === true)) {
+                    $ownerUserId = $postOwnerId;
                     $appliedPercent = $sharePercent;
                     $ownerShare = round($revenue * $sharePercent / 100, 8);
                 }
             }
 
             // Only rows with a real owner share need settling later; everything
-            // else (scroll, ads-off owner, self-view, 0% share) is final now.
+            // else (scroll, ineligible/self owner, 0% share) is final now.
             $status = ($ownerUserId !== null && $ownerShare > 0) ? 'pending' : 'settled';
 
             if ($this->storeImpression($imp, $viewerId, $ownerUserId, $appliedPercent, $ownerShare, $revenue, $currency, $status)) {

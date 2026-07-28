@@ -34,7 +34,7 @@ Reel-based ads: eligible creators enable ads on their reels and earn a share of 
 
 **Ad types & split:**
 - **Scroll ads** (between reels) — platform ads, **100% admin**, not tied to any reel.
-- **Mid-reel ads** — tied to a reel, split **`reel_owner_share_percent`% to the owner / rest to admin**. Only reels whose owner has ads enabled earn; owners don't earn from ads shown to themselves.
+- **Mid-reel ads** — tied to a reel, split **`reel_owner_share_percent`% to the owner / rest to admin**. **A creator earns automatically once eligible — there is no opt-in switch.** Ineligible owners (or an owner viewing their own reel) earn nothing → 100% admin. Eligibility is evaluated per reel owner when impressions are ingested.
 
 **How money flows:** the app reports AdMob paid-event revenue per impression (in USD). Impressions are stored in `ad_impressions`; the owner's share accrues as `pending`. A scheduled command converts each owner's pending total once (USD → their wallet currency, frozen via the FX system) and credits a single `ad_revenue` earning transaction — shown in the app's Ad Earnings section.
 
@@ -46,7 +46,7 @@ Reel-based ads: eligible creators enable ads on their reels and earn a share of 
 > ⚠️ **Known limitations (by design — client-reported revenue):**
 > - Revenue/impressions come from the app and are inherently spoofable. The intended defense is **AdMob Reporting-API reconciliation (Phase 3, not built yet)** — pull AdMob totals server-side and flag discrepancies. Until then, trust + the per-impression cap + `impression_ref` de-dup are the only guards.
 > - Watch hours can be inflated by re-watching (each view is capped at the video duration, but view count isn't). Same reconciliation caveat.
-> - `ads_enabled` is checked at toggle time; if a creator later drops below the follower threshold, ads stay on until they toggle off (no auto-revoke yet).
+> - Eligibility is computed live on the impressions path (per distinct reel owner in a batch). At large scale this watch-hours aggregate should be cached / materialized rather than recomputed per batch.
 
 ---
 

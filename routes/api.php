@@ -37,7 +37,6 @@ Route::middleware('session.auth')->group(function (): void {
     // Views + Ads / monetization
     Route::post('/views/batch', [ViewController::class, 'batch']);
     Route::get('/ads/eligibility', [AdController::class, 'eligibility']);
-    Route::post('/ads/toggle', [AdController::class, 'toggle']);
     Route::post('/ads/impressions', [AdController::class, 'impressions']);
     Route::get('/feed/posts/{postId}', [FeedController::class, 'show']);
     Route::get('/feed/posts/{postId}/comments', [FeedController::class, 'comments']);
