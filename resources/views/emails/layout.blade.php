@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ config('app.name', 'Stylebite') }}</title>
+    <title>Stylebite</title>
 </head>
 <body style="margin:0; padding:0; background-color:#f5f7fb; font-family:Arial, Helvetica, sans-serif; color:#1f2937;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f5f7fb; padding:32px 16px;">
@@ -24,7 +24,7 @@
                     <tr>
                         <td style="padding:24px 32px; background-color:#fff8f3; border-top:1px solid #fde7db;">
                             <p style="margin:0; font-size:13px; line-height:1.6; color:#6b7280;">
-                                You received this email from {{ config('app.name', 'Stylebite') }}.
+                                You received this email from Stylebite.
                                 If you did not expect it, you can safely ignore this message.
                             </p>
                         </td>

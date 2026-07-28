@@ -18,6 +18,7 @@ class GlobalAppMail extends Mailable
         public string $contentText,
         public ?string $actionText = null,
         public ?string $actionUrl = null,
+        public ?string $highlightCode = null,
     ) {
     }
 
@@ -37,6 +38,7 @@ class GlobalAppMail extends Mailable
                 'contentText' => $this->contentText,
                 'actionText' => $this->actionText,
                 'actionUrl' => $this->actionUrl,
+                'highlightCode' => $this->highlightCode,
             ],
         );
     }

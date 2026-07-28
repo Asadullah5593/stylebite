@@ -173,10 +173,11 @@ if (! function_exists('stylebite_send_email')) {
         string $heading,
         string $content,
         ?string $actionText = null,
-        ?string $actionUrl = null
+        ?string $actionUrl = null,
+        ?string $highlightCode = null
     ): void {
         Mail::to($toEmail, $toName)->send(
-            new GlobalAppMail($subject, $heading, $content, $actionText, $actionUrl)
+            new GlobalAppMail($subject, $heading, $content, $actionText, $actionUrl, $highlightCode)
         );
     }
 }

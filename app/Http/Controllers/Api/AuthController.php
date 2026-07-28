@@ -138,7 +138,8 @@ class AuthController extends Controller
                 $user->full_name ?? $user->username,
                 'Your Stylebite password reset code',
                 'Password reset request',
-                "We received a request to reset your Stylebite password.\n\nYour 6-digit reset code is: {$code}\n\nThis code will expire in 15 minutes."
+                "We received a request to reset your Stylebite password.\n\nEnter this 6-digit code to reset your password. It expires in 15 minutes.\n\nIf you didn't request this, you can safely ignore this email.",
+                highlightCode: $code
             );
         }
 
@@ -725,7 +726,8 @@ class AuthController extends Controller
             $user->full_name ?? $user->username,
             'Your Stylebite verification code',
             'Verify your email',
-            "Thanks for registering with Stylebite.\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in ".self::OTP_EXPIRY_MINUTES." minutes. If you didn't create this account, you can ignore this email."
+            "Thanks for registering with Stylebite.\n\nEnter this 6-digit code to verify your email. It expires in ".self::OTP_EXPIRY_MINUTES." minutes.\n\nIf you didn't create this account, you can safely ignore this email.",
+            highlightCode: $code
         );
     }
 

@@ -7,6 +7,12 @@
         {!! nl2br(e($contentText)) !!}
     </div>
 
+    @if (! empty($highlightCode))
+        <div style="margin:24px 0; text-align:center;">
+            <span style="display:inline-block; background-color:#fff4f0; border:1px solid #ffd9cc; border-radius:12px; padding:18px 32px; font-size:36px; font-weight:800; letter-spacing:10px; color:#111827; font-family:'Courier New', Courier, monospace;">{{ $highlightCode }}</span>
+        </div>
+    @endif
+
     @if ($actionText && $actionUrl)
         <div style="margin-top:28px;">
             <a href="{{ $actionUrl }}" style="display:inline-block; background-color:#ff7a59; color:#ffffff; text-decoration:none; padding:14px 22px; border-radius:10px; font-weight:700;">
