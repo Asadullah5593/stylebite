@@ -21,9 +21,11 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/google-login', [AuthController::class, 'googleLogin']);
     Route::post('/apple-login', [AuthController::class, 'appleLogin']);
-    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:6,1');
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     Route::get('/verify-email/{id}/{token}', [AuthController::class, 'verifyEmail'])->name('auth.verify-email');
+    Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp'])->middleware('throttle:10,1');
+    Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp'])->middleware('throttle:6,1');
 });
 
 Route::middleware('session.auth')->group(function (): void {

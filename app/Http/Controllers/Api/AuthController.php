@@ -18,13 +18,19 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
 {
+    private const OTP_EXPIRY_MINUTES = 15;
+
+    private const OTP_MAX_ATTEMPTS = 5;
+
+    private const OTP_RESEND_COOLDOWN_SECONDS = 60;
+
     /**
      * @requestMediaType multipart/form-data
      */
@@ -100,7 +106,14 @@ class AuthController extends Controller
 
         $user = User::query()->where('email', Str::lower($validated['email']))->first();
 
-        if ($user) {
+        // Cooldown: if a code was sent very recently, don't send another (also
+        // avoids revealing whether the account exists — the response is generic).
+        $recentlySent = $user && PasswordReset::query()
+            ->where('user_id', $user->id)
+            ->where('created_at', '>', now()->subSeconds(self::OTP_RESEND_COOLDOWN_SECONDS))
+            ->exists();
+
+        if ($user && ! $recentlySent) {
             $code = $this->generateNumericCode();
 
             PasswordReset::query()
@@ -115,6 +128,7 @@ class AuthController extends Controller
                 'expires_at' => now()->addMinutes(15),
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent() ? Str::limit($request->userAgent(), 255, '') : null,
+                'created_at' => now(),
             ]);
 
             stylebite_send_email(
@@ -292,6 +306,117 @@ class AuthController extends Controller
             'status_code' => 1,
             'message' => 'Email verified successfully.',
             'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
+        ]);
+    }
+
+    #[BodyParameter('email', required: true, type: 'string', example: 'user@example.com')]
+    #[BodyParameter('code', description: '6-digit code sent to the email.', required: true, type: 'string', example: '123456')]
+    public function verifyEmailOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+            'code' => ['required', 'digits:6'],
+        ], $this->otpValidationMessages());
+
+        $user = User::query()->where('email', Str::lower($validated['email']))->first();
+
+        if (! $user) {
+            throw ValidationException::withMessages([
+                'email' => ['No account was found for this email address.'],
+            ]);
+        }
+
+        if ($user->email_verified_at !== null) {
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'Email is already verified.',
+                'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
+            ]);
+        }
+
+        $verification = EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->latest('id')
+            ->first();
+
+        if (! $verification) {
+            throw ValidationException::withMessages([
+                'code' => ['The verification code is invalid or has expired. Please request a new one.'],
+            ]);
+        }
+
+        if ($verification->attempts >= self::OTP_MAX_ATTEMPTS) {
+            throw ValidationException::withMessages([
+                'code' => ['Too many incorrect attempts. Please request a new code.'],
+            ]);
+        }
+
+        if (! Hash::check($validated['code'], $verification->token_hash)) {
+            $verification->increment('attempts');
+
+            throw ValidationException::withMessages([
+                'code' => ['The verification code is incorrect.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($user, $verification): void {
+            $user->forceFill([
+                'email_verified_at' => now(),
+                'status' => $user->status === 'inactive' ? 'active' : $user->status,
+            ])->save();
+
+            $verification->forceFill([
+                'verified_at' => now(),
+            ])->save();
+        });
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Email verified successfully.',
+            'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
+        ]);
+    }
+
+    #[BodyParameter('email', required: true, type: 'string', example: 'user@example.com')]
+    public function resendEmailOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+        ], $this->otpValidationMessages());
+
+        $user = User::query()->where('email', Str::lower($validated['email']))->first();
+
+        // Don't reveal whether an account exists or is already verified.
+        if (! $user || $user->email_verified_at !== null) {
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'If your email needs verification, a new code has been sent.',
+            ]);
+        }
+
+        $last = EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->latest('id')
+            ->first();
+
+        if ($last && $last->created_at && $last->created_at->gt(now()->subSeconds(self::OTP_RESEND_COOLDOWN_SECONDS))) {
+            $elapsed = (int) $last->created_at->diffInSeconds(now(), true);
+            $wait = max(1, self::OTP_RESEND_COOLDOWN_SECONDS - $elapsed);
+
+            return response()->json([
+                'status_code' => 0,
+                'message' => "Please wait {$wait} seconds before requesting another code.",
+                'retry_after' => $wait,
+            ], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
+        $this->sendVerificationEmail($user);
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'A new verification code has been sent to your email.',
         ]);
     }
 
@@ -567,32 +692,22 @@ class AuthController extends Controller
             ->whereNull('verified_at')
             ->delete();
 
-        $plainTextToken = Str::random(64);
+        $code = $this->generateNumericCode();
 
         EmailVerificationToken::create([
             'user_id' => $user->id,
             'email' => $user->email,
-            'token_hash' => hash('sha256', $plainTextToken),
-            'expires_at' => now()->addHours(24),
+            'token_hash' => Hash::make($code),
+            'expires_at' => now()->addMinutes(self::OTP_EXPIRY_MINUTES),
+            'created_at' => now(),
         ]);
-
-        $verificationUrl = URL::temporarySignedRoute(
-            'auth.verify-email',
-            now()->addHours(24),
-            [
-                'id' => $user->id,
-                'token' => $plainTextToken,
-            ]
-        );
 
         stylebite_send_email(
             $user->email,
             $user->full_name ?? $user->username,
-            'Verify your Stylebite account',
-            'Welcome to Stylebite',
-            "Thanks for registering with Stylebite.\n\nPlease verify your email address by clicking the button below. This verification link will expire in 24 hours.",
-            'Verify Email',
-            $verificationUrl
+            'Your Stylebite verification code',
+            'Verify your email',
+            "Thanks for registering with Stylebite.\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in ".self::OTP_EXPIRY_MINUTES." minutes. If you didn't create this account, you can ignore this email."
         );
     }
 
@@ -699,6 +814,16 @@ class AuthController extends Controller
             'device_id' => 'device ID',
             'push_token' => 'push token',
             'app_version' => 'app version',
+        ];
+    }
+
+    private function otpValidationMessages(): array
+    {
+        return [
+            'email.required' => 'Please enter your email address.',
+            'email.email' => 'Please enter a valid email address.',
+            'code.required' => 'Please enter the 6-digit verification code.',
+            'code.digits' => 'The verification code must be 6 digits.',
         ];
     }
 }

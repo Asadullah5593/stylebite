@@ -8,6 +8,33 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-07-28 — Signup email OTP + `show_ad` on reels
+
+### Signup now verifies email with a 6-digit OTP (not a link)
+`POST /auth/register` now emails a **6-digit code** instead of a verification link. Two new endpoints:
+
+**`POST /auth/verify-email-otp`**
+```json
+{ "email": "user@example.com", "code": "123456" }
+```
+- Success → email marked verified, returns the `user` payload. Wrong code → `422` "The verification code is incorrect."
+- Code expires in **15 min**; **5 wrong attempts** locks that code (request a new one → `422`). Already-verified → friendly `200`.
+
+**`POST /auth/resend-email-otp`**
+```json
+{ "email": "user@example.com" }
+```
+- **60-second cooldown**: too soon → `429` with `retry_after` (seconds). Response is generic (doesn't reveal whether the account exists). Register already sends the first code, so a resend right after signup is on cooldown.
+
+**Forgot password** already uses a 6-digit OTP (`/auth/forgot-password` → `/auth/reset-password` with `code`); it now has the same 60-second cooldown. All three OTP endpoints are rate-limited.
+
+### Reels/feed items now include `show_ad`
+Each item in `GET /feed/home` and `GET /reels` now has **`show_ad`** (boolean) — `true` when that reel's creator is ad-eligible (monetized). Use it to decide whether to run a mid-reel ad on the reel. Scroll ads (between reels) are unaffected — those are your own placement.
+
+> Note: if the API docs (`/docs/api`) look out of date, it's a **deploy lag** — Scramble regenerates them from the live code. After the backend deploys, the new endpoints appear.
+
+---
+
 ## 2026-07-28 — Ads & monetization (watch time, eligibility, impressions)
 
 New endpoints the app calls for the reel ad system. Revenue split is admin-configurable (no hard rule).

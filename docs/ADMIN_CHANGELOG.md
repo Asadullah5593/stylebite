@@ -14,8 +14,18 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 | **Every minute** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan queue:work --stop-when-empty --max-time=50 --tries=3` | Processes queued jobs (image optimization) |
 | **Daily** (e.g. 01:00) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:sync-currency-rates` | Refreshes FX rates for earnings conversion |
 | **Hourly (or daily)** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:settle-ad-earnings` | Credits reel owners their accumulated ad-revenue share |
+| **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-ad-eligibility` | Refreshes the cached ad-eligibility flag driving reel `show_ad` + earning |
 
 Both are required. Without the daily rate sync, **admin crediting is blocked** (by design — the system never credits an unconverted amount).
+
+---
+
+## 2026-07-28 — Signup OTP, `show_ad`, and an eligibility-cache flag
+
+- **Signup email verification is now a 6-digit OTP** (was a magic link): 15-min expiry, 5-attempt lockout per code, 60-second resend cooldown, rate-limited endpoints. Forgot-password (already OTP) got the same cooldown.
+- **`show_ad`** added to each reels/feed item — true when the reel owner is ad-eligible. Backed by a cached `profiles.ad_eligible` flag so the hot feed path doesn't recompute watch hours per request.
+- New command **`stylebite:refresh-ad-eligibility`** (cron, hourly) keeps that flag current; the `/ads/eligibility` endpoint also refreshes a creator's own flag when they open the monetization screen. The impressions revenue split now reads this cached flag.
+- Fixed a timezone skew (DB `useCurrent()` vs app `now()`) that would have broken the OTP/reset cooldown timing.
 
 ---
 

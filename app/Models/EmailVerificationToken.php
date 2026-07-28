@@ -11,6 +11,7 @@ class EmailVerificationToken extends StylebiteModel
     protected function casts(): array
     {
         return [
+            'attempts' => 'integer',
             'expires_at' => 'datetime',
             'verified_at' => 'datetime',
             'created_at' => 'datetime',

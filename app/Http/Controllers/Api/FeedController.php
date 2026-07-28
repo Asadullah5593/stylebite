@@ -822,6 +822,8 @@ class FeedController extends Controller
             'primary_media_type' => $primaryMedia?->media_type,
             'media_count' => $media->count(),
             'has_multiple_media' => $media->count() > 1,
+            // Show an ad on this reel when its owner is ad-eligible (monetized).
+            'show_ad' => (bool) ($profile?->ad_eligible ?? false),
             'engagement' => [
                 'like_count' => (int) $post->like_count,
                 'comment_count' => (int) $post->comment_count,

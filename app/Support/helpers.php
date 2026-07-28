@@ -95,6 +95,29 @@ if (! function_exists('stylebite_ad_eligibility')) {
     }
 }
 
+if (! function_exists('stylebite_refresh_ad_eligibility')) {
+    /**
+     * Compute ad eligibility AND cache the result on the profile
+     * (profiles.ad_eligible). The feed and impressions path read that cheap
+     * boolean instead of recomputing the watch-hours aggregate every time.
+     * Returns the full eligibility breakdown.
+     */
+    function stylebite_refresh_ad_eligibility(int $userId): array
+    {
+        $eligibility = stylebite_ad_eligibility($userId);
+
+        $profile = \App\Models\Profile::query()->firstOrNew(['user_id' => $userId]);
+
+        if ((bool) $profile->ad_eligible !== $eligibility['eligible']) {
+            $profile->ad_eligible = $eligibility['eligible'];
+            $profile->ad_eligible_at = $eligibility['eligible'] ? now() : null;
+            $profile->save();
+        }
+
+        return $eligibility;
+    }
+}
+
 if (! function_exists('stylebite_currency_for_country')) {
     /**
      * Map a profile's free-text country to an ISO 4217 currency code.

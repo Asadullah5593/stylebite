@@ -23,7 +23,9 @@ class AdController extends Controller
      */
     public function eligibility(Request $request): JsonResponse
     {
-        $eligibility = stylebite_ad_eligibility($request->user()->id);
+        // Compute + cache the flag so the creator's reels immediately reflect
+        // show_ad / earning once they cross the threshold.
+        $eligibility = stylebite_refresh_ad_eligibility($request->user()->id);
 
         return response()->json([
             'status_code' => 1,
@@ -70,18 +72,13 @@ class AdController extends Controller
             ->unique()
             ->all();
 
+        // A reel earns only if its owner is currently ad-eligible — read the
+        // cached flag (kept fresh by the eligibility endpoint + refresh cron).
         $owners = Post::query()
             ->whereIn('id', $postIds)
+            ->with('user.profile:user_id,ad_eligible')
             ->get(['id', 'user_id'])
             ->keyBy('id');
-
-        // A reel earns only if its owner is currently ad-eligible. Compute
-        // eligibility once per distinct owner in this batch (not per impression).
-        $ownerEligibility = collect($owners)
-            ->pluck('user_id')
-            ->unique()
-            ->reject(fn ($ownerId) => (int) $ownerId === $viewerId)
-            ->mapWithKeys(fn ($ownerId) => [(int) $ownerId => stylebite_ad_eligibility((int) $ownerId)['eligible']]);
 
         // Skip refs we've already recorded (idempotent retries).
         $refs = collect($validated['impressions'])->pluck('impression_ref')->filter()->unique()->all();
@@ -128,9 +125,10 @@ class AdController extends Controller
             if ($imp['ad_type'] === 'mid_reel') {
                 $post = $owners->get((int) $imp['post_id']);
                 $postOwnerId = $post ? (int) $post->user_id : null;
+                $ownerEligible = (bool) ($post?->user?->profile?->ad_eligible ?? false);
 
                 // Owner earns only if eligible and it's not their own view.
-                if ($postOwnerId !== null && $postOwnerId !== $viewerId && ($ownerEligibility->get($postOwnerId) === true)) {
+                if ($postOwnerId !== null && $postOwnerId !== $viewerId && $ownerEligible) {
                     $ownerUserId = $postOwnerId;
                     $appliedPercent = $sharePercent;
                     $ownerShare = round($revenue * $sharePercent / 100, 8);
