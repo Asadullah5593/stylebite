@@ -8,12 +8,15 @@ use App\Models\PasswordReset;
 use App\Models\Profile;
 use App\Models\ProfileBadge;
 use App\Models\ActivityLog;
+use App\Models\StreakGraceDay;
 use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSetting;
 use App\Models\UserSession;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -340,6 +343,112 @@ class UserController extends Controller
         ]);
 
         return back()->with('status', "Password reset #{$passwordReset->id} expired successfully.");
+    }
+
+    /**
+     * Give a user back a streak they lost.
+     *
+     * Rather than writing a streak number — which the next recomputation would
+     * overwrite — this credits the days they actually missed. The engine then
+     * arrives at the restored streak on its own and keeps doing so afterwards.
+     *
+     * Capped two ways: a lifetime quota of restores per user, and a maximum gap
+     * that a single restore may bridge, so a user who stopped posting months ago
+     * cannot be handed a months-long streak with one click.
+     */
+    public function restoreStreak(User $user): RedirectResponse
+    {
+        // Read fresh: recalculation writes the profile row directly, so a
+        // relation loaded earlier in the request would already be stale.
+        $profile = $user->profile()->first();
+
+        if (! $profile) {
+            return back()->with('status', 'This user has no profile to restore a streak for.');
+        }
+
+        $maxRestores = (int) stylebite_app_config('streaks.max_restores', 5);
+        $maxGapDays = (int) stylebite_app_config('streaks.max_restore_gap_days', 7);
+
+        if ((int) $profile->streak_restore_count >= $maxRestores) {
+            return back()->with('status', "This user has already used all {$maxRestores} streak restores.");
+        }
+
+        if (! $profile->last_streak_day) {
+            return back()->with('status', 'This user has no streak history to restore.');
+        }
+
+        $timezone = stylebite_reporting_timezone();
+        $yesterday = CarbonImmutable::now($timezone)->startOfDay()->subDay();
+        $gapStart = CarbonImmutable::parse($profile->last_streak_day, $timezone)->startOfDay()->addDay();
+
+        if ($gapStart->greaterThan($yesterday)) {
+            return back()->with('status', 'This streak is not broken — there is nothing to restore.');
+        }
+
+        $missingDays = $gapStart->diffInDays($yesterday) + 1;
+
+        if ($missingDays > $maxGapDays) {
+            return back()->with('status', "This streak has been broken for {$missingDays} days, which is beyond the {$maxGapDays}-day restore limit.");
+        }
+
+        DB::transaction(function () use ($user, $profile, $gapStart, $missingDays) {
+            for ($offset = 0; $offset < $missingDays; $offset++) {
+                StreakGraceDay::insertOrIgnore([
+                    'user_id' => $user->id,
+                    'grace_date' => $gapStart->addDays($offset)->toDateString(),
+                    'reason' => 'Admin streak restore',
+                    'granted_by_user_id' => auth()->id(),
+                    'created_at' => now(),
+                ]);
+            }
+
+            $profile->forceFill([
+                'streak_restore_count' => (int) $profile->streak_restore_count + 1,
+            ])->save();
+        });
+
+        $streak = stylebite_recalculate_streak($user->id);
+
+        $this->logActivity('streak_restored', 'user', $user->id, [
+            'days_credited' => $missingDays,
+            'from' => $gapStart->toDateString(),
+            'streak_after' => $streak['days'],
+            'restores_used' => (int) $profile->fresh()->streak_restore_count,
+        ]);
+
+        return back()->with('status', "Streak restored — {$missingDays} day(s) credited, now at {$streak['days']} days.");
+    }
+
+    /**
+     * Reset a user's streak to zero.
+     *
+     * Moves a boundary forward instead of zeroing a column, because the engine
+     * recomputes from raw activity — a zeroed column would simply come back on
+     * the next run. Every day before the boundary is ignored from here on, so
+     * the user starts a fresh streak from their next qualifying day. Their
+     * personal best is kept.
+     */
+    public function resetStreak(User $user): RedirectResponse
+    {
+        $profile = $user->profile()->first();
+
+        if (! $profile) {
+            return back()->with('status', 'This user has no profile to reset a streak for.');
+        }
+
+        $previous = (int) $profile->current_streak_days;
+
+        $profile->forceFill([
+            'streak_reset_at' => now(),
+        ])->save();
+
+        stylebite_recalculate_streak($user->id);
+
+        $this->logActivity('streak_reset', 'user', $user->id, [
+            'streak_before' => $previous,
+        ]);
+
+        return back()->with('status', "Streak reset to 0 (was {$previous} days).");
     }
 
     public function toggleVerifiedBadge(User $user): RedirectResponse

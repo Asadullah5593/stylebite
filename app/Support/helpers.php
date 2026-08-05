@@ -49,6 +49,176 @@ if (! function_exists('stylebite_app_config')) {
     }
 }
 
+if (! function_exists('stylebite_reporting_timezone')) {
+    /**
+     * Timezone that decides where an analytics "day" starts (DAU, new signups).
+     *
+     * Storage stays UTC everywhere; this only shifts the reporting boundary so
+     * a Pakistan-evening user is not counted against the next day. Falls back to
+     * Asia/Karachi when the admin-entered value is not a real timezone, because
+     * this runs on every authenticated API request.
+     */
+    function stylebite_reporting_timezone(): string
+    {
+        $timezone = (string) stylebite_app_config('general.default_timezone', 'Asia/Karachi');
+
+        return in_array($timezone, timezone_identifiers_list(), true)
+            ? $timezone
+            : 'Asia/Karachi';
+    }
+}
+
+if (! function_exists('stylebite_streak_mode')) {
+    /**
+     * What a user has to do to keep a streak alive (Admin → Settings → Streaks).
+     *
+     *   outfit   — publish an outfit post that day (default; the product spec's
+     *              "Daily Outfit Streak")
+     *   any_post — publish any post that day, outfit or food
+     *   login    — simply open the app that day, nothing to post
+     */
+    function stylebite_streak_mode(): string
+    {
+        $mode = strtolower(trim((string) stylebite_app_config('streaks.mode', 'outfit')));
+
+        return in_array($mode, ['outfit', 'any_post', 'login'], true) ? $mode : 'outfit';
+    }
+}
+
+if (! function_exists('stylebite_streak_active_days')) {
+    /**
+     * The calendar days (reporting timezone) that count towards a user's streak,
+     * as 'Y-m-d' strings — the user's own activity plus any admin-granted grace
+     * days, with everything before an admin reset dropped.
+     */
+    function stylebite_streak_active_days(int $userId, \Carbon\CarbonImmutable $windowStart, ?\Carbon\CarbonInterface $resetAt): array
+    {
+        $timezone = $windowStart->getTimezone()->getName();
+        $offsetMinutes = (int) round($windowStart->getOffset() / 60);
+        $days = [];
+
+        if (stylebite_streak_mode() === 'login') {
+            $query = \App\Models\UserDailyActivity::query()
+                ->where('user_id', $userId)
+                ->where('activity_date', '>=', $windowStart->toDateString());
+
+            // Only whole days here, so the reset day itself cannot count — there
+            // is no way to tell whether the login came before or after the reset.
+            if ($resetAt !== null) {
+                $query->where('activity_date', '>', $resetAt->copy()->setTimezone($timezone)->toDateString());
+            }
+
+            $days = $query
+                ->pluck('activity_date')
+                ->map(fn ($date) => $date instanceof \Carbon\CarbonInterface ? $date->toDateString() : (string) $date)
+                ->all();
+        } else {
+            $query = \App\Models\Post::query()
+                ->where('user_id', $userId)
+                ->where('status', 'published')
+                ->whereNotNull('published_at')
+                ->where('published_at', '>=', $windowStart->setTimezone('UTC'));
+
+            if (stylebite_streak_mode() === 'outfit') {
+                $query->where('post_type', 'outfit');
+            }
+
+            // Compared against the reset instant, not the reset day: a reset must
+            // read as 0 straight away even if the user already posted earlier
+            // today, while a post made after it starts the new streak at once.
+            if ($resetAt !== null) {
+                $query->where('published_at', '>', $resetAt);
+            }
+
+            // Several posts on one day are still one day of the streak.
+            $days = $query
+                ->distinct()
+                ->selectRaw('DATE(published_at + INTERVAL ? MINUTE) as day', [$offsetMinutes])
+                ->pluck('day')
+                ->map(fn ($day) => (string) $day)
+                ->all();
+        }
+
+        $graceQuery = \App\Models\StreakGraceDay::query()
+            ->where('user_id', $userId)
+            ->where('grace_date', '>=', $windowStart->toDateString());
+
+        // Grace granted before a reset is void; grace granted after it stands,
+        // whatever day it covers — that is an admin decision made after the fact.
+        if ($resetAt !== null) {
+            $graceQuery->where('created_at', '>', $resetAt);
+        }
+
+        $grace = $graceQuery
+            ->pluck('grace_date')
+            ->map(fn ($date) => $date instanceof \Carbon\CarbonInterface ? $date->toDateString() : (string) $date)
+            ->all();
+
+        $days = array_values(array_unique(array_merge($days, $grace)));
+
+        rsort($days);
+
+        return $days;
+    }
+}
+
+if (! function_exists('stylebite_recalculate_streak')) {
+    /**
+     * Recompute and store a user's streak from scratch.
+     *
+     * Deliberately a pure function of the underlying data — it never reads the
+     * stored streak and adds to it. That is what makes every edge case fall out
+     * for free: deleting a post drops its day and the streak shortens, posting
+     * five times in a day still counts once, and an admin restore works because
+     * it adds a grace day rather than writing a number that the next run would
+     * overwrite.
+     *
+     * A streak stays alive if the user was active today *or* yesterday, so it
+     * does not collapse mid-morning before they have posted.
+     */
+    function stylebite_recalculate_streak(int $userId): array
+    {
+        $profile = \App\Models\Profile::query()->where('user_id', $userId)->first();
+
+        if (! $profile) {
+            return ['days' => 0, 'label' => null];
+        }
+
+        $today = \Carbon\CarbonImmutable::now(stylebite_reporting_timezone())->startOfDay();
+        // Bounds the query; a streak longer than this is not a real streak.
+        $windowStart = $today->subDays(400);
+
+        $days = stylebite_streak_active_days($userId, $windowStart, $profile->streak_reset_at);
+        $active = array_flip($days);
+
+        $todayKey = $today->toDateString();
+        $yesterdayKey = $today->subDay()->toDateString();
+
+        $streak = 0;
+
+        if (isset($active[$todayKey]) || isset($active[$yesterdayKey])) {
+            $cursor = isset($active[$todayKey]) ? $today : $today->subDay();
+
+            while (isset($active[$cursor->toDateString()])) {
+                $streak++;
+                $cursor = $cursor->subDay();
+            }
+        }
+
+        $profile->forceFill([
+            'current_streak_days' => $streak,
+            'current_streak_label' => $streak > 0 ? $streak.' day streak' : null,
+            'longest_streak_days' => max((int) $profile->longest_streak_days, $streak),
+            'last_streak_day' => $days[0] ?? null,
+        ])->save();
+
+        return [
+            'days' => $streak,
+            'label' => $profile->current_streak_label,
+        ];
+    }
+}
+
 if (! function_exists('stylebite_ad_eligibility')) {
     /**
      * Evaluate a creator against the admin-configured ad eligibility criteria

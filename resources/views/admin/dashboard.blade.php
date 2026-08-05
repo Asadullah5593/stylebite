@@ -50,32 +50,44 @@
 
     <section class="mb-4 mb-xl-5">
         <div class="section-label muted mb-3">
+            <i class="bi bi-activity"></i>
+            <span>Audience</span>
+        </div>
+        @include('admin.partials.metric-cards', ['cards' => $audienceCards])
+    </section>
+
+    <section class="mb-4 mb-xl-5">
+        <div class="section-label muted mb-3">
+            <i class="bi bi-heart"></i>
+            <span>Engagement</span>
+        </div>
+        @include('admin.partials.metric-cards', ['cards' => $engagementCards])
+    </section>
+
+    <section class="mb-4 mb-xl-5">
+        <div class="section-label muted mb-3">
+            <i class="bi bi-fire"></i>
+            <span>Streaks</span>
+        </div>
+        @include('admin.partials.metric-cards', ['cards' => $streakCards])
+    </section>
+
+    <section class="mb-4 mb-xl-5">
+        <div class="section-label muted mb-3">
+            <i class="bi bi-cash-coin"></i>
+            <span>Creator Payouts</span>
+        </div>
+        {{-- Two cards, so half width each rather than leaving a gap in a three-across row. --}}
+        @include('admin.partials.metric-cards', ['cards' => $payoutCards, 'columnClass' => 'col-12 col-xl-6'])
+    </section>
+
+    <section class="mb-4 mb-xl-5">
+        <div class="section-label muted mb-3">
             <i class="bi bi-bar-chart"></i>
             <span>Overview</span>
         </div>
-        <div class="row g-2 g-xl-3">
-            @foreach ($statCards as $card)
-                <div class="col-12 col-sm-6 col-xl-4">
-                    <div class="card glass border-0 rounded-4 p-3 stat-card h-100 metric-card">
-                        <div class="d-flex justify-content-between align-items-start mb-3 gap-3">
-                            <div class="min-w-0">
-                                <p class="mini-label text-muted mb-2">{{ $card['label'] }}</p>
-                                <h2 class="stat-value text-white mb-1">{{ $card['value'] }}</h2>
-                                <p class="text-muted small mb-0">{{ $card['sub'] }}</p>
-                            </div>
-                            <div class="stat-icon {{ $card['accent'] }}">
-                                <i class="bi {{ $card['icon'] }}"></i>
-                            </div>
-                        </div>
-                        <div class="small fw-semibold {{ $card['delta'] < 0 ? 'text-danger' : 'text-success' }} d-flex align-items-center gap-1 flex-wrap">
-                            <i class="bi {{ $card['delta'] < 0 ? 'bi-arrow-down-right' : 'bi-arrow-up-right' }}"></i>
-                            <span>{{ $card['delta'] }}%</span>
-                            <span class="text-muted fw-normal">vs last period</span>
-                        </div>
-                    </div>
-                </div>
-            @endforeach
-        </div>
+        {{-- Three across so the nine Overview cards fill three even rows. --}}
+        @include('admin.partials.metric-cards', ['cards' => $statCards])
     </section>
 
     <section class="mb-4 mb-xl-5">
@@ -94,6 +106,33 @@
                         </div>
                         <div class="text-muted extra-small">{{ $snapshot['hint'] }}</div>
                     </a>
+                </div>
+            @endforeach
+        </div>
+    </section>
+
+    <section class="mb-4 mb-xl-5">
+        <div class="row g-3 g-xl-4">
+            @foreach ([['Top Posts', 'topPostsChart', $topPosts, 'Images & carousels', route('admin.posts.all_posts')], ['Top Reels', 'topReelsChart', $topReels, 'Video posts', route('admin.posts.all_posts')]] as [$title, $canvasId, $rows, $subtitle, $link])
+                <div class="col-12 col-xl-6">
+                    <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                            <div>
+                                <h3 class="panel-title mb-1">{{ $title }}</h3>
+                                <p class="text-muted panel-subtitle mb-0">{{ $subtitle }} · by likes, comments & shares</p>
+                            </div>
+                            <a href="{{ $link }}" class="panel-link">All posts</a>
+                        </div>
+                        @if (empty($rows))
+                            <div class="chart-wrap d-flex align-items-center justify-content-center text-muted small">
+                                No engagement recorded yet.
+                            </div>
+                        @else
+                            <div class="chart-wrap">
+                                <canvas id="{{ $canvasId }}"></canvas>
+                            </div>
+                        @endif
+                    </div>
                 </div>
             @endforeach
         </div>
@@ -708,6 +747,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const mediaData = @json($mediaByType);
     const earningsData = @json($earningsOverview);
     const reportReasonsData = @json($reportReasons);
+    const topPostsData = @json($topPosts);
+    const topReelsData = @json($topReels);
     let chartInstances = [];
 
     const getThemePalette = () => {
@@ -837,6 +878,74 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }));
         }
+
+        // Top posts and top reels share one horizontal stacked bar: each row is
+        // a single item, split into the three engagement types that make up it.
+        const renderTopChart = (canvasId, rows) => {
+            const canvas = document.getElementById(canvasId);
+
+            if (!canvas || !rows.length) {
+                return;
+            }
+
+            const series = [
+                { label: 'Likes', key: 'likes', color: palette.primary },
+                { label: 'Comments', key: 'comments', color: palette.tertiary },
+                { label: 'Shares', key: 'shares', color: palette.quaternary }
+            ];
+
+            chartInstances.push(new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: rows.map(row => row.label),
+                    datasets: series.map(item => ({
+                        label: item.label,
+                        data: rows.map(row => row[item.key]),
+                        backgroundColor: item.color,
+                        borderRadius: 6,
+                        maxBarThickness: 24
+                    }))
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
+                        },
+                        tooltip: {
+                            backgroundColor: palette.tooltipBg,
+                            borderColor: palette.tooltipBorder,
+                            borderWidth: 1,
+                            titleColor: palette.chartFontColor,
+                            bodyColor: palette.chartFontColor,
+                            callbacks: {
+                                // The bar label is a truncated caption, so name the author here.
+                                afterTitle: items => rows[items[0].dataIndex].author
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            min: 0,
+                            ticks: { color: palette.chartFontColor, precision: 0 },
+                            grid: { color: palette.gridColor, borderDash: [4, 4] }
+                        },
+                        y: {
+                            stacked: true,
+                            ticks: { color: palette.chartFontColor },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            }));
+        };
+
+        renderTopChart('topPostsChart', topPostsData);
+        renderTopChart('topReelsChart', topReelsData);
 
         const mediaCanvas = document.getElementById('mediaChart');
         if (mediaCanvas) {

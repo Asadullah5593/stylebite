@@ -15,8 +15,280 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 | **Daily** (e.g. 01:00) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:sync-currency-rates` | Refreshes FX rates for earnings conversion |
 | **Hourly (or daily)** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:settle-ad-earnings` | Credits reel owners their accumulated ad-revenue share |
 | **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-ad-eligibility` | Refreshes the cached ad-eligibility flag driving reel `show_ad` + earning |
+| **Daily** (e.g. 03:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-activity` | Trims DAU/MAU history past 90 days so the table stays bounded |
+| **Daily** (e.g. 00:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-streaks` | **Required** — breaks streaks that lapsed. Without it a streak never ends |
 
 Both are required. Without the daily rate sync, **admin crediting is blocked** (by design — the system never credits an unconverted amount).
+
+---
+
+## 2026-08-05 — Creator Payouts: pending vs completed 💸
+
+A new **Creator Payouts** section with two cards:
+
+| Card | Counts | Subtitle |
+|---|---|---|
+| **Pending Payouts** | `pending` + `processing` | `X awaiting review · Y processing` |
+| **Completed Payouts** | `completed`, all time | `X in the last 30 days`, compared against the previous 30 |
+
+Pending groups the two in-flight statuses the same way the withdrawals queue and
+the action cards already do. Failed and rejected payouts are in neither card —
+they live on the withdrawals page.
+
+### Counts, not amounts — on purpose
+
+Every payout row carries its own `currency_code`. Summing amounts would add PKR
+to USD the moment a second currency exists, and the total would be quietly wrong
+rather than visibly broken. A count answers the same operational question — "four
+payouts are waiting on you" — and cannot go wrong in any currency.
+
+If money totals are ever wanted here, they need the payout's value locked in one
+reporting currency at the moment it settles. The FX columns for that already
+exist on `earning_transactions` but are not filled for withdrawals, so that is a
+separate piece of work, not a display change.
+
+### Deploy
+
+`php artisan migrate` — adds an index on `withdrawal_requests.processed_at`.
+`status` and `requested_at` were already indexed; `processed_at` was not, and the
+"last 30 days" count filters on it. Cached for 5 minutes.
+
+---
+
+## 2026-08-05 — Daily streaks: engine, admin controls & dashboard stats 🔥
+
+### What was there before
+
+Nothing, despite appearances. `profiles.current_streak_days` and
+`current_streak_label` existed and the profile API read them, but **no code
+anywhere ever wrote them** — every profile sat at 0, so the app showed every user
+a 0-day streak. This adds the engine that was missing.
+
+Because the mobile API already reads those columns, streaks start working in the
+app as soon as this ships — **no app-side change and no new endpoint.**
+
+### What keeps a streak alive — Admin → Settings → Streaks
+
+| `streaks.mode` | A day counts when the user… |
+|---|---|
+| `outfit` *(default)* | publishes an outfit post |
+| `any_post` | publishes any post, outfit or food |
+| `login` | simply opens the app — nothing to post |
+
+Also configurable there: `streaks.max_restores` (default 5) and
+`streaks.max_restore_gap_days` (default 7).
+
+### How it behaves
+
+A streak is the run of consecutive days, cut in the reporting timezone. It stays
+alive if the user was active **today or yesterday**, so it does not collapse in
+the morning before they have posted.
+
+The engine **recomputes from scratch every time** — it never adds to the stored
+number. That is what makes the awkward cases correct rather than special-cased:
+
+| Case | Result |
+|---|---|
+| Five posts in one day | One day |
+| Post deleted afterwards | That day drops out; the streak shortens or breaks |
+| Deleted post restored / reposted | The day comes back |
+| Admin removes a post in moderation | Author's streak recomputes |
+| Posted at 11pm in Pakistan | Counts for that day, not the next |
+| Mode changed later | Every streak re-derives under the new rule |
+
+### Admin controls (user detail page → Streak Controls)
+
+**Restore Streak** credits the days the user missed rather than writing a streak
+number — so the restore survives every later recomputation instead of being
+overwritten by the next nightly run. Guarded twice: a lifetime quota per user,
+and a cap on how long a break one restore may bridge, so a user who stopped
+posting months ago cannot be handed a months-long streak in one click.
+
+**Reset to 0** moves a boundary forward instead of zeroing a column (a zeroed
+column would simply come back on the next run). Activity from before the reset
+instant stops counting, so it reads 0 immediately even if the user already posted
+today, and their next post starts a fresh streak. Their personal best is kept.
+
+Both actions are written to the admin activity log with the before/after values.
+
+### Dashboard
+
+A new **Streaks** section: Active Streaks, Longest Streak (with the leading
+username) and Average Streak. The first card's subtitle names the rule in force,
+because "142 active streaks" means something very different under `login` than
+under `outfit`.
+
+### Deploy
+
+1. `php artisan migrate` — adds the streak columns, an index, and
+   `streak_grace_days`.
+2. **Add the nightly `stylebite:refresh-streaks` cron** from the table above.
+   Posting and logging in update a streak instantly, but nothing fires when a
+   user simply stops — without this cron, a streak never breaks.
+
+⚠️ **Set expectations before showing this to the client:** the stats will read
+**0 active streaks** on day one. Only three users have ever published a post, on
+non-consecutive days, and nobody posted today or yesterday. That is the data
+being accurate, not the engine failing.
+
+---
+
+## 2026-08-05 — Top Posts & Top Reels charts 🏅
+
+Two charts side by side, above the growth chart. Each shows the **top five items
+by engagement** as a horizontal stacked bar — one bar per item, split into likes,
+comments and shares, so you can see *what kind* of engagement drove it rather
+than just a single total.
+
+- **Top Posts** — images and carousels
+- **Top Reels** — video posts
+
+The two lists are **disjoint**: a reel is a video post, so nothing appears in both
+charts.
+
+Bar labels are the caption, shortened to one line; hover to see the author. Items
+with zero engagement are left out rather than padding the chart to five empty
+rows, so a chart can legitimately show fewer than five bars — or an "no
+engagement recorded yet" message when there is nothing to rank.
+
+Ranking reads the counters on `posts` rather than counting rows in the engagement
+tables: it keeps this to a single pass over `posts`, and those counters are the
+same numbers the app shows under each post. Cached for 5 minutes.
+
+---
+
+## 2026-08-05 — Engagement metrics on the dashboard ❤️💬↗️
+
+A new **Engagement** section (between *Audience* and *Overview*) with three cards:
+
+| Card | Counts | Subtitle |
+|---|---|---|
+| **Likes** | Every like on feed content — on posts, on comments, and on replies | `X on posts` |
+| **Comments** | Comments plus replies | `X replies` |
+| **Shares** | Post shares | `X in the last 14 days` |
+
+A like on a comment is still a like, so the cards read as platform totals rather
+than post-only totals. **Memories engagement is deliberately excluded** — it is a
+separate module and already has its own Overview card.
+
+### Engagement on removed content does not count
+
+Every tally is scoped through to the owning post, so once a post is deleted its
+likes, comments and shares drop out of these totals. Without that scope the cards
+count activity on content nobody can see any more and stop matching the Overview
+post counts.
+
+📌 **Correction to an earlier draft of this entry.** It claimed the
+`posts.like_count` / `comment_count` / `share_count` counters had drifted out of
+sync and that the mobile app was therefore showing wrong numbers. **That was
+wrong** — it compared a sum that excludes deleted posts against a row count that
+included them. On live posts the counters match the rows exactly (9 likes, 5
+comments). The counters are fine and the app is showing correct numbers.
+
+### Deploy
+
+`php artisan migrate` — adds a `created_at` index to `comment_likes` and
+`reply_likes`. The other four engagement tables already had one; without it the
+period comparison would scan those tables in full.
+
+Counts are cached for 5 minutes.
+
+### Also in this change
+
+The three card sections (Overview, Audience, Engagement) now render through one
+shared Blade partial (`admin/partials/metric-cards`) instead of three copies of
+the same markup, so a card looks identical wherever it appears.
+
+---
+
+## 2026-08-05 — Reels, Food Reviews & Completed Contests on the dashboard 🎬🍽🏆
+
+The **Overview** section has three new cards:
+
+| Card | Counts | Subtitle |
+|---|---|---|
+| **Reels** | Posts carrying video | `X published` |
+| **Food Reviews** | Posts posted to the Bite feed (`post_type = food`) | `X rated` — how many have received at least one rating |
+| **Completed Contests** | Contests with status `completed`, sitting next to *Active Contests* | `X with a winner` — a completed contest without one still needs a decision |
+
+All three compare against the previous period like every other Overview card. The
+grid stays three cards per row, so the nine cards now fill three even rows; phone
+and tablet layouts are unchanged.
+
+**Completed Contests compares on `end_at`, not `created_at`** — the useful
+question is how many contests *finished* in the period, not how many were created
+in it and happen to be finished now.
+
+### ⚠️ These numbers do not add up to Total Posts — by design
+
+Reels and Food Reviews are **subsets** of Total Posts, and they **overlap each
+other**: a food review shot as a video counts in both. So `Posts ≠ Reels + Food
+Reviews + …`, and that is correct, not a bug.
+
+### How each is defined
+
+**Food Review** is `post_type = 'food'` — the app sets `post_type`, `feed_type`
+(`bite`) and `content_type` (`food`) together when a food post is created, so all
+three agree.
+
+**Reel** is any post carrying video. The `post_type` enum does contain a `reel`
+value, but **nothing ever writes it** — the create-post API only accepts `outfit`
+and `food`. The reels feed itself selects reels by their video media, so the card
+matches the feed rather than the unused enum value.
+
+### Deploy
+
+`php artisan migrate` — adds a `(media_kind, status)` index on `posts`.
+`post_type` was already indexed, but `media_kind` was not, so counting reels
+would otherwise scan the whole posts table on every dashboard load.
+
+Both counts are cached for 5 minutes.
+
+---
+
+## 2026-08-05 — DAU / MAU on the dashboard 📊
+
+The dashboard has a new **Audience** section (directly under *Needs your
+attention*) with three cards:
+
+| Card | What it counts | Comparison |
+|---|---|---|
+| **Daily Active Users** | Unique users who used the app today | vs yesterday |
+| **Monthly Active Users** | Unique users active in the last 30 days | vs the previous 30 days |
+| **New Signups** | Accounts created today (7-day and 30-day totals in the subtitle) | vs yesterday |
+
+### Why a new table was needed
+
+`users.last_seen_at` is overwritten on every request, so it can say who is active
+*right now* but never how many were active *yesterday* — no history, no trend, no
+comparison. A new **`user_daily_activity`** table stores one row per user per
+active day, which is what DAU/MAU are actually counted from.
+
+Writes are cheap: the API auth middleware already loads the user and its previous
+`last_seen_at`, so it can tell without any extra query whether this is the user's
+first request of the day. That means **one INSERT per user per day**, not one per
+request.
+
+### Day boundaries
+
+A "day" is cut in the timezone from **Settings → General → Default Timezone**
+(defaults to `Asia/Karachi` if unset or invalid). Storage stays UTC — this only
+decides where the reporting day starts, so a user active at 11pm in Pakistan is
+counted today rather than tomorrow.
+
+### Deploy steps
+
+1. `php artisan migrate` — adds `user_daily_activity` and an index on
+   `users.last_seen_at` (DAU/MAU range-scan it; without the index every dashboard
+   load was a full table scan).
+2. `php artisan stylebite:backfill-user-activity` — **run once.** Reconstructs up
+   to 90 days of history from traces users already left (posts, comments, likes,
+   sessions, activity log) so the cards are not empty on day one. Approximate by
+   nature; live tracking from the middleware is exact and takes over immediately.
+3. Add the daily `stylebite:prune-user-activity` cron from the table above.
+
+The cards are cached for 5 minutes, so a change in the app shows up on the next
+dashboard load within that window.
 
 ---
 

@@ -38,6 +38,7 @@ class SettingsController extends Controller
                             ->where('config_key', 'not like', 'branding.%')
                             ->where('config_key', 'not like', 'notifications.%')
                             ->where('config_key', 'not like', 'contests.%')
+                            ->where('config_key', 'not like', 'streaks.%')
                             ->where('config_key', 'not like', 'earnings.%')
                             ->where('config_key', 'not like', 'legal.%')
                             ->where('config_key', 'not like', 'uploads.%')
@@ -60,6 +61,7 @@ class SettingsController extends Controller
             'branding' => AppConfig::query()->where('config_key', 'like', 'branding.%')->count(),
             'notifications' => AppConfig::query()->where('config_key', 'like', 'notifications.%')->count(),
             'contests' => AppConfig::query()->where('config_key', 'like', 'contests.%')->count(),
+            'streaks' => AppConfig::query()->where('config_key', 'like', 'streaks.%')->count(),
             'earnings' => AppConfig::query()->where('config_key', 'like', 'earnings.%')->count(),
             'legal' => AppConfig::query()->where('config_key', 'like', 'legal.%')->count(),
             'uploads' => AppConfig::query()->where('config_key', 'like', 'uploads.%')->count(),
@@ -582,6 +584,14 @@ class SettingsController extends Controller
                 'fields' => [
                     'contests.min_participants' => ['label' => 'Minimum Participants Allowed', 'type' => 'number', 'placeholder' => '2'],
                     'contests.max_participants' => ['label' => 'Maximum Participants Allowed', 'type' => 'number', 'placeholder' => '100000'],
+                ],
+            ],
+            'streaks' => [
+                'label' => 'Streaks',
+                'fields' => [
+                    'streaks.mode' => ['label' => 'What Keeps a Streak Alive (outfit / any_post / login)', 'type' => 'string', 'placeholder' => 'outfit'],
+                    'streaks.max_restores' => ['label' => 'Streak Restores Allowed Per User (lifetime)', 'type' => 'number', 'placeholder' => '5'],
+                    'streaks.max_restore_gap_days' => ['label' => 'Longest Break a Single Restore May Bridge (days)', 'type' => 'number', 'placeholder' => '7'],
                 ],
             ],
             'earnings' => [

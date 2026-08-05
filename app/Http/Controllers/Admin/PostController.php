@@ -123,6 +123,10 @@ class PostController extends Controller
 
         $post->save();
 
+        // Taking a post down (or putting it back up) changes whether its day
+        // still counts towards the author's streak.
+        stylebite_recalculate_streak($post->user_id);
+
         return back()->with('status', "Post #{$post->id} moderation updated successfully.");
     }
 

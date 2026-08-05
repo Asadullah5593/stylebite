@@ -171,6 +171,55 @@
 
         <div class="col-12 col-xl-4">
             <div class="glass rounded-4 p-4 h-100 border border-white-05">
+                <h3 class="h6 fw-bold mb-3">Streak Controls</h3>
+                @if ($user->profile)
+                    @php
+                        $maxRestores = (int) stylebite_app_config('streaks.max_restores', 5);
+                        $restoresUsed = (int) $user->profile->streak_restore_count;
+                        $streakDays = (int) $user->profile->current_streak_days;
+                    @endphp
+                    <div class="d-grid gap-3 small mb-3">
+                        <div class="d-flex justify-content-between align-items-center border-bottom border-white-05 pb-2">
+                            <span>Current Streak</span>
+                            <span class="badge {{ $streakDays > 0 ? 'bg-success-soft text-success' : 'bg-secondary-soft text-muted' }} rounded-pill">{{ $streakDays }} {{ Str::plural('day', $streakDays) }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center border-bottom border-white-05 pb-2">
+                            <span>Personal Best</span>
+                            <span class="badge bg-primary-soft text-primary rounded-pill">{{ (int) $user->profile->longest_streak_days }} {{ Str::plural('day', (int) $user->profile->longest_streak_days) }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center border-bottom border-white-05 pb-2">
+                            <span>Last Counted Day</span>
+                            <span class="text-muted">{{ $user->profile->last_streak_day?->format('M j, Y') ?? 'Never' }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Restores Used</span>
+                            <span class="badge {{ $restoresUsed >= $maxRestores ? 'bg-danger-soft text-danger' : 'bg-secondary-soft text-muted' }} rounded-pill">{{ $restoresUsed }} of {{ $maxRestores }}</span>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <form method="POST" action="{{ route('admin.users.streak.restore', $user) }}" id="restore-streak-{{ $user->id }}">
+                            @csrf
+                            @method('PATCH')
+                            <button class="btn btn-sm btn-outline-success rounded-3" type="button" @disabled($restoresUsed >= $maxRestores) onclick="confirmAction('restore-streak-{{ $user->id }}', 'Restore this streak?', 'The days missed since the last counted day will be credited to this user. This uses one of their {{ $maxRestores }} restores and cannot be undone.')">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>Restore Streak
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ route('admin.users.streak.reset', $user) }}" id="reset-streak-{{ $user->id }}">
+                            @csrf
+                            @method('PATCH')
+                            <button class="btn btn-sm btn-outline-danger rounded-3" type="button" onclick="confirmAction('reset-streak-{{ $user->id }}', 'Reset this streak to 0?', 'This user starts again from their next qualifying day. Their personal best is kept.')">
+                                <i class="bi bi-x-circle me-2"></i>Reset to 0
+                            </button>
+                        </form>
+                    </div>
+                @else
+                    <p class="text-muted mb-0">No profile record exists for this user yet.</p>
+                @endif
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+            <div class="glass rounded-4 p-4 h-100 border border-white-05">
                 <h3 class="h6 fw-bold mb-3">Auth Providers</h3>
                 @forelse ($user->authProviders as $provider)
                     <div class="d-flex justify-content-between py-2 border-bottom border-white-05 small">

@@ -88,6 +88,8 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::patch('/{user}/restore', [UserController::class, 'restore'])->withTrashed()->name('restore');
         Route::patch('/{user}/badges', [UserController::class, 'updateBadge'])->withTrashed()->name('badges.update');
         Route::patch('/{user}/badge/verified', [UserController::class, 'toggleVerifiedBadge'])->withTrashed()->name('badge.verified');
+        Route::patch('/{user}/streak/restore', [UserController::class, 'restoreStreak'])->name('streak.restore');
+        Route::patch('/{user}/streak/reset', [UserController::class, 'resetStreak'])->name('streak.reset');
         Route::patch('/{user}/sessions/{session}/revoke', [UserController::class, 'revokeSession'])->withTrashed()->name('sessions.revoke');
         Route::patch('/{user}/devices/{device}/toggle', [UserController::class, 'toggleDevice'])->withTrashed()->name('devices.toggle');
         Route::patch('/{user}/password-resets/{passwordReset}/expire', [UserController::class, 'expirePasswordReset'])->withTrashed()->name('password_resets.expire');

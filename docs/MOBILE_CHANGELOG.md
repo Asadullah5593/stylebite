@@ -8,6 +8,89 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-05 — Creator payout counts on the admin dashboard (no app impact) ℹ️
+
+Admin-side reporting only. No endpoint, request, response or database column the
+app touches was changed — withdrawal amounts and statuses behave exactly as
+before.
+
+---
+
+## 2026-08-05 — Daily streaks now actually work 🔥
+
+**No app change needed — but the numbers you already display stop being 0.**
+
+`streak.days` / `streak.label` on `GET /api/profile`, and `current_streak_days` /
+`current_streak_label` on the profile payload, have always returned **0 / null**
+for every user: the columns existed but nothing on the backend ever filled them.
+A streak engine now maintains them, so the values the app is already rendering
+become real.
+
+Nothing about the request or response shape changed — same endpoints, same
+fields, same types.
+
+### What the values mean now
+
+A streak is the run of consecutive days a user was active, counted in the app's
+reporting timezone (Asia/Karachi by default). It stays alive if the user was
+active **today or yesterday**, so it will not read 0 in the morning before the
+user has posted.
+
+What counts as "active" is an admin setting, so **do not hardcode a rule in the
+app copy**: it can be an outfit post (the default), any post, or simply opening
+the app. `streak.label` is a ready-made string like `"12 day streak"` — prefer it
+over composing your own text so the wording stays in one place.
+
+### Worth knowing
+
+- A streak updates the moment the user publishes (or, in login mode, on their
+  first authenticated request of the day) — so refreshing the profile right after
+  posting shows the new value.
+- Deleting a post can **shorten or break** the streak; it is recomputed from the
+  user's real activity, never just incremented. Do not cache the number across a
+  delete.
+- An admin can restore or reset a user's streak, so it can change without the
+  user doing anything. Read it from the profile response rather than tracking it
+  client-side.
+
+---
+
+## 2026-08-05 — Engagement dashboard counts (no app impact) ℹ️
+
+Admin-side reporting only — no endpoint, request or response changed.
+
+📌 **Correction.** An earlier version of this entry warned that the counters on
+`posts` (`like_count`, `comment_count`, `share_count`) — the numbers shown under
+each post in the app — had drifted below the real totals. **That was wrong.** The
+comparison behind it counted likes and comments belonging to deleted posts
+against a sum that excluded those posts. Checked per post, the counters match the
+real rows. **No app-side action is needed and no recount is required.**
+
+---
+
+## 2026-08-05 — Reels, Food Reviews & Completed Contests dashboard counts (no app impact) ℹ️
+
+Admin-side reporting only. No endpoint, request, response or database column
+that the app touches was changed — logged here purely so the admin and mobile
+changelogs stay in step.
+
+---
+
+## 2026-08-05 — Activity tracking for DAU/MAU (no app changes needed) ℹ️
+
+**Nothing to implement.** Recorded here only so the behaviour is not a surprise.
+
+The bearer-token middleware that already updates `last_seen_at` on every
+authenticated request now also records one row per user per active day, which the
+admin dashboard counts DAU/MAU from. No request or response shape changed, no new
+header or field, and no endpoint was added or removed.
+
+The only user-visible effect is that a user counts as "active today" from their
+first authenticated API call of the day — so keep sending the bearer token on
+normal app usage exactly as you do now.
+
+---
+
 ## 2026-08-05 — Realtime chat over Pusher (WebSockets) 🚀
 
 Chat no longer needs polling. The REST endpoints all still work and remain the

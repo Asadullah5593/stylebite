@@ -118,6 +118,9 @@ class PostController extends Controller
             OptimizePostMedia::dispatch($media->id)->afterCommit();
         }
 
+        // A new published post may extend today's streak.
+        stylebite_recalculate_streak($request->user()->id);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Post created successfully.',
@@ -222,6 +225,10 @@ class PostController extends Controller
 
         $post->delete();
 
+        // Deleting a post takes its day back out of the streak, which can
+        // shorten or break it — so the streak is recomputed, never decremented.
+        stylebite_recalculate_streak($post->user_id);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Post deleted successfully.',
@@ -241,6 +248,9 @@ class PostController extends Controller
             'published_at' => now(),
             'posted_at' => $post->posted_at ?? now(),
         ])->save();
+
+        // Restoring a post puts its day back into the streak.
+        stylebite_recalculate_streak($post->user_id);
 
         return response()->json([
             'status_code' => 1,
