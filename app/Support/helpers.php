@@ -574,3 +574,29 @@ if (! function_exists('stylebite_base64url_encode')) {
         return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
     }
 }
+
+if (! function_exists('stylebite_broadcast')) {
+    /**
+     * Broadcast a realtime event without ever letting the transport break the
+     * request that produced it. Pusher is a third party over the network: if it
+     * is slow or down, the message is still saved, the HTTP response is still
+     * correct, and the client recovers the missed event through
+     * GET /chats/{id}/sync. Realtime is an accelerator here, not the source of
+     * truth.
+     */
+    function stylebite_broadcast(object $event): void
+    {
+        if (config('broadcasting.default') === 'null') {
+            return;
+        }
+
+        try {
+            broadcast($event);
+        } catch (Throwable $exception) {
+            Log::warning('Chat broadcast failed.', [
+                'event' => $event::class,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+    }
+}

@@ -38,3 +38,6 @@ Thumbs.db
 /otp_store
 /Archive.zip
 /stylebyte.zip
+
+# Local-only realtime chat test harness (never deploy)
+/chat-tester.html

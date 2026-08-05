@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AdController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BroadcastAuthController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\ContestController;
 use App\Http\Controllers\Api\EarningsController;
@@ -29,6 +30,7 @@ Route::prefix('auth')->group(function (): void {
 });
 
 Route::middleware('session.auth')->group(function (): void {
+    Route::post('/broadcasting/auth', BroadcastAuthController::class);
     Route::get('/feed/home', [FeedController::class, 'home']);
     Route::get('/earnings/overview', [EarningsController::class, 'overview']);
     Route::get('/earnings/breakdowns', [EarningsController::class, 'breakdowns']);
@@ -94,6 +96,8 @@ Route::middleware('session.auth')->group(function (): void {
     Route::post('/chats/initialize', [ChatController::class, 'initialize']);
     Route::get('/chats/{username}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{conversationId}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/chats/{conversationId}/read', [ChatController::class, 'markAsRead']);
+    Route::get('/chats/{conversationId}/sync', [ChatController::class, 'sync']);
     Route::post('/chats/{conversationId}/stop', [ChatController::class, 'stopMessaging']);
     Route::post('/chats/{conversationId}/resume', [ChatController::class, 'resumeMessaging']);
     Route::patch('/profile/me/presence', [ChatController::class, 'updatePresence']);

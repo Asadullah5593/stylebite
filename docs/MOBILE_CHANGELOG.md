@@ -8,6 +8,159 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-05 — Realtime chat over Pusher (WebSockets) 🚀
+
+Chat no longer needs polling. The REST endpoints all still work and remain the
+source of truth — realtime is an accelerator layered on top, so a dropped socket
+degrades to the old behaviour instead of breaking.
+
+### Connection
+
+| Setting | Value |
+|---|---|
+| Provider | **Pusher Channels** (use the Pusher SDK, or Laravel Echo with the pusher broadcaster) |
+| Key | shared separately — the app key, not the secret |
+| Cluster | `ap2` |
+| TLS | required (`forceTLS: true`) |
+| Auth endpoint | `POST https://stylebiteapp.com/api/broadcasting/auth` |
+| Auth headers | `Authorization: Bearer <access_token>`, `Accept: application/json` |
+
+The auth endpoint uses **the same bearer token as the REST API** — there is no
+separate JWT. Point the SDK's authorizer at it and pass the header through.
+
+### Channels
+
+**`presence-conversation.{conversationId}`** — subscribe while a chat is open.
+Presence membership is how you know who is in the thread right now, so
+`member_added` / `member_removed` give you online/offline **inside the chat** with
+no polling and no server call.
+
+**`private-user.{userId}`** — subscribe once at login and keep it for the whole
+session. Chat list ordering and the unread badge arrive here while the user is
+anywhere else in the app.
+
+Subscribing to a conversation you are not an active member of returns **403**.
+Blocking also cuts the channel, not just the REST endpoints.
+
+### Server → client events
+
+| Channel | Event | Payload |
+|---|---|---|
+| `presence-conversation.{id}` | `message.sent` | `{ conversation_id, message }` |
+| `presence-conversation.{id}` | `messages.delivered` | `{ conversation_id, recipient_user_id, message_ids[], delivered_at }` |
+| `presence-conversation.{id}` | `messages.read` | `{ conversation_id, reader_user_id, last_read_message_id, message_ids[], read_at }` |
+| `presence-conversation.{id}` | `messaging.state` | `{ conversation_id, is_messaging_stopped, messaging_stopped_by_user_id, messaging_stopped_at }` |
+| `private-user.{id}` | `chat.updated` | `{ chat, total_unread_count }` |
+
+The `message` object in `message.sent` matches your existing `ChatMessageModel`
+field-for-field, with one deliberate difference: **it has no `is_mine`**. A
+broadcast goes to both sides of the conversation, so derive it yourself with
+`message.sender_user_id == myUserId`. Its `status` is the sender-side status
+(`sent` / `delivered`).
+
+The `chat` object in `chat.updated` is exactly the same shape as an entry in
+`GET /chats`, including `unread_count` — drop it straight into the list.
+
+### Client → server
+
+Sending stays on REST — `POST /chats/{id}/messages`. **The HTTP response is your
+`message_ack`**: it returns the saved message with its real `id` and `sent_at`, so
+swap your optimistic/pending row for it there. This is why there is no
+`send_message` socket event; Pusher is publish/subscribe and clients don't push
+business events up the socket.
+
+**Typing indicators** use Pusher **client events** on the presence channel — they
+travel client-to-client and never touch our server:
+
+```
+trigger: client-typing   payload: { user_id, is_typing }
+```
+
+Enable client events for the app in the Pusher dashboard. ⚠️ Please throttle:
+fire once when typing starts and once when it stops, minimum ~3s apart. Do **not**
+fire per keystroke — we're on the free tier (100 concurrent connections,
+200k messages/day) and per-keystroke typing events alone would exhaust it.
+
+### Reconnect
+
+On reconnect call `GET /chats/{id}/sync?after_message_id=<last id you hold>` and
+replay from there. Nothing is lost while the socket is down, because the database
+— not the socket — is the source of truth.
+
+### Still to confirm
+
+`sync_messages`, `message_ack` and `send_message` from your document are covered by
+REST as described above rather than as socket events. If you need any of them as
+actual socket events, tell me before you wire up the client.
+
+---
+
+## 2026-08-05 — Chat read receipts, unread counts, delivery status, sync + blocking
+
+Groundwork for the WebSocket chat migration. **All of this is plain REST and works
+today** — none of it depends on the socket layer landing. Adopting it now means the
+realtime switch-over is mostly a transport change on your side.
+
+### Message status: `sent` → `delivered` → `seen`
+Every message payload (from `GET /chats/{username}/messages`,
+`POST /chats/{id}/messages`, and `GET /chats/{id}/sync`) now includes:
+
+| Field | Meaning |
+|---|---|
+| `status` | `sent` / `delivered` / `seen` for your own messages, `received` for theirs |
+| `delivered_at` | ISO-8601 timestamp, `null` until the recipient's device pulls it |
+
+`delivered_at` is set automatically when the recipient loads the thread or calls
+`sync` — you don't have to report delivery yourself.
+
+### New: `POST /chats/{conversationId}/read` — mark messages as read
+```json
+{ "up_to_message_id": 1234 }
+```
+`up_to_message_id` is **optional** — omit it to mark the whole conversation read.
+
+Returns `last_read_message_id`, `read_message_ids`, `unread_count` (this chat) and
+`total_unread_count` (all chats — use it for the tab badge). Safe to call repeatedly;
+it will not create duplicate read records. This is what flips the sender's `status`
+to `seen`.
+
+### New: `GET /chats/{conversationId}/sync?after_message_id=123` — reconnect recovery
+Returns everything newer than a message id you already hold, so a dropped connection
+can catch up without re-paginating the thread.
+
+- `limit` optional, default **100**, max **200**
+- Response: `messages`, `has_more`, `cursor` (pass `cursor` back as the next
+  `after_message_id` while `has_more` is true)
+
+Use an **id cursor, not a timestamp** — it's immune to device clock skew.
+
+### Chat list now carries unread counts
+`GET /chats` — each chat gains **`unread_count`**, and the response gains a
+top-level **`total_unread_count`**. Both are computed in a single query, so the list
+is no slower than before.
+
+### Presence now expires ⚠️ behaviour change
+`user.is_online` previously stayed `true` forever if the app was force-quit. It is
+now only `true` when presence was reported within the **last 2 minutes**.
+
+**Action required:** keep calling `PATCH /profile/me/presence` on a timer (roughly
+every 60s) while the app is foregrounded, otherwise the user will show as offline.
+Conversation payloads also now expose **`user.last_seen_at`** and
+**`messaging_stopped_by_user_id`**.
+
+### Blocking is now enforced in chat ⚠️ new error
+Blocks were never checked in chat before. Now, if either user has blocked the other:
+- `POST /chats/initialize` → **`403`** "You cannot start a chat with this user."
+- `POST /chats/{id}/messages` → **`403`** "You can no longer send messages in this chat."
+
+Handle `403` on both — previously neither could fail this way.
+
+### Fixed: chat push notifications
+New-message pushes were being written with an invalid `entity_type`, which could fail
+after the message had already been saved. They now correctly reference the message.
+
+---
+
 ## 2026-07-28 — Signup email OTP + `show_ad` on reels
 
 ### Signup now verifies email with a 6-digit OTP (not a link) ⚠️ flow change

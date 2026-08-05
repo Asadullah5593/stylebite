@@ -20,6 +20,89 @@ Both are required. Without the daily rate sync, **admin crediting is blocked** (
 
 ---
 
+## 2026-08-05 — Realtime chat via Pusher ⚠️ deploy needs new env vars
+
+Chat now broadcasts over **Pusher Channels**. Shared hosting cannot run a socket
+server (no long-lived processes, no custom ports), so the app only makes outbound
+HTTPS calls to Pusher and the phones connect to Pusher directly.
+
+**Required on the server before deploying** — add to `.env`, then
+`php artisan config:clear`:
+
+```
+BROADCAST_CONNECTION=pusher
+PUSHER_APP_ID=<from Pusher dashboard → App Keys>
+PUSHER_APP_KEY=<from Pusher dashboard → App Keys>
+PUSHER_APP_SECRET=<from Pusher dashboard → App Keys>
+PUSHER_APP_CLUSTER=ap2
+PUSHER_SCHEME=https
+PUSHER_PORT=443
+PUSHER_TIMEOUT=5
+```
+
+🔒 **Never commit the real values.** `PUSHER_APP_SECRET` can publish to any channel
+and read the whole app's state — it belongs in `.env` only, which is untracked.
+(`PUSHER_APP_KEY` is public by design; it ships inside the mobile app.)
+
+If these are missing the app **does not break** — broadcasting falls back to doing
+nothing and chat behaves exactly as it did before (REST only).
+
+- **New composer dependency:** `pusher/pusher-php-server` — deploy must run
+  `composer install`, which `~/deploy.sh` already does.
+- **No migrations.**
+- **Broadcasts are sent synchronously**, never queued. This is deliberate: the
+  queue is drained by a once-per-minute cron, so a queued broadcast would land up
+  to 60 seconds late. Timeout is capped at 5s.
+- **Broadcast failures are swallowed and logged**, never surfaced to the user. If
+  Pusher is down or the plan limit is hit, messages still send and save normally —
+  clients recover missed events via the sync endpoint. Watch for
+  `Chat broadcast failed` in the logs.
+
+**Plan limits (free Sandbox):** 100 concurrent connections, 200k messages/day.
+Roughly 1,500–2,000 daily active users. Over the connection cap Pusher silently
+refuses new connections and those users fall back to REST — worth monitoring in
+the Pusher dashboard as usage grows.
+
+⚠️ **Use a Pusher app dedicated to Stylebite.** The credentials this was first wired
+against belonged to an unrelated two-year-old project, which still had live
+subscribers on public `notification-{id}` channels. Sharing an app means sharing the
+100-connection free cap with traffic we don't control, so Stylebite has its own app.
+The chat channels here are all private or presence and individually authorised.
+
+---
+
+## 2026-08-05 — Chat read state, delivery tracking, and blocking enforcement
+
+Backend groundwork for moving chat from REST polling to realtime WebSockets.
+
+- **Read receipts are now actually recorded.** The `message_reads` table and each
+  member's `last_read_message_id` were defined in the schema but never populated by
+  the API — the admin *Read receipts* screen was therefore always empty. A new
+  mark-as-read endpoint now writes both, so that screen shows real data going forward.
+  (Historic conversations stay empty — nothing backfills them.)
+- **`messages.delivered_at` is now written** when the recipient's device pulls a
+  message. Previously the column existed but was permanently `null`.
+- **Blocking is enforced in chat.** `user_blocks` was never consulted by the chat
+  API, so a blocked user could still open a conversation and send messages. Blocked
+  pairs are now rejected with `403` in both directions.
+- **Online status expires after 2 minutes.** `users.is_online` was purely
+  self-reported and never cleared, so anyone who force-quit the app stayed "online"
+  indefinitely — including in admin views. It is now derived from `last_seen_at`.
+- **Fixed a latent 500 on chat push notifications.** New-message notifications were
+  written with `entity_type = 'conversation'`, which is not a valid value for that
+  column's enum. On a strict-mode MySQL server this throws *after* the message is
+  saved — the message would send but the request would error. Now recorded as
+  `entity_type = 'message'` pointing at the message id.
+
+**No migrations and no config changes** — deploy is a normal `bash ~/deploy.sh`.
+
+⚠️ **Note for the upcoming realtime work:** the queue runs from a once-per-minute
+cron, so anything queued is delayed up to 60 seconds. Realtime broadcasts must
+therefore be sent synchronously, not queued. Shared hosting cannot host the socket
+server itself — that runs through a managed provider (Pusher).
+
+---
+
 ## 2026-07-28 — Signup OTP, `show_ad`, and an eligibility-cache flag
 
 - **Signup email verification is now a 6-digit OTP** (was a magic link): 15-min expiry, 5-attempt lockout per code, 60-second resend cooldown, rate-limited endpoints. Forgot-password (already OTP) got the same cooldown.

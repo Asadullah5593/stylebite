@@ -2,19 +2,34 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\Chat\ChatListUpdated;
+use App\Events\Chat\MessagesDelivered;
+use App\Events\Chat\MessageSent;
+use App\Events\Chat\MessagesRead;
+use App\Events\Chat\MessagingStateChanged;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\ConversationMember;
 use App\Models\Message;
+use App\Models\MessageRead;
 use App\Models\User;
+use App\Models\UserBlock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class ChatController extends Controller
 {
+    /**
+     * A self-reported "online" flag is only trusted for this long. The client
+     * refreshes presence while the app is foregrounded; without this window a
+     * force-quit would leave the user online forever.
+     */
+    private const PRESENCE_TTL_MINUTES = 2;
+
     public function initialize(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -29,6 +44,13 @@ class ChatController extends Controller
                 'status_code' => 0,
                 'message' => 'You cannot start a chat with yourself.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if ($this->isBlockedBetween($viewer->id, $target->id)) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'You cannot start a chat with this user.',
+            ], Response::HTTP_FORBIDDEN);
         }
 
         $conversation = DB::transaction(function () use ($viewer, $target): Conversation {
@@ -80,7 +102,7 @@ class ChatController extends Controller
         return response()->json([
             'status_code' => 1,
             'message' => 'Chat initialized successfully.',
-            'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage'])),
+            'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage']), $this->unreadCountFor($viewer->id, $conversation->id)),
         ]);
     }
 
@@ -132,10 +154,17 @@ class ChatController extends Controller
             ->take($perPage)
             ->get();
 
+        $unreadCounts = $this->unreadCountsFor($viewer->id, $chats->pluck('id')->all());
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Chats fetched successfully.',
-            'chats' => $chats->map(fn (Conversation $conversation) => $this->conversationPayload($viewer->id, $conversation)),
+            'chats' => $chats->map(fn (Conversation $conversation) => $this->conversationPayload(
+                $viewer->id,
+                $conversation,
+                (int) ($unreadCounts[$conversation->id] ?? 0)
+            )),
+            'total_unread_count' => $this->totalUnreadCountFor($viewer->id),
             'pagination' => [
                 'total' => $total,
                 'per_page' => $perPage,
@@ -195,11 +224,18 @@ class ChatController extends Controller
             ->reverse()
             ->values();
 
+        // Fetching a conversation proves the recipient's device now holds these
+        // messages, which is exactly what "delivered" means.
+        $this->markIncomingAsDelivered($conversation->id, $viewer->id, $messages);
+
+        $conversation = $conversation->fresh(['members.user.profile', 'lastMessage']);
+        $otherLastReadId = $this->otherMemberLastReadMessageId($conversation, $viewer->id);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Messages fetched successfully.',
-            'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage'])),
-            'messages' => $messages->map(fn (Message $message) => $this->messagePayload($viewer->id, $message)),
+            'chat' => $this->conversationPayload($viewer->id, $conversation, $this->unreadCountFor($viewer->id, $conversation->id)),
+            'messages' => $messages->map(fn (Message $message) => $this->messagePayload($viewer->id, $message, $otherLastReadId)),
             'pagination' => [
                 'total' => $total,
                 'per_page' => $perPage,
@@ -239,6 +275,16 @@ class ChatController extends Controller
                 'status_code' => 0,
                 'message' => 'Messaging has been stopped for this chat.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $recipientMember = $conversation->members
+            ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewer->id);
+
+        if ($recipientMember && $this->isBlockedBetween($viewer->id, (int) $recipientMember->user_id)) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'You can no longer send messages in this chat.',
+            ], Response::HTTP_FORBIDDEN);
         }
 
         $totalMessages = Message::query()
@@ -286,16 +332,25 @@ class ChatController extends Controller
             return $message;
         });
 
-        $recipient = $conversation->members
-            ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewer->id)?->user;
+        $message = $message->fresh('sender.profile');
+
+        // Realtime first, then the push. The push does synchronous HTTPS calls to
+        // Google, and an in-app recipient should not wait behind those.
+        stylebite_broadcast(new MessageSent($conversation->id, $this->broadcastMessagePayload($message)));
+
+        if ($recipientMember) {
+            $this->broadcastChatListUpdate((int) $recipientMember->user_id, $conversation);
+        }
+
+        $recipient = $recipientMember?->user;
 
         if ($recipient) {
             stylebite_notify_user(
                 $recipient->id,
                 $viewer->id,
                 'message',
-                'conversation',
-                $conversation->id,
+                'message',
+                $message->id,
                 $viewer->full_name ?: $viewer->username,
                 (string) $message->body,
                 '/chat/'.$conversation->id,
@@ -306,7 +361,11 @@ class ChatController extends Controller
         return response()->json([
             'status_code' => 1,
             'message' => 'Message sent successfully.',
-            'message_data' => $this->messagePayload($viewer->id, $message->fresh('sender.profile')),
+            'message_data' => $this->messagePayload(
+                $viewer->id,
+                $message,
+                $recipientMember?->last_read_message_id !== null ? (int) $recipientMember->last_read_message_id : null
+            ),
         ]);
     }
 
@@ -337,10 +396,304 @@ class ChatController extends Controller
             'status_code' => 1,
             'message' => 'Presence updated successfully.',
             'presence' => [
-                'is_online' => (bool) $user->is_online,
+                'is_online' => $this->resolveIsOnline($user),
                 'last_seen_at' => optional($user->last_seen_at)?->toIso8601String(),
             ],
         ]);
+    }
+
+    public function markAsRead(Request $request, int $conversationId): JsonResponse
+    {
+        $validated = $request->validate([
+            'up_to_message_id' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $viewer = $request->user();
+
+        $conversation = Conversation::query()
+            ->with('members')
+            ->where('id', $conversationId)
+            ->where('type', 'direct')
+            ->firstOrFail();
+
+        $member = $conversation->members
+            ->first(fn (ConversationMember $m) => (int) $m->user_id === (int) $viewer->id && $m->status === 'active');
+
+        if (! $member) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'You are not allowed to update this chat.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $upToMessageId = $validated['up_to_message_id'] ?? null;
+
+        $unreadQuery = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('sender_user_id', '!=', $viewer->id)
+            ->where('is_deleted', false)
+            ->when($upToMessageId !== null, fn (Builder $q) => $q->where('id', '<=', $upToMessageId));
+
+        $unreadMessageIds = (clone $unreadQuery)
+            ->whereDoesntHave('reads', fn (Builder $q) => $q->where('user_id', $viewer->id))
+            ->orderBy('id')
+            ->pluck('id');
+
+        $highestReadId = (int) max(
+            (clone $unreadQuery)->max('id') ?? 0,
+            (int) ($member->last_read_message_id ?? 0)
+        );
+
+        DB::transaction(function () use ($unreadMessageIds, $viewer, $conversation, $highestReadId): void {
+            $now = now();
+
+            if ($unreadMessageIds->isNotEmpty()) {
+                MessageRead::query()->insertOrIgnore(
+                    $unreadMessageIds
+                        ->map(fn ($messageId) => [
+                            'message_id' => $messageId,
+                            'user_id' => $viewer->id,
+                            'read_at' => $now,
+                        ])
+                        ->all()
+                );
+            }
+
+            if ($highestReadId > 0) {
+                ConversationMember::query()
+                    ->where('conversation_id', $conversation->id)
+                    ->where('user_id', $viewer->id)
+                    ->update([
+                        'last_read_message_id' => $highestReadId,
+                        'last_read_at' => $now,
+                    ]);
+            }
+        });
+
+        if ($unreadMessageIds->isNotEmpty()) {
+            stylebite_broadcast(new MessagesRead(
+                conversationId: (int) $conversation->id,
+                readerUserId: (int) $viewer->id,
+                lastReadMessageId: $highestReadId > 0 ? $highestReadId : null,
+                messageIds: $unreadMessageIds->map(fn ($id) => (int) $id)->values()->all(),
+                readAt: now()->toIso8601String(),
+            ));
+
+            $this->broadcastChatListUpdate((int) $viewer->id, $conversation);
+        }
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Messages marked as read successfully.',
+            'conversation_id' => $conversation->id,
+            'last_read_message_id' => $highestReadId > 0 ? $highestReadId : null,
+            'read_message_ids' => $unreadMessageIds->values(),
+            'unread_count' => $this->unreadCountFor($viewer->id, $conversation->id),
+            'total_unread_count' => $this->totalUnreadCountFor($viewer->id),
+        ]);
+    }
+
+    /**
+     * Recovery endpoint for the realtime client: returns everything that changed
+     * after a known message id, so a dropped socket can catch up without
+     * re-paginating the whole conversation.
+     */
+    public function sync(Request $request, int $conversationId): JsonResponse
+    {
+        $validated = $request->validate([
+            'after_message_id' => ['required', 'integer', 'min:0'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
+        ]);
+
+        $viewer = $request->user();
+        $limit = (int) ($validated['limit'] ?? 100);
+
+        $conversation = Conversation::query()
+            ->with(['members.user.profile', 'lastMessage'])
+            ->where('id', $conversationId)
+            ->where('type', 'direct')
+            ->firstOrFail();
+
+        $isMember = $conversation->members
+            ->contains(fn (ConversationMember $m) => (int) $m->user_id === (int) $viewer->id && $m->status === 'active');
+
+        if (! $isMember) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'You are not allowed to view this chat.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $messages = Message::query()
+            ->with('sender.profile')
+            ->where('conversation_id', $conversation->id)
+            ->where('is_deleted', false)
+            ->where('id', '>', (int) $validated['after_message_id'])
+            ->orderBy('id')
+            ->take($limit + 1)
+            ->get();
+
+        $hasMore = $messages->count() > $limit;
+        $messages = $messages->take($limit)->values();
+
+        $this->markIncomingAsDelivered($conversation->id, $viewer->id, $messages);
+
+        $otherLastReadId = $this->otherMemberLastReadMessageId($conversation, $viewer->id);
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Messages synced successfully.',
+            'chat' => $this->conversationPayload($viewer->id, $conversation, $this->unreadCountFor($viewer->id, $conversation->id)),
+            'messages' => $messages->map(fn (Message $message) => $this->messagePayload($viewer->id, $message, $otherLastReadId)),
+            'has_more' => $hasMore,
+            'cursor' => $messages->last()?->id ?? (int) $validated['after_message_id'],
+        ]);
+    }
+
+    /**
+     * Viewer-neutral copy of a message for the wire. It deliberately omits
+     * `is_mine` and a viewer-relative `status` — a broadcast reaches both sides
+     * of the conversation, so each client derives those from `sender_user_id`.
+     *
+     * @return array<string, mixed>
+     */
+    private function broadcastMessagePayload(Message $message): array
+    {
+        return [
+            'id' => $message->id,
+            'conversation_id' => $message->conversation_id,
+            'sender_user_id' => $message->sender_user_id,
+            'sender_name' => $message->sender?->profile?->display_name ?? $message->sender?->full_name,
+            'body' => $message->body,
+            'message_type' => $message->message_type,
+            'sent_at' => optional($message->sent_at)?->toIso8601String(),
+            'delivered_at' => optional($message->delivered_at)?->toIso8601String(),
+            'status' => $message->delivered_at !== null ? 'delivered' : 'sent',
+        ];
+    }
+
+    private function broadcastChatListUpdate(int $userId, Conversation $conversation): void
+    {
+        $conversation = $conversation->fresh(['members.user.profile', 'lastMessage']);
+
+        if (! $conversation) {
+            return;
+        }
+
+        stylebite_broadcast(new ChatListUpdated(
+            userId: $userId,
+            chat: $this->conversationPayload($userId, $conversation, $this->unreadCountFor($userId, (int) $conversation->id)),
+            totalUnreadCount: $this->totalUnreadCountFor($userId),
+        ));
+    }
+
+    private function isBlockedBetween(int $userId, int $otherUserId): bool
+    {
+        return UserBlock::query()
+            ->where(function (Builder $query) use ($userId, $otherUserId): void {
+                $query->where('blocker_user_id', $userId)->where('blocked_user_id', $otherUserId);
+            })
+            ->orWhere(function (Builder $query) use ($userId, $otherUserId): void {
+                $query->where('blocker_user_id', $otherUserId)->where('blocked_user_id', $userId);
+            })
+            ->exists();
+    }
+
+    /**
+     * @param  Collection<int, Message>  $messages
+     */
+    private function markIncomingAsDelivered(int $conversationId, int $viewerUserId, Collection $messages): void
+    {
+        $undelivered = $messages
+            ->filter(fn (Message $message) => (int) $message->sender_user_id !== $viewerUserId && $message->delivered_at === null)
+            ->pluck('id');
+
+        if ($undelivered->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+
+        Message::query()
+            ->where('conversation_id', $conversationId)
+            ->whereIn('id', $undelivered)
+            ->whereNull('delivered_at')
+            ->update(['delivered_at' => $now]);
+
+        $messages
+            ->whereIn('id', $undelivered->all())
+            ->each(fn (Message $message) => $message->setAttribute('delivered_at', $now));
+
+        stylebite_broadcast(new MessagesDelivered(
+            conversationId: $conversationId,
+            recipientUserId: $viewerUserId,
+            messageIds: $undelivered->map(fn ($id) => (int) $id)->values()->all(),
+            deliveredAt: $now->toIso8601String(),
+        ));
+    }
+
+    private function otherMemberLastReadMessageId(Conversation $conversation, int $viewerUserId): ?int
+    {
+        $otherMember = $conversation->members
+            ->first(fn (ConversationMember $member) => (int) $member->user_id !== $viewerUserId);
+
+        return $otherMember?->last_read_message_id !== null
+            ? (int) $otherMember->last_read_message_id
+            : null;
+    }
+
+    private function unreadCountFor(int $viewerUserId, int $conversationId): int
+    {
+        return (int) ($this->unreadCountsFor($viewerUserId, [$conversationId])[$conversationId] ?? 0);
+    }
+
+    /**
+     * Unread counts for many conversations in a single query, so the chat list
+     * does not fan out into one count per row.
+     *
+     * @param  array<int, int>  $conversationIds
+     * @return array<int, int>
+     */
+    private function unreadCountsFor(int $viewerUserId, array $conversationIds): array
+    {
+        if ($conversationIds === []) {
+            return [];
+        }
+
+        return $this->unreadCountQuery($viewerUserId)
+            ->whereIn('messages.conversation_id', $conversationIds)
+            ->groupBy('messages.conversation_id')
+            ->selectRaw('messages.conversation_id as conversation_id, count(*) as unread_count')
+            ->pluck('unread_count', 'conversation_id')
+            ->map(fn ($count) => (int) $count)
+            ->all();
+    }
+
+    private function totalUnreadCountFor(int $viewerUserId): int
+    {
+        return (int) $this->unreadCountQuery($viewerUserId)->count();
+    }
+
+    private function unreadCountQuery(int $viewerUserId): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('messages')
+            ->join('conversation_members', function ($join) use ($viewerUserId): void {
+                $join->on('conversation_members.conversation_id', '=', 'messages.conversation_id')
+                    ->where('conversation_members.user_id', '=', $viewerUserId)
+                    ->where('conversation_members.status', '=', 'active');
+            })
+            ->where('messages.sender_user_id', '!=', $viewerUserId)
+            ->where('messages.is_deleted', '=', false)
+            ->whereRaw('messages.id > coalesce(conversation_members.last_read_message_id, 0)');
+    }
+
+    private function resolveIsOnline(?User $user): bool
+    {
+        if (! $user || ! $user->is_online || $user->last_seen_at === null) {
+            return false;
+        }
+
+        return $user->last_seen_at->greaterThanOrEqualTo(now()->subMinutes(self::PRESENCE_TTL_MINUTES));
     }
 
     private function findDirectConversation(int $viewerUserId, int $targetUserId): ?Conversation
@@ -363,7 +716,7 @@ class ChatController extends Controller
             ->first();
     }
 
-    private function conversationPayload(int $viewerUserId, Conversation $conversation): array
+    private function conversationPayload(int $viewerUserId, Conversation $conversation, int $unreadCount = 0): array
     {
         $otherMember = $conversation->members
             ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewerUserId);
@@ -374,20 +727,25 @@ class ChatController extends Controller
             'conversation_id' => $conversation->id,
             'is_messaging_stopped' => $conversation->messaging_stopped_at !== null,
             'messaging_stopped_at' => optional($conversation->messaging_stopped_at)?->toIso8601String(),
+            'messaging_stopped_by_user_id' => $conversation->messaging_stopped_by_user_id,
             'last_message' => $conversation->lastMessage?->body,
             'last_message_time' => optional($conversation->last_message_at)?->toIso8601String(),
+            'unread_count' => $unreadCount,
             'user' => [
                 'id' => $otherUser?->id,
                 'username' => $otherUser?->username,
                 'name' => $otherUser?->profile?->display_name ?? $otherUser?->full_name,
                 'image' => stylebite_asset_url($otherUser?->avatar_url),
-                'is_online' => (bool) ($otherUser?->is_online ?? false),
+                'is_online' => $this->resolveIsOnline($otherUser),
+                'last_seen_at' => optional($otherUser?->last_seen_at)?->toIso8601String(),
             ],
         ];
     }
 
-    private function messagePayload(int $viewerUserId, Message $message): array
+    private function messagePayload(int $viewerUserId, Message $message, ?int $otherLastReadMessageId = null): array
     {
+        $isMine = (int) $message->sender_user_id === (int) $viewerUserId;
+
         return [
             'id' => $message->id,
             'conversation_id' => $message->conversation_id,
@@ -396,8 +754,27 @@ class ChatController extends Controller
             'body' => $message->body,
             'message_type' => $message->message_type,
             'sent_at' => optional($message->sent_at)?->toIso8601String(),
-            'is_mine' => (int) $message->sender_user_id === (int) $viewerUserId,
+            'delivered_at' => optional($message->delivered_at)?->toIso8601String(),
+            'status' => $this->messageStatus($message, $isMine, $otherLastReadMessageId),
+            'is_mine' => $isMine,
         ];
+    }
+
+    /**
+     * In a direct chat the other member's read pointer is enough to decide "seen"
+     * for every message, so per-message read lookups are never needed here.
+     */
+    private function messageStatus(Message $message, bool $isMine, ?int $otherLastReadMessageId): string
+    {
+        if (! $isMine) {
+            return 'received';
+        }
+
+        if ($otherLastReadMessageId !== null && $message->id <= $otherLastReadMessageId) {
+            return 'seen';
+        }
+
+        return $message->delivered_at !== null ? 'delivered' : 'sent';
     }
 
     private function setMessagingState(Request $request, int $conversationId, bool $shouldStop): JsonResponse
@@ -425,7 +802,7 @@ class ChatController extends Controller
             return response()->json([
                 'status_code' => 1,
                 'message' => 'Messaging is already stopped for this chat.',
-                'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage'])),
+                'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage']), $this->unreadCountFor($viewer->id, $conversation->id)),
             ]);
         }
 
@@ -433,7 +810,7 @@ class ChatController extends Controller
             return response()->json([
                 'status_code' => 1,
                 'message' => 'Messaging is already active for this chat.',
-                'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage'])),
+                'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage']), $this->unreadCountFor($viewer->id, $conversation->id)),
             ]);
         }
 
@@ -442,10 +819,17 @@ class ChatController extends Controller
             'messaging_stopped_at' => $shouldStop ? now() : null,
         ])->save();
 
+        stylebite_broadcast(new MessagingStateChanged(
+            conversationId: (int) $conversation->id,
+            isMessagingStopped: $shouldStop,
+            stoppedByUserId: $shouldStop ? (int) $viewer->id : null,
+            stoppedAt: $shouldStop ? optional($conversation->messaging_stopped_at)?->toIso8601String() : null,
+        ));
+
         return response()->json([
             'status_code' => 1,
             'message' => $shouldStop ? 'Messaging stopped successfully.' : 'Messaging resumed successfully.',
-            'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage'])),
+            'chat' => $this->conversationPayload($viewer->id, $conversation->fresh(['members.user.profile', 'lastMessage']), $this->unreadCountFor($viewer->id, $conversation->id)),
         ]);
     }
 }
