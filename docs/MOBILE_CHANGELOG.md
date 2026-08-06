@@ -91,6 +91,64 @@ normal app usage exactly as you do now.
 
 ---
 
+## 2026-08-06 — Empty chats hidden, explicit block flags, 2-message opening limit
+
+### Conversations with no messages no longer appear in `GET /chats` ⚠️
+Tapping a profile calls `initialize`, which creates the conversation. Previously
+that empty thread immediately showed in the chat list. Now a conversation appears
+**only once it has at least one message**.
+
+`POST /chats/initialize` still returns the chat object exactly as before, so you can
+open the thread straight away — it just won't be listed until something is sent.
+
+### Block status is now explicit — no more guessing from a bare 403 ⚠️
+
+Two booleans tell you which side the block came from:
+
+| Field | Meaning |
+|---|---|
+| `is_blocked_by_me` | The logged-in user blocked the other party |
+| `is_blocked_by_other` | The other party blocked the logged-in user |
+| `is_blocked` | Convenience: either of the above is true |
+
+**On the `403` error bodies** for `POST /chats/initialize` and
+`POST /chats/{conversationId}/messages`:
+
+```json
+{
+  "status_code": 0,
+  "message": "You cannot start a chat with this user.",
+  "is_blocked_by_me": false,
+  "is_blocked_by_other": true,
+  "is_blocked": true
+}
+```
+
+This covers the re-entry case: user1 blocks user2, goes back to the chat list, taps
+that chat again, `initialize` fires and 403s. The error body now carries everything
+needed — no profile fetch, no guessing.
+
+**On every chat object** — `GET /chats` items, `initialize`, `messages`, `sync`,
+`stop`/`resume`, and the `chat.updated` socket event. So a blocked conversation can
+be tagged the moment the list loads, without opening it to trigger a 403 first.
+
+**Blocked conversations still appear in `GET /chats`** — they are flagged, not
+hidden.
+
+⚠️ **Do not open the socket for a blocked conversation.** Channel authorisation
+rejects blocked pairs with a `403`, by design. Check `is_blocked` before subscribing
+to `presence-conversation.{id}` and skip it if true — otherwise you'll get auth
+errors in the client.
+
+### Opening-message limit raised from 1 to 2
+A user may now send **2 messages** before the other person replies; the 3rd returns
+`422` "Wait for reply before sending another message."
+
+As before, this cap only applies **until the first reply**. Once the other person
+answers even once, it stops applying for the rest of the conversation.
+
+---
+
 ## 2026-08-05 — Realtime chat over Pusher (WebSockets) 🚀
 
 Chat no longer needs polling. The REST endpoints all still work and remain the

@@ -30,6 +30,12 @@ class ChatController extends Controller
      */
     private const PRESENCE_TTL_MINUTES = 2;
 
+    /**
+     * How many messages one person may send before the other has replied at all.
+     * Once a reply lands the cap stops applying for the rest of the conversation.
+     */
+    private const MAX_UNANSWERED_MESSAGES = 2;
+
     public function initialize(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -46,10 +52,13 @@ class ChatController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        if ($this->isBlockedBetween($viewer->id, $target->id)) {
+        $blockState = $this->blockStateFor((int) $viewer->id, (int) $target->id);
+
+        if ($blockState['is_blocked_by_me'] || $blockState['is_blocked_by_other']) {
             return response()->json([
                 'status_code' => 0,
                 'message' => 'You cannot start a chat with this user.',
+                ...$blockState,
             ], Response::HTTP_FORBIDDEN);
         }
 
@@ -127,6 +136,10 @@ class ChatController extends Controller
                 'lastMessage.sender',
             ])
             ->where('type', 'direct')
+            // A conversation only becomes visible once someone actually says
+            // something. Tapping a profile creates the thread, and an empty one
+            // has nothing to show in a list.
+            ->whereNotNull('last_message_id')
             ->whereHas('members', function (Builder $query) use ($viewer): void {
                 $query->where('user_id', $viewer->id)->where('status', 'active');
             })
@@ -156,13 +169,24 @@ class ChatController extends Controller
 
         $unreadCounts = $this->unreadCountsFor($viewer->id, $chats->pluck('id')->all());
 
+        $otherUserIds = $chats
+            ->map(fn (Conversation $conversation) => $this->otherMember($conversation, (int) $viewer->id)?->user_id)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $blockStates = $this->blockStatesFor((int) $viewer->id, $otherUserIds);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Chats fetched successfully.',
             'chats' => $chats->map(fn (Conversation $conversation) => $this->conversationPayload(
                 $viewer->id,
                 $conversation,
-                (int) ($unreadCounts[$conversation->id] ?? 0)
+                (int) ($unreadCounts[$conversation->id] ?? 0),
+                $blockStates[(int) ($this->otherMember($conversation, (int) $viewer->id)?->user_id ?? 0)] ?? null
             )),
             'total_unread_count' => $this->totalUnreadCountFor($viewer->id),
             'pagination' => [
@@ -277,34 +301,37 @@ class ChatController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $recipientMember = $conversation->members
-            ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewer->id);
+        $recipientMember = $this->otherMember($conversation, (int) $viewer->id);
 
-        if ($recipientMember && $this->isBlockedBetween($viewer->id, (int) $recipientMember->user_id)) {
-            return response()->json([
-                'status_code' => 0,
-                'message' => 'You can no longer send messages in this chat.',
-            ], Response::HTTP_FORBIDDEN);
-        }
+        if ($recipientMember) {
+            $blockState = $this->blockStateFor((int) $viewer->id, (int) $recipientMember->user_id);
 
-        $totalMessages = Message::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('is_deleted', false)
-            ->count();
-
-        if ($totalMessages > 0) {
-            $distinctSenders = Message::query()
-                ->where('conversation_id', $conversation->id)
-                ->where('is_deleted', false)
-                ->distinct()
-                ->pluck('sender_user_id');
-
-            if ($distinctSenders->count() === 1 && (int) $distinctSenders->first() === (int) $viewer->id) {
+            if ($blockState['is_blocked_by_me'] || $blockState['is_blocked_by_other']) {
                 return response()->json([
                     'status_code' => 0,
-                    'message' => 'Wait for reply before sending another message.',
-                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                    'message' => 'You can no longer send messages in this chat.',
+                    ...$blockState,
+                ], Response::HTTP_FORBIDDEN);
             }
+        }
+
+        // Opening-message limit: until the other person has replied even once,
+        // a sender is capped. Two counts and a min() in one pass, rather than a
+        // count followed by a distinct scan of every message in the thread.
+        $stats = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('is_deleted', false)
+            ->selectRaw('count(*) as total_messages, count(distinct sender_user_id) as sender_count, min(sender_user_id) as only_sender_id')
+            ->first();
+
+        $isUnansweredMonologue = (int) $stats->sender_count === 1
+            && (int) $stats->only_sender_id === (int) $viewer->id;
+
+        if ($isUnansweredMonologue && (int) $stats->total_messages >= self::MAX_UNANSWERED_MESSAGES) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'Wait for reply before sending another message.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $message = DB::transaction(function () use ($conversation, $viewer, $validated): Message {
@@ -589,14 +616,70 @@ class ChatController extends Controller
 
     private function isBlockedBetween(int $userId, int $otherUserId): bool
     {
-        return UserBlock::query()
-            ->where(function (Builder $query) use ($userId, $otherUserId): void {
-                $query->where('blocker_user_id', $userId)->where('blocked_user_id', $otherUserId);
+        $state = $this->blockStateFor($userId, $otherUserId);
+
+        return $state['is_blocked_by_me'] || $state['is_blocked_by_other'];
+    }
+
+    /**
+     * Which side of a block is which. The client needs to tell "I blocked them"
+     * from "they blocked me" — the two produce very different UI — so both
+     * directions are reported explicitly rather than as one boolean.
+     *
+     * @return array{is_blocked_by_me: bool, is_blocked_by_other: bool}
+     */
+    private function blockStateFor(int $viewerUserId, int $otherUserId): array
+    {
+        return $this->blockStatesFor($viewerUserId, [$otherUserId])[$otherUserId]
+            ?? ['is_blocked_by_me' => false, 'is_blocked_by_other' => false];
+    }
+
+    /**
+     * Block state for many counterparties in one query, so the chat list does
+     * not run a block lookup per row.
+     *
+     * @param  array<int, int>  $otherUserIds
+     * @return array<int, array{is_blocked_by_me: bool, is_blocked_by_other: bool}>
+     */
+    private function blockStatesFor(int $viewerUserId, array $otherUserIds): array
+    {
+        if ($otherUserIds === []) {
+            return [];
+        }
+
+        $states = [];
+
+        foreach ($otherUserIds as $otherUserId) {
+            $states[(int) $otherUserId] = [
+                'is_blocked_by_me' => false,
+                'is_blocked_by_other' => false,
+            ];
+        }
+
+        $rows = UserBlock::query()
+            ->where(function (Builder $query) use ($viewerUserId, $otherUserIds): void {
+                $query->where('blocker_user_id', $viewerUserId)->whereIn('blocked_user_id', $otherUserIds);
             })
-            ->orWhere(function (Builder $query) use ($userId, $otherUserId): void {
-                $query->where('blocker_user_id', $otherUserId)->where('blocked_user_id', $userId);
+            ->orWhere(function (Builder $query) use ($viewerUserId, $otherUserIds): void {
+                $query->whereIn('blocker_user_id', $otherUserIds)->where('blocked_user_id', $viewerUserId);
             })
-            ->exists();
+            ->get(['blocker_user_id', 'blocked_user_id']);
+
+        foreach ($rows as $row) {
+            if ((int) $row->blocker_user_id === $viewerUserId) {
+                $states[(int) $row->blocked_user_id]['is_blocked_by_me'] = true;
+            } else {
+                $states[(int) $row->blocker_user_id]['is_blocked_by_other'] = true;
+            }
+        }
+
+        return $states;
+    }
+
+    private function otherMember(Conversation $conversation, int $viewerUserId): ?ConversationMember
+    {
+        return $conversation->members
+            ->first(fn (ConversationMember $member) => (int) $member->user_id !== $viewerUserId);
     }
 
     /**
@@ -634,8 +717,7 @@ class ChatController extends Controller
 
     private function otherMemberLastReadMessageId(Conversation $conversation, int $viewerUserId): ?int
     {
-        $otherMember = $conversation->members
-            ->first(fn (ConversationMember $member) => (int) $member->user_id !== $viewerUserId);
+        $otherMember = $this->otherMember($conversation, $viewerUserId);
 
         return $otherMember?->last_read_message_id !== null
             ? (int) $otherMember->last_read_message_id
@@ -716,18 +798,29 @@ class ChatController extends Controller
             ->first();
     }
 
-    private function conversationPayload(int $viewerUserId, Conversation $conversation, int $unreadCount = 0): array
+    /**
+     * @param  array{is_blocked_by_me: bool, is_blocked_by_other: bool}|null  $blockState
+     *                                                                                     Pass a preloaded state when rendering a list; omit it for a single
+     *                                                                                     conversation and it is looked up here.
+     */
+    private function conversationPayload(int $viewerUserId, Conversation $conversation, int $unreadCount = 0, ?array $blockState = null): array
     {
-        $otherMember = $conversation->members
-            ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewerUserId);
+        $otherMember = $this->otherMember($conversation, $viewerUserId);
 
         $otherUser = $otherMember?->user;
+
+        $blockState ??= $otherMember
+            ? $this->blockStateFor($viewerUserId, (int) $otherMember->user_id)
+            : ['is_blocked_by_me' => false, 'is_blocked_by_other' => false];
 
         return [
             'conversation_id' => $conversation->id,
             'is_messaging_stopped' => $conversation->messaging_stopped_at !== null,
             'messaging_stopped_at' => optional($conversation->messaging_stopped_at)?->toIso8601String(),
             'messaging_stopped_by_user_id' => $conversation->messaging_stopped_by_user_id,
+            'is_blocked_by_me' => $blockState['is_blocked_by_me'],
+            'is_blocked_by_other' => $blockState['is_blocked_by_other'],
+            'is_blocked' => $blockState['is_blocked_by_me'] || $blockState['is_blocked_by_other'],
             'last_message' => $conversation->lastMessage?->body,
             'last_message_time' => optional($conversation->last_message_at)?->toIso8601String(),
             'unread_count' => $unreadCount,

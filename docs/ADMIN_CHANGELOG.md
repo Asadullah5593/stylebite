@@ -292,6 +292,27 @@ dashboard load within that window.
 
 ---
 
+## 2026-08-06 — Chat list, block visibility, and opening-message limit
+
+Requested by the mobile team.
+
+- **Empty conversations are hidden from the chat list.** Opening someone's profile
+  creates a conversation row; those with no messages no longer appear in
+  `GET /chats`. Nothing is deleted — the rows still exist and appear in the admin
+  messaging screens, they are just not listed to the user until a message is sent.
+- **Block state is reported explicitly** as `is_blocked_by_me` / `is_blocked_by_other`
+  on chat objects and on the `403` bodies, so the app can tell "I blocked them" from
+  "they blocked me". Blocked conversations remain listed, flagged rather than hidden.
+  Block lookups for the list are done in one query for the whole page, not per row.
+- **Opening-message limit raised from 1 to 2.** A user may send two messages before
+  the other person replies. Unchanged: the cap only applies until the first reply,
+  after which it no longer applies at all. Tunable via `MAX_UNANSWERED_MESSAGES` in
+  `ChatController`.
+
+**No migrations, no config, no new dependencies** — a plain `bash ~/deploy.sh`.
+
+---
+
 ## 2026-08-05 — Realtime chat via Pusher ⚠️ deploy needs new env vars
 
 Chat now broadcasts over **Pusher Channels**. Shared hosting cannot run a socket

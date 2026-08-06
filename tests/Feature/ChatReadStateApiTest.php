@@ -154,6 +154,9 @@ class ChatReadStateApiTest extends TestCase
     {
         [$viewer, $token, $other, $conversation] = $this->conversationBetweenUsers();
 
+        // The list only shows conversations that have a message in them.
+        $this->messageFrom($conversation, $other, 'hello');
+
         $other->forceFill(['is_online' => true, 'last_seen_at' => now()])->save();
 
         $this->withHeaders($this->headers($token))
