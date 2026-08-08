@@ -22,6 +22,49 @@ Both are required. Without the daily rate sync, **admin crediting is blocked** (
 
 ---
 
+## 2026-08-08 — Dashboard redesigned as a tabbed Command Center 🗂️
+
+The dashboard page was restructured to the approved "Command Center" design
+(Option 1a). **Layout only** — the admin shell (sidebar, topbar, fonts, colors,
+dark/light theme toggle) is unchanged, and **every metric, chart and list from
+the old dashboard is still present**, just re-organised.
+
+### New structure
+
+1. **Needs your attention** — the four action queues now sit in a single strip
+   (posts under review · pending withdrawals · failed pushes · banned users),
+   each item linking to its queue.
+2. **Five tabs** replace the long scroll: **Overview · Audience · Content ·
+   Money · Trust & Safety**. The last-viewed tab is remembered per browser.
+
+| Tab | KPI tiles | Panels |
+|---|---|---|
+| **Overview** | Total Users, Monthly Active, Posts, Total Balance, DAU, Reels, Open Reports, Pending Payouts | Users & Posts growth (14d), Withdrawal Queue, Top Posts, Activity Feed |
+| **Audience** | DAU, MAU, New Signups, Total Users, Active/Longest/Average Streak, Banned Users | Recent Users |
+| **Content** | Posts, Reels, Food Reviews, Memories, Likes, Comments, Shares, Active + Completed Contests | Top Posts, Top Reels, Media Uploads by Type |
+| **Money** | Total Balance, Pending Payouts, Completed Payouts, Pending Withdrawals | Earnings & Withdrawals (7d), Withdrawal Queue |
+| **Trust & Safety** | Posts Under Review, Open Reports, Banned Users, Failed Pushes | Top Report Reasons, Recent Reports |
+
+### Notes
+
+- The old **status snapshot** link tiles are gone as a separate section — their
+  four metrics now render as **linked KPI tiles** on the Money and Trust &
+  Safety tabs (a tile with a route is clickable), so nothing was lost.
+- KPI tiles follow the new design: no icons, uppercase label, large value, sub
+  line, delta comparison pinned to the tile bottom.
+- Charts initialise lazily per tab (a chart built inside a hidden pane renders
+  at zero size), and still re-render on theme toggle.
+- Duplicate queries removed: banned users / posts-under-review / pending
+  withdrawals / failed pushes are each counted once per request now.
+- Files: `Admin/DashboardController.php` (tab tile composition,
+  `statusSnapshots()` removed), `admin/dashboard.blade.php` (rewritten),
+  `admin/partials/metric-cards.blade.php` (now the KPI tile grid), new
+  `admin/partials/withdrawal-queue.blade.php`.
+
+No migration, no new endpoints, no mobile impact. Deploy is a plain pull.
+
+---
+
 ## 2026-08-05 — Creator Payouts: pending vs completed 💸
 
 A new **Creator Payouts** section with two cards:

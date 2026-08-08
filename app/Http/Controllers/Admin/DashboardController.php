@@ -103,12 +103,14 @@ class DashboardController extends Controller
         $mediaByType = $this->mediaByType();
         $earningsOverview = $this->earningsOverview($now);
         $reportReasons = $this->reportReasons();
-        $statusSnapshots = $this->statusSnapshots($stats);
         $recentReports = $this->recentReports();
         $withdrawalQueue = $this->withdrawalQueue();
         $recentUsers = $this->recentUsers();
         $recentActivity = $this->recentActivity();
-        $actionCards = $this->actionCards($now);
+
+        $bannedUsers = User::where('status', 'banned')->count();
+        $postsUnderReview = Post::where('status', 'under_review')->count();
+        $actionCards = $this->actionCards($stats, $postsUnderReview, $bannedUsers);
 
         $statCards = [
             ['label' => 'Total Users', 'value' => number_format($stats['totalUsers']), 'sub' => $stats['activeUsers'].' active', 'delta' => $deltas['users'], 'icon' => 'bi-people', 'accent' => 'primary'],
@@ -122,18 +124,113 @@ class DashboardController extends Controller
             ['label' => 'Total Balance', 'value' => '$'.number_format($stats['totalBalance'], 0), 'sub' => '', 'delta' => $deltas['balance'], 'icon' => 'bi-wallet2', 'accent' => 'success'],
         ];
 
+        // The dashboard renders as five tabs; each tab re-groups the metric
+        // cards built above. Cards are picked by label so a tile keeps its
+        // value, sub line and delta wiring wherever it appears — a card may
+        // show up in more than one tab (only one tab is visible at a time).
+        $byLabel = collect($statCards)
+            ->concat($audienceCards)
+            ->concat($engagementCards)
+            ->concat($streakCards)
+            ->concat($payoutCards)
+            ->keyBy('label');
+
+        $tile = fn (string $label, ?string $route = null) => array_merge(
+            $byLabel[$label],
+            $route ? ['route' => $route] : []
+        );
+
+        // Formerly the "status snapshots" link tiles — their metric and link
+        // now live directly on the matching tab tiles.
+        $pendingWithdrawalsTile = [
+            'label' => 'Pending Withdrawals',
+            'value' => number_format($stats['pendingWithdrawals']),
+            'sub' => 'Finance queue awaiting action',
+            'delta' => null,
+            'deltaLabel' => '',
+            'route' => route('admin.earnings.withdrawals'),
+        ];
+
+        $failedPushesTile = [
+            'label' => 'Failed Pushes',
+            'value' => number_format($stats['failedPushes']),
+            'sub' => 'Delivery failures in the last 24 hours',
+            'delta' => null,
+            'deltaLabel' => '',
+            'route' => route('admin.notifications.push_logs'),
+        ];
+
+        $bannedUsersTile = [
+            'label' => 'Banned Users',
+            'value' => number_format($bannedUsers),
+            'sub' => 'Restricted accounts currently in effect',
+            'delta' => null,
+            'deltaLabel' => '',
+            'route' => route('admin.users.all_users', ['status' => 'banned']),
+        ];
+
+        $underReviewTile = [
+            'label' => 'Posts Under Review',
+            'value' => number_format($postsUnderReview),
+            'sub' => 'Hidden until moderator decision',
+            'delta' => null,
+            'deltaLabel' => '',
+            'route' => route('admin.posts.all_posts'),
+        ];
+
+        $tabTiles = [
+            'overview' => [
+                $tile('Total Users'),
+                $tile('Monthly Active Users'),
+                $tile('Posts'),
+                $tile('Total Balance'),
+                $tile('Daily Active Users'),
+                $tile('Reels'),
+                $tile('Open Reports', route('admin.moderation.reports')),
+                $tile('Pending Payouts', route('admin.earnings.withdrawals')),
+            ],
+            'audience' => [
+                $tile('Daily Active Users'),
+                $tile('Monthly Active Users'),
+                $tile('New Signups'),
+                $tile('Total Users', route('admin.users.all_users')),
+                $tile('Active Streaks'),
+                $tile('Longest Streak'),
+                $tile('Average Streak'),
+                $bannedUsersTile,
+            ],
+            'content' => [
+                $tile('Posts', route('admin.posts.all_posts')),
+                $tile('Reels'),
+                $tile('Food Reviews'),
+                $tile('Memories'),
+                $tile('Likes'),
+                $tile('Comments'),
+                $tile('Shares'),
+                $tile('Active Contests'),
+                $tile('Completed Contests'),
+            ],
+            'money' => [
+                $tile('Total Balance'),
+                $tile('Pending Payouts', route('admin.earnings.withdrawals')),
+                $tile('Completed Payouts'),
+                $pendingWithdrawalsTile,
+            ],
+            'trust' => [
+                $underReviewTile,
+                $tile('Open Reports', route('admin.moderation.reports')),
+                $bannedUsersTile,
+                $failedPushesTile,
+            ],
+        ];
+
         return view('admin.dashboard', compact(
             'actionCards',
-            'audienceCards',
-            'engagementCards',
-            'streakCards',
-            'payoutCards',
-            'statCards',
+            'tabTiles',
             'growth',
             'mediaByType',
             'earningsOverview',
             'reportReasons',
-            'statusSnapshots',
             'recentReports',
             'withdrawalQueue',
             'recentUsers',
@@ -590,40 +687,6 @@ class DashboardController extends Controller
             ]);
     }
 
-    private function statusSnapshots(array $stats): array
-    {
-        return [
-            [
-                'label' => 'Pending Withdrawals',
-                'value' => number_format($stats['pendingWithdrawals']),
-                'hint' => 'Finance queue awaiting action',
-                'route' => route('admin.earnings.withdrawals'),
-                'icon' => 'bi-cash-stack',
-            ],
-            [
-                'label' => 'Failed Pushes',
-                'value' => number_format($stats['failedPushes']),
-                'hint' => 'Delivery failures in the last 24 hours',
-                'route' => route('admin.notifications.push_logs'),
-                'icon' => 'bi-bell-slash',
-            ],
-            [
-                'label' => 'Open Reports',
-                'value' => number_format($stats['openReports']),
-                'hint' => 'Open or under review moderation items',
-                'route' => route('admin.moderation.reports'),
-                'icon' => 'bi-flag',
-            ],
-            [
-                'label' => 'Banned Users',
-                'value' => number_format(User::where('status', 'banned')->count()),
-                'hint' => 'Restricted accounts currently in effect',
-                'route' => route('admin.users.all_users', ['status' => 'banned']),
-                'icon' => 'bi-person-lock',
-            ],
-        ];
-    }
-
     private function recentReports()
     {
         return Report::query()
@@ -696,12 +759,12 @@ class DashboardController extends Controller
             ]);
     }
 
-    private function actionCards(CarbonImmutable $now)
+    private function actionCards(array $stats, int $postsUnderReview, int $bannedUsers)
     {
         return collect([
             [
                 'label' => 'Posts under review',
-                'count' => Post::where('status', 'under_review')->count(),
+                'count' => $postsUnderReview,
                 'urgency' => 'med',
                 'hint' => 'Hidden until moderator decision',
                 'icon' => 'bi-shield-check',
@@ -709,7 +772,7 @@ class DashboardController extends Controller
             ],
             [
                 'label' => 'Pending withdrawals',
-                'count' => WithdrawalRequest::whereIn('status', ['pending', 'processing'])->count(),
+                'count' => $stats['pendingWithdrawals'],
                 'urgency' => 'med',
                 'hint' => 'Approve or reject payouts',
                 'icon' => 'bi-wallet2',
@@ -717,7 +780,7 @@ class DashboardController extends Controller
             ],
             [
                 'label' => 'Failed pushes',
-                'count' => PushNotificationLog::where('status', 'failed')->where('created_at', '>=', $now->subDay())->count(),
+                'count' => $stats['failedPushes'],
                 'urgency' => 'low',
                 'hint' => 'Last 24h delivery failures',
                 'icon' => 'bi-bell-slash',
@@ -725,7 +788,7 @@ class DashboardController extends Controller
             ],
             [
                 'label' => 'Banned users',
-                'count' => User::where('status', 'banned')->count(),
+                'count' => $bannedUsers,
                 'urgency' => 'low',
                 'hint' => 'Currently restricted from app',
                 'icon' => 'bi-person',

@@ -20,295 +20,283 @@
         </div>
     </div>
 
-    <section class="mb-4 mb-xl-5">
+    <section class="mb-4">
         <div class="section-label mb-3">
             <i class="bi bi-stars"></i>
             <span>Needs your attention</span>
         </div>
-        <div class="row g-3 g-xl-4">
+        <div class="card glass border-0 rounded-4 attention-strip">
             @foreach ($actionCards as $card)
-            <div class="col-12 col-md-6 col-lg-3">
-                <a href="{{ $card['route'] }}" class="card glass border-0 rounded-4 p-3 p-xl-4 text-decoration-none action-card h-100">
-                    <div class="d-flex align-items-center gap-3 h-100">
-                        <div class="action-icon {{ $card['urgency'] }}">
-                            <i class="bi {{ $card['icon'] }}"></i>
-                        </div>
-                        <div class="flex-grow-1 min-w-0">
-                            <div class="d-flex align-items-baseline gap-2 flex-wrap mb-1">
-                                <span class="display-count">{{ $card['count'] }}</span>
-                                <span class="text-white fw-bold small text-truncate">{{ $card['label'] }}</span>
-                            </div>
-                            <p class="text-muted extra-small mb-0">{{ $card['hint'] }}</p>
-                        </div>
-                        <i class="bi bi-chevron-right text-muted"></i>
+                <a href="{{ $card['route'] }}" class="attention-item text-decoration-none">
+                    <div class="action-icon {{ $card['urgency'] }}">{{ $card['count'] }}</div>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="attention-title text-truncate">{{ $card['label'] }}</div>
+                        <div class="text-muted extra-small text-truncate">{{ $card['hint'] }}</div>
                     </div>
+                    <i class="bi bi-chevron-right text-muted"></i>
                 </a>
-            </div>
             @endforeach
         </div>
     </section>
 
-    <section class="mb-4 mb-xl-5">
-        <div class="section-label muted mb-3">
-            <i class="bi bi-activity"></i>
-            <span>Audience</span>
-        </div>
-        @include('admin.partials.metric-cards', ['cards' => $audienceCards])
-    </section>
+    <ul class="nav dash-tabs" id="dashboardTabs" role="tablist">
+        @foreach ([
+            'pane-overview' => 'Overview',
+            'pane-audience' => 'Audience',
+            'pane-content' => 'Content',
+            'pane-money' => 'Money',
+            'pane-trust' => 'Trust & Safety',
+        ] as $paneId => $tabLabel)
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ $loop->first ? 'active' : '' }}" data-bs-toggle="tab" data-bs-target="#{{ $paneId }}" type="button" role="tab" aria-controls="{{ $paneId }}" aria-selected="{{ $loop->first ? 'true' : 'false' }}">
+                    {{ $tabLabel }}
+                </button>
+            </li>
+        @endforeach
+    </ul>
 
-    <section class="mb-4 mb-xl-5">
-        <div class="section-label muted mb-3">
-            <i class="bi bi-heart"></i>
-            <span>Engagement</span>
-        </div>
-        @include('admin.partials.metric-cards', ['cards' => $engagementCards])
-    </section>
+    <div class="tab-content dash-tab-content">
+        <div class="tab-pane fade show active" id="pane-overview" role="tabpanel">
+            <section class="mb-4">
+                @include('admin.partials.metric-cards', ['cards' => $tabTiles['overview']])
+            </section>
 
-    <section class="mb-4 mb-xl-5">
-        <div class="section-label muted mb-3">
-            <i class="bi bi-fire"></i>
-            <span>Streaks</span>
-        </div>
-        @include('admin.partials.metric-cards', ['cards' => $streakCards])
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="section-label muted mb-3">
-            <i class="bi bi-cash-coin"></i>
-            <span>Creator Payouts</span>
-        </div>
-        {{-- Two cards, so half width each rather than leaving a gap in a three-across row. --}}
-        @include('admin.partials.metric-cards', ['cards' => $payoutCards, 'columnClass' => 'col-12 col-xl-6'])
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="section-label muted mb-3">
-            <i class="bi bi-bar-chart"></i>
-            <span>Overview</span>
-        </div>
-        {{-- Three across so the nine Overview cards fill three even rows. --}}
-        @include('admin.partials.metric-cards', ['cards' => $statCards])
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="row g-3 g-xl-4">
-            @foreach ($statusSnapshots as $snapshot)
-                <div class="col-12 col-sm-6 col-xl-3">
-                    <a href="{{ $snapshot['route'] }}" class="card glass border-0 rounded-4 p-3 text-decoration-none snapshot-card h-100">
-                        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
-                            <div>
-                                <div class="mini-label text-muted mb-2">{{ $snapshot['label'] }}</div>
-                                <div class="snapshot-value">{{ $snapshot['value'] }}</div>
+            <section class="mb-4">
+                <div class="row g-3 g-xl-4">
+                    <div class="col-12 col-xl-8">
+                        <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                                <div>
+                                    <h3 class="panel-title mb-1">Users & Posts Growth</h3>
+                                    <p class="text-muted panel-subtitle mb-0">Last 14 days</p>
+                                </div>
+                                <span class="chart-link"><i class="bi bi-graph-up-arrow"></i></span>
                             </div>
-                            <div class="snapshot-icon">
-                                <i class="bi {{ $snapshot['icon'] }}"></i>
-                            </div>
-                        </div>
-                        <div class="text-muted extra-small">{{ $snapshot['hint'] }}</div>
-                    </a>
-                </div>
-            @endforeach
-        </div>
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="row g-3 g-xl-4">
-            @foreach ([['Top Posts', 'topPostsChart', $topPosts, 'Images & carousels', route('admin.posts.all_posts')], ['Top Reels', 'topReelsChart', $topReels, 'Video posts', route('admin.posts.all_posts')]] as [$title, $canvasId, $rows, $subtitle, $link])
-                <div class="col-12 col-xl-6">
-                    <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-                            <div>
-                                <h3 class="panel-title mb-1">{{ $title }}</h3>
-                                <p class="text-muted panel-subtitle mb-0">{{ $subtitle }} · by likes, comments & shares</p>
-                            </div>
-                            <a href="{{ $link }}" class="panel-link">All posts</a>
-                        </div>
-                        @if (empty($rows))
-                            <div class="chart-wrap d-flex align-items-center justify-content-center text-muted small">
-                                No engagement recorded yet.
-                            </div>
-                        @else
                             <div class="chart-wrap">
-                                <canvas id="{{ $canvasId }}"></canvas>
+                                <canvas id="growthChart"></canvas>
                             </div>
-                        @endif
-                    </div>
-                </div>
-            @endforeach
-        </div>
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="row g-3 g-xl-4">
-            <div class="col-12 col-xl-8">
-                <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-                        <div>
-                            <h3 class="panel-title mb-1">Users & Posts Growth</h3>
-                            <p class="text-muted panel-subtitle mb-0">Last 14 days</p>
                         </div>
-                        <span class="chart-link"><i class="bi bi-graph-up-arrow"></i></span>
                     </div>
-                    <div class="chart-wrap">
-                        <canvas id="growthChart"></canvas>
+                    <div class="col-12 col-xl-4">
+                        @include('admin.partials.withdrawal-queue')
                     </div>
                 </div>
-            </div>
-            <div class="col-12 col-xl-4">
-                <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-                        <div>
-                            <h3 class="panel-title mb-1">Top Report Reasons</h3>
-                            <p class="text-muted panel-subtitle mb-0">Last 30 days</p>
+            </section>
+
+            <section>
+                <div class="row g-3 g-xl-4">
+                    <div class="col-12 col-xl-6">
+                        <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                                <div>
+                                    <h3 class="panel-title mb-1">Top Posts</h3>
+                                    <p class="text-muted panel-subtitle mb-0">Images & carousels · by likes, comments & shares</p>
+                                </div>
+                                <a href="{{ route('admin.posts.all_posts') }}" class="panel-link">All posts</a>
+                            </div>
+                            @if (empty($topPosts))
+                                <div class="chart-wrap d-flex align-items-center justify-content-center text-muted small">
+                                    No engagement recorded yet.
+                                </div>
+                            @else
+                                <div class="chart-wrap">
+                                    <canvas id="topPostsChartOverview"></canvas>
+                                </div>
+                            @endif
                         </div>
-                        <a href="{{ route('admin.moderation.reports') }}" class="panel-link">Review queue</a>
                     </div>
-                    <div class="chart-wrap">
-                        <canvas id="reportReasonsChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="row g-3 g-xl-4">
-            <div class="col-12 col-lg-6">
-                <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                    <h3 class="panel-title mb-1">Media Uploads by Type</h3>
-                    <p class="text-muted panel-subtitle mb-4">Distribution of uploads</p>
-                    <div class="chart-wrap">
-                        <canvas id="mediaChart"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="col-12 col-lg-6">
-                <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                    <h3 class="panel-title mb-1">Earnings & Withdrawals</h3>
-                    <p class="text-muted panel-subtitle mb-4">Last 7 days</p>
-                    <div class="chart-wrap">
-                        <canvas id="earningsChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="row g-3 g-xl-4">
-            <div class="col-12 col-xl-6">
-                <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <div>
-                            <h3 class="panel-title mb-1">Recent Reports</h3>
-                            <p class="text-muted extra-small mb-0">Newest moderation items and assignment state</p>
+                    <div class="col-12 col-xl-6">
+                        <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <div>
+                                    <h3 class="panel-title mb-1">Activity Feed</h3>
+                                    <p class="text-muted extra-small mb-0">System & admin events</p>
+                                </div>
+                                <a href="{{ route('admin.activity.activity_logs') }}" class="panel-link">View all</a>
+                            </div>
+                            <div class="d-flex flex-column gap-1 bottom-card-list activity-list">
+                                @foreach ($recentActivity as $entry)
+                                    <a href="{{ route('admin.activity.activity_logs') }}" class="bottom-list-row activity-row text-decoration-none">
+                                        <div class="timeline-icon"><i class="bi bi-clock-history"></i></div>
+                                        <div class="flex-grow-1 min-w-0">
+                                            <p class="recent-title mb-1 activity-title">{{ $entry['action'] }}</p>
+                                            <p class="text-muted extra-small mb-0 activity-meta">{{ $entry['meta'] }}</p>
+                                        </div>
+                                        <span class="text-muted extra-small activity-time">{{ $entry['time'] }}</span>
+                                    </a>
+                                @endforeach
+                            </div>
                         </div>
-                        <a href="{{ route('admin.moderation.reports') }}" class="panel-link">Open reports</a>
-                    </div>
-                    <div class="d-flex flex-column gap-2 bottom-card-list">
-                        @forelse ($recentReports as $report)
-                            <a href="{{ route('admin.moderation.reports') }}" class="bottom-list-row queue-row text-decoration-none">
-                                <div class="queue-icon warning"><i class="bi bi-flag"></i></div>
-                                <div class="flex-grow-1 min-w-0">
-                                    <p class="recent-title mb-1">#{{ $report['id'] }} {{ $report['reason'] }}</p>
-                                    <p class="text-muted extra-small mb-0">{{ $report['target'] }} · {{ $report['reporter'] }}{{ $report['reviewer'] ? ' · Reviewer: '.$report['reviewer'] : '' }}</p>
-                                </div>
-                                <div class="text-end">
-                                    <span class="pill-status report-status {{ str_replace('_', '-', $report['status']) }}">{{ str($report['status'])->replace('_', ' ')->title() }}</span>
-                                    <div class="text-muted extra-small mt-1">{{ $report['time'] }}</div>
-                                </div>
-                            </a>
-                        @empty
-                            <div class="text-muted small">No reports available yet.</div>
-                        @endforelse
                     </div>
                 </div>
-            </div>
-
-            <div class="col-12 col-xl-6">
-                <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <div>
-                            <h3 class="panel-title mb-1">Withdrawal Queue</h3>
-                            <p class="text-muted extra-small mb-0">Finance requests currently pending or processing</p>
-                        </div>
-                        <a href="{{ route('admin.earnings.withdrawals') }}" class="panel-link">Finance queue</a>
-                    </div>
-                    <div class="d-flex flex-column gap-2 bottom-card-list">
-                        @forelse ($withdrawalQueue as $withdrawal)
-                            <a href="{{ route('admin.earnings.withdrawals') }}" class="bottom-list-row queue-row text-decoration-none">
-                                <div class="queue-icon success"><i class="bi bi-cash-stack"></i></div>
-                                <div class="flex-grow-1 min-w-0">
-                                    <p class="recent-title mb-1">{{ $withdrawal['user'] }}</p>
-                                    <p class="text-muted extra-small mb-0">{{ $withdrawal['method'] }} · {{ $withdrawal['amount'] }}</p>
-                                </div>
-                                <div class="text-end">
-                                    <span class="pill-status payout-status {{ str_replace('_', '-', $withdrawal['status']) }}">{{ str($withdrawal['status'])->replace('_', ' ')->title() }}</span>
-                                    <div class="text-muted extra-small mt-1">{{ $withdrawal['time'] }}</div>
-                                </div>
-                            </a>
-                        @empty
-                            <div class="text-muted small">No pending withdrawal requests right now.</div>
-                        @endforelse
-                    </div>
-                </div>
-            </div>
+            </section>
         </div>
-    </section>
 
-    <section>
-        <div class="row g-3 g-xl-4">
-            <div class="col-12 col-lg-6">
-                <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h3 class="panel-title mb-0">Recent Users</h3>
-                        <a href="{{ route('admin.users.all_users') }}" class="panel-link">View all</a>
+        <div class="tab-pane fade" id="pane-audience" role="tabpanel">
+            <section class="mb-4">
+                @include('admin.partials.metric-cards', ['cards' => $tabTiles['audience']])
+            </section>
+
+            <section>
+                <div class="row g-3 g-xl-4">
+                    <div class="col-12 col-xl-6">
+                        <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <div>
+                                    <h3 class="panel-title mb-1">Recent Users</h3>
+                                    <p class="text-muted extra-small mb-0">Latest accounts to join</p>
+                                </div>
+                                <a href="{{ route('admin.users.all_users') }}" class="panel-link">View all</a>
+                            </div>
+                            <div class="d-flex flex-column gap-1 bottom-card-list">
+                                @foreach ($recentUsers as $user)
+                                    <a href="{{ route('admin.users.show', $user['id']) }}" class="bottom-list-row user-row text-decoration-none">
+                                        @php
+                                            $avatar = $user['avatar'];
+                                            $avatarUrl = $avatar ? (str_starts_with($avatar, 'http') || str_starts_with($avatar, '/') ? $avatar : asset($avatar)) : null;
+                                        @endphp
+                                        @if ($avatarUrl)
+                                            <img src="{{ $avatarUrl }}" alt="{{ $user['name'] }}" class="recent-avatar">
+                                        @else
+                                            <div class="recent-avatar avatar-fallback">{{ str($user['name'])->substr(0, 1)->upper() }}</div>
+                                        @endif
+                                        <div class="flex-grow-1 min-w-0">
+                                            <p class="recent-title mb-0 user-name">{{ $user['name'] }}</p>
+                                            <p class="text-muted extra-small mb-0 user-handle">{{ $user['username'] }}</p>
+                                        </div>
+                                        <span class="pill-status role {{ strtolower(str_replace(' ', '-', $user['role'])) }}">{{ $user['role'] }}</span>
+                                    </a>
+                                @endforeach
+                            </div>
+                        </div>
                     </div>
-                    <div class="d-flex flex-column gap-1 bottom-card-list">
-                        @foreach ($recentUsers as $user)
-                            <a href="{{ route('admin.users.show', $user['id']) }}" class="bottom-list-row user-row text-decoration-none">
-                                @php
-                                    $avatar = $user['avatar'];
-                                    $avatarUrl = $avatar ? (str_starts_with($avatar, 'http') || str_starts_with($avatar, '/') ? $avatar : asset($avatar)) : null;
-                                @endphp
-                                @if ($avatarUrl)
-                                    <img src="{{ $avatarUrl }}" alt="{{ $user['name'] }}" class="recent-avatar">
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-pane fade" id="pane-content" role="tabpanel">
+            <section class="mb-4">
+                @include('admin.partials.metric-cards', ['cards' => $tabTiles['content']])
+            </section>
+
+            <section class="mb-4">
+                <div class="row g-3 g-xl-4">
+                    @foreach ([['Top Posts', 'topPostsChart', $topPosts, 'Images & carousels'], ['Top Reels', 'topReelsChart', $topReels, 'Video posts']] as [$title, $canvasId, $rows, $subtitle])
+                        <div class="col-12 col-xl-6">
+                            <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                                <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                                    <div>
+                                        <h3 class="panel-title mb-1">{{ $title }}</h3>
+                                        <p class="text-muted panel-subtitle mb-0">{{ $subtitle }} · by likes, comments & shares</p>
+                                    </div>
+                                    <a href="{{ route('admin.posts.all_posts') }}" class="panel-link">All posts</a>
+                                </div>
+                                @if (empty($rows))
+                                    <div class="chart-wrap d-flex align-items-center justify-content-center text-muted small">
+                                        No engagement recorded yet.
+                                    </div>
                                 @else
-                                    <div class="recent-avatar avatar-fallback">{{ str($user['name'])->substr(0, 1)->upper() }}</div>
+                                    <div class="chart-wrap">
+                                        <canvas id="{{ $canvasId }}"></canvas>
+                                    </div>
                                 @endif
-                                <div class="flex-grow-1 min-w-0">
-                                    <p class="recent-title mb-0 user-name">{{ $user['name'] }}</p>
-                                    <p class="text-muted extra-small mb-0 user-handle">{{ $user['username'] }}</p>
-                                </div>
-                                <span class="pill-status role {{ strtolower(str_replace(' ', '-', $user['role'])) }}">{{ $user['role'] }}</span>
-                            </a>
-                        @endforeach
-                    </div>
+                            </div>
+                        </div>
+                    @endforeach
                 </div>
-            </div>
+            </section>
 
-            <div class="col-12 col-lg-6">
-                <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h3 class="panel-title mb-0">Activity Feed</h3>
-                        <a href="{{ route('admin.activity.activity_logs') }}" class="panel-link">View all</a>
-                    </div>
-                    <div class="d-flex flex-column gap-1 bottom-card-list activity-list">
-                        @foreach ($recentActivity as $entry)
-                            <a href="{{ route('admin.activity.activity_logs') }}" class="bottom-list-row activity-row text-decoration-none">
-                                <div class="timeline-icon"><i class="bi bi-clock-history"></i></div>
-                                <div class="flex-grow-1 min-w-0">
-                                    <p class="recent-title mb-1 activity-title">{{ $entry['action'] }}</p>
-                                    <p class="text-muted extra-small mb-0 activity-meta">{{ $entry['meta'] }}</p>
-                                </div>
-                                <span class="text-muted extra-small activity-time">{{ $entry['time'] }}</span>
-                            </a>
-                        @endforeach
+            <section>
+                <div class="row g-3 g-xl-4">
+                    <div class="col-12 col-lg-6">
+                        <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                            <h3 class="panel-title mb-1">Media Uploads by Type</h3>
+                            <p class="text-muted panel-subtitle mb-4">Distribution of uploads</p>
+                            <div class="chart-wrap">
+                                <canvas id="mediaChart"></canvas>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </section>
         </div>
-    </section>
+
+        <div class="tab-pane fade" id="pane-money" role="tabpanel">
+            <section class="mb-4">
+                @include('admin.partials.metric-cards', ['cards' => $tabTiles['money']])
+            </section>
+
+            <section>
+                <div class="row g-3 g-xl-4">
+                    <div class="col-12 col-xl-6">
+                        <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                            <h3 class="panel-title mb-1">Earnings & Withdrawals</h3>
+                            <p class="text-muted panel-subtitle mb-4">Last 7 days</p>
+                            <div class="chart-wrap">
+                                <canvas id="earningsChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-xl-6">
+                        @include('admin.partials.withdrawal-queue')
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-pane fade" id="pane-trust" role="tabpanel">
+            <section class="mb-4">
+                @include('admin.partials.metric-cards', ['cards' => $tabTiles['trust']])
+            </section>
+
+            <section>
+                <div class="row g-3 g-xl-4">
+                    <div class="col-12 col-xl-5">
+                        <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                                <div>
+                                    <h3 class="panel-title mb-1">Top Report Reasons</h3>
+                                    <p class="text-muted panel-subtitle mb-0">Last 30 days</p>
+                                </div>
+                                <a href="{{ route('admin.moderation.reports') }}" class="panel-link">Review queue</a>
+                            </div>
+                            <div class="chart-wrap">
+                                <canvas id="reportReasonsChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-xl-7">
+                        <div class="card glass border-0 rounded-4 p-3 p-xl-4 h-100 list-shell">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <div>
+                                    <h3 class="panel-title mb-1">Recent Reports</h3>
+                                    <p class="text-muted extra-small mb-0">Newest moderation items and assignment state</p>
+                                </div>
+                                <a href="{{ route('admin.moderation.reports') }}" class="panel-link">Open reports</a>
+                            </div>
+                            <div class="d-flex flex-column gap-2 bottom-card-list">
+                                @forelse ($recentReports as $report)
+                                    <a href="{{ route('admin.moderation.reports') }}" class="bottom-list-row queue-row text-decoration-none">
+                                        <div class="queue-icon warning"><i class="bi bi-flag"></i></div>
+                                        <div class="flex-grow-1 min-w-0">
+                                            <p class="recent-title mb-1">#{{ $report['id'] }} {{ $report['reason'] }}</p>
+                                            <p class="text-muted extra-small mb-0">{{ $report['target'] }} · {{ $report['reporter'] }}{{ $report['reviewer'] ? ' · Reviewer: '.$report['reviewer'] : '' }}</p>
+                                        </div>
+                                        <div class="text-end">
+                                            <span class="pill-status report-status {{ str_replace('_', '-', $report['status']) }}">{{ str($report['status'])->replace('_', ' ')->title() }}</span>
+                                            <div class="text-muted extra-small mt-1">{{ $report['time'] }}</div>
+                                        </div>
+                                    </a>
+                                @empty
+                                    <div class="text-muted small">No reports available yet.</div>
+                                @endforelse
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
 </div>
 
 <style>
@@ -320,6 +308,7 @@
         --warning-color: #f2a81d;
         --danger-color: #ff505f;
         --muted-color: #a79aa7;
+        --strip-divider: rgba(255, 255, 255, 0.07);
     }
 
     .glass {
@@ -374,41 +363,174 @@
         color: #f2e9ef;
     }
 
-    .section-label.muted {
-        color: #f3ebf0;
+    /* ── Needs-your-attention strip ─────────────────────────────────── */
+
+    .attention-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
     }
 
-    .action-card,
+    .attention-item {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        min-width: 0;
+        padding: 1.05rem 1.3rem;
+        transition: background-color 0.2s ease;
+    }
+
+    .attention-item:hover {
+        background-color: rgba(255, 255, 255, 0.04);
+    }
+
+    .attention-title {
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 0.86rem;
+    }
+
+    @media (min-width: 1200px) {
+        .attention-item + .attention-item {
+            border-left: 1px solid var(--strip-divider);
+        }
+    }
+
+    @media (min-width: 768px) and (max-width: 1199.98px) {
+        .attention-strip {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .attention-item:nth-child(even) {
+            border-left: 1px solid var(--strip-divider);
+        }
+
+        .attention-item:nth-child(n+3) {
+            border-top: 1px solid var(--strip-divider);
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .attention-strip {
+            grid-template-columns: 1fr;
+        }
+
+        .attention-item + .attention-item {
+            border-top: 1px solid var(--strip-divider);
+        }
+    }
+
+    .action-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        font-size: 1.05rem;
+        font-weight: 800;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    .action-icon.high {
+        color: var(--danger-color);
+        background: rgba(132, 36, 49, 0.28);
+        border-color: rgba(183, 53, 70, 0.42);
+    }
+
+    .action-icon.med {
+        color: var(--warning-color);
+        background: rgba(100, 66, 26, 0.32);
+        border-color: rgba(154, 108, 37, 0.42);
+    }
+
+    .action-icon.low {
+        color: var(--info-color);
+        background: rgba(44, 58, 101, 0.30);
+        border-color: rgba(72, 106, 190, 0.35);
+    }
+
+    /* ── Tab bar ────────────────────────────────────────────────────── */
+
+    .dash-tabs {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 0.25rem;
+        flex-wrap: wrap;
+    }
+
+    .dash-tabs .nav-link {
+        border: 0;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: #b6abbc;
+        font-weight: 700;
+        font-size: 0.9rem;
+        padding: 0.65rem 0.9rem;
+        margin-bottom: -1px;
+    }
+
+    .dash-tabs .nav-link:hover {
+        color: #ffffff;
+    }
+
+    .dash-tabs .nav-link.active {
+        color: #ffffff;
+        background: transparent;
+        border-bottom-color: var(--primary-color);
+    }
+
+    .dash-tab-content {
+        padding-top: 1.4rem;
+    }
+
+    /* ── KPI tiles ──────────────────────────────────────────────────── */
+
+    .kpi-tile {
+        min-height: 150px;
+    }
+
+    .kpi-tile .stat-value {
+        font-size: clamp(1.7rem, 2.2vw, 2.05rem);
+    }
+
+    .kpi-delta {
+        margin-top: auto;
+        padding-top: 0.55rem;
+    }
+
     .stat-card,
-    .snapshot-card {
-        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-    }
-
-    .action-card,
     .metric-card,
     .chart-shell,
     .list-shell {
         overflow: hidden;
     }
 
-    .action-card {
-        min-height: 110px;
+    .stat-card {
+        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
     }
 
-    .metric-card {
-        min-height: 176px;
+    .stat-card:hover,
+    .chart-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(255, 85, 122, 0.18) !important;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
     }
 
-    .snapshot-card {
-        min-height: 144px;
+    .stat-value {
+        font-size: clamp(1.95rem, 2.4vw, 2.3rem);
+        font-weight: 800;
+        line-height: 1.1;
     }
+
+    /* ── Panels & lists ─────────────────────────────────────────────── */
 
     .chart-shell {
         min-height: 400px;
     }
 
     .list-shell {
-        min-height: 452px;
+        min-height: 400px;
         background: rgba(29, 24, 34, 0.96);
     }
 
@@ -436,119 +558,43 @@
         width: 100%;
         column-gap: 0.875rem;
         min-width: 0;
+        grid-template-columns: auto minmax(0, 1fr) auto;
     }
 
     .user-row {
-        grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: center;
     }
 
     .activity-row,
     .queue-row {
-        grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: start;
     }
 
-    .action-card:hover,
-    .stat-card:hover,
-    .snapshot-card:hover,
-    .chart-card:hover {
-        transform: translateY(-3px);
-        border-color: rgba(255, 85, 122, 0.18) !important;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
-    }
-
-    .action-icon,
-    .stat-icon,
-    .snapshot-icon,
-    .timeline-icon,
-    .queue-icon {
+    .queue-icon,
+    .timeline-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        font-size: 0.95rem;
     }
 
-    .action-icon {
-        width: 62px;
-        height: 62px;
-        border-radius: 18px;
-        font-size: 1.25rem;
-        border: 1px solid rgba(255, 255, 255, 0.10);
+    .queue-icon.warning {
+        color: #f0aa1d;
+        background: rgba(109, 70, 31, 0.55);
     }
 
-    .action-icon.high {
-        color: var(--danger-color);
-        background: rgba(132, 36, 49, 0.28);
-        border-color: rgba(183, 53, 70, 0.42);
+    .queue-icon.success {
+        color: #5ade8b;
+        background: rgba(37, 90, 54, 0.52);
     }
 
-    .action-icon.med {
-        color: var(--warning-color);
-        background: rgba(100, 66, 26, 0.32);
-        border-color: rgba(154, 108, 37, 0.42);
-    }
-
-    .action-icon.low {
-        color: var(--info-color);
-        background: rgba(44, 58, 101, 0.30);
-        border-color: rgba(72, 106, 190, 0.35);
-    }
-
-    .display-count,
-    .snapshot-value {
-        color: #ffffff;
-        font-size: 1.2rem;
-        font-weight: 800;
-        line-height: 1;
-    }
-
-    .snapshot-value {
-        font-size: 1.7rem;
-    }
-
-    .stat-icon,
-    .snapshot-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 18px;
-        font-size: 1.2rem;
-    }
-
-    .snapshot-icon {
-        color: #ff6a8b;
-        background: rgba(97, 35, 54, 0.32);
-    }
-
-    .stat-icon.primary {
-        color: #ff5d82;
-        background: rgba(133, 41, 70, 0.35);
-    }
-
-    .stat-icon.info {
-        color: var(--info-color);
-        background: rgba(51, 62, 114, 0.38);
-    }
-
-    .stat-icon.warning {
-        color: var(--warning-color);
-        background: rgba(102, 72, 25, 0.35);
-    }
-
-    .stat-icon.success {
-        color: var(--success-color);
-        background: rgba(42, 83, 49, 0.40);
-    }
-
-    .stat-icon.danger {
-        color: #ff7a91;
-        background: rgba(112, 35, 52, 0.38);
-    }
-
-    .stat-value {
-        font-size: clamp(1.95rem, 2.4vw, 2.3rem);
-        font-weight: 800;
-        line-height: 1.1;
+    .timeline-icon {
+        color: #ff5c81;
+        background: rgba(116, 44, 61, 0.52);
     }
 
     .chart-link {
@@ -636,29 +682,6 @@
         border-color: rgba(255,255,255,0.06);
     }
 
-    .queue-icon,
-    .timeline-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        font-size: 0.95rem;
-    }
-
-    .queue-icon.warning {
-        color: #f0aa1d;
-        background: rgba(109, 70, 31, 0.55);
-    }
-
-    .queue-icon.success {
-        color: #5ade8b;
-        background: rgba(37, 90, 54, 0.52);
-    }
-
-    .timeline-icon {
-        color: #ff5c81;
-        background: rgba(116, 44, 61, 0.52);
-    }
-
     .panel-title {
         color: #ffffff;
         font-size: 1rem;
@@ -666,8 +689,7 @@
         letter-spacing: -0.03em;
     }
 
-    .panel-subtitle,
-    .report-excerpt {
+    .panel-subtitle {
         color: #f0e7ee !important;
         font-size: 0.82rem;
     }
@@ -704,10 +726,9 @@
     }
 
     .metric-card .text-muted,
-    .action-card .text-muted,
+    .attention-item .text-muted,
     .chart-shell .text-muted,
-    .list-shell .text-muted,
-    .snapshot-card .text-muted {
+    .list-shell .text-muted {
         color: #f0e7ee !important;
     }
 
@@ -726,10 +747,46 @@
         border-radius: 999px;
     }
 
+    /* ── Light theme (new elements only; shared classes are handled by
+         the layout's theme-light block) ──────────────────────────────── */
+
+    body.theme-light .admin-dashboard {
+        --strip-divider: rgba(92, 62, 73, 0.10);
+    }
+
+    body.theme-light .admin-dashboard .attention-item:hover {
+        background-color: rgba(255, 120, 158, 0.05);
+    }
+
+    body.theme-light .admin-dashboard .attention-title {
+        color: #26212c;
+    }
+
+    body.theme-light .admin-dashboard .attention-item .text-muted {
+        color: #6f6a78 !important;
+    }
+
+    body.theme-light .admin-dashboard .dash-tabs {
+        border-bottom-color: rgba(92, 62, 73, 0.12);
+    }
+
+    body.theme-light .admin-dashboard .dash-tabs .nav-link {
+        color: #6f6a78;
+        background: transparent;
+    }
+
+    body.theme-light .admin-dashboard .dash-tabs .nav-link:hover,
+    body.theme-light .admin-dashboard .dash-tabs .nav-link.active {
+        color: #26212c;
+    }
+
+    body.theme-light .admin-dashboard .dash-tabs .nav-link.active {
+        border-bottom-color: var(--primary-color);
+    }
+
     @media (max-width: 767.98px) {
-        .action-card,
         .metric-card,
-        .snapshot-card,
+        .kpi-tile,
         .chart-shell,
         .list-shell {
             min-height: auto;
@@ -749,7 +806,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const reportReasonsData = @json($reportReasons);
     const topPostsData = @json($topPosts);
     const topReelsData = @json($topReels);
-    let chartInstances = [];
+    const TAB_STORAGE_KEY = 'stylebite-admin-dashboard-tab';
+    const chartInstances = new Map();
 
     const getThemePalette = () => {
         const isLight = document.body.classList.contains('theme-light');
@@ -771,271 +829,311 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     };
 
-    const destroyCharts = () => {
-        chartInstances.forEach((chart) => chart.destroy());
-        chartInstances = [];
-    };
-
     const roundedMax = (values, minimum = 10) => {
         const max = Math.max(minimum, ...values.map(value => Number(value) || 0));
         return Math.ceil((max * 1.2) / minimum) * minimum;
     };
 
-    const renderCharts = () => {
-        destroyCharts();
+    const tooltipStyle = palette => ({
+        backgroundColor: palette.tooltipBg,
+        borderColor: palette.tooltipBorder,
+        borderWidth: 1,
+        titleColor: palette.chartFontColor,
+        bodyColor: palette.chartFontColor
+    });
+
+    const buildGrowthChart = (canvas, palette) => new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: growthData.map(item => item.date),
+            datasets: [
+                {
+                    label: 'Users',
+                    data: growthData.map(item => item.users),
+                    borderColor: palette.primary,
+                    backgroundColor: palette.lineFillOne,
+                    fill: true,
+                    tension: 0.32,
+                    pointRadius: 0,
+                    pointHoverRadius: 5
+                },
+                {
+                    label: 'Posts',
+                    data: growthData.map(item => item.posts),
+                    borderColor: palette.secondary,
+                    backgroundColor: palette.lineFillTwo,
+                    fill: true,
+                    tension: 0.32,
+                    pointRadius: 0,
+                    pointHoverRadius: 5
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: tooltipStyle(palette)
+            },
+            scales: {
+                x: {
+                    ticks: { color: palette.chartFontColor },
+                    grid: { color: palette.gridColor, borderDash: [4, 4] }
+                },
+                y: {
+                    min: 0,
+                    suggestedMax: roundedMax([...growthData.map(item => item.users), ...growthData.map(item => item.posts)]),
+                    ticks: { color: palette.chartFontColor, precision: 0 },
+                    grid: { color: palette.gridColor, borderDash: [4, 4] }
+                }
+            }
+        }
+    });
+
+    const buildReportReasonsChart = (canvas, palette) => new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: reportReasonsData.map(item => item.name),
+            datasets: [{
+                data: reportReasonsData.map(item => item.value),
+                backgroundColor: [palette.primary, palette.secondary, palette.tertiary, palette.quaternary, '#f2a81d', '#8b7dff'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
+                },
+                tooltip: tooltipStyle(palette)
+            },
+            cutout: '68%'
+        }
+    });
+
+    // Top posts and top reels share one horizontal stacked bar: each row is
+    // a single item, split into the three engagement types that make up it.
+    const buildTopChart = (canvas, rows, palette) => {
+        if (!rows.length) {
+            return null;
+        }
+
+        const series = [
+            { label: 'Likes', key: 'likes', color: palette.primary },
+            { label: 'Comments', key: 'comments', color: palette.tertiary },
+            { label: 'Shares', key: 'shares', color: palette.quaternary }
+        ];
+
+        return new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: rows.map(row => row.label),
+                datasets: series.map(item => ({
+                    label: item.label,
+                    data: rows.map(row => row[item.key]),
+                    backgroundColor: item.color,
+                    borderRadius: 6,
+                    maxBarThickness: 24
+                }))
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
+                    },
+                    tooltip: {
+                        ...tooltipStyle(palette),
+                        callbacks: {
+                            // The bar label is a truncated caption, so name the author here.
+                            afterTitle: items => rows[items[0].dataIndex].author
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        min: 0,
+                        ticks: { color: palette.chartFontColor, precision: 0 },
+                        grid: { color: palette.gridColor, borderDash: [4, 4] }
+                    },
+                    y: {
+                        stacked: true,
+                        ticks: { color: palette.chartFontColor },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    };
+
+    const buildMediaChart = (canvas, palette) => new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: mediaData.map(item => item.name),
+            datasets: [{
+                label: 'Uploads',
+                data: mediaData.map(item => item.value),
+                backgroundColor: [palette.primary, palette.primary, palette.primary, palette.primary, palette.neutralBar, palette.primary],
+                borderRadius: 12,
+                maxBarThickness: 70
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    ticks: { color: palette.chartFontColor },
+                    grid: { color: palette.gridColor, borderDash: [4, 4] }
+                },
+                y: {
+                    min: 0,
+                    suggestedMax: roundedMax(mediaData.map(item => item.value), 5),
+                    ticks: { color: palette.chartFontColor, precision: 0 },
+                    grid: { color: palette.gridColor, borderDash: [4, 4] }
+                }
+            }
+        }
+    });
+
+    const buildEarningsChart = (canvas, palette) => new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: earningsData.map(item => item.date),
+            datasets: [
+                {
+                    label: 'Earnings',
+                    data: earningsData.map(item => item.earnings),
+                    borderColor: palette.primary,
+                    backgroundColor: palette.lineSubtleOne,
+                    tension: 0.36,
+                    fill: false,
+                    pointRadius: 0
+                },
+                {
+                    label: 'Withdrawals',
+                    data: earningsData.map(item => item.withdrawals),
+                    borderColor: palette.secondary,
+                    backgroundColor: palette.lineSubtleTwo,
+                    tension: 0.36,
+                    fill: false,
+                    pointRadius: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: palette.chartFontColor },
+                    grid: { color: palette.gridColor, borderDash: [4, 4] }
+                },
+                y: {
+                    min: 0,
+                    suggestedMax: roundedMax([...earningsData.map(item => item.earnings), ...earningsData.map(item => item.withdrawals)], 100),
+                    ticks: { color: palette.chartFontColor },
+                    grid: { color: palette.gridColor, borderDash: [4, 4] }
+                }
+            }
+        }
+    });
+
+    const chartBuilders = {
+        growthChart: (canvas, palette) => buildGrowthChart(canvas, palette),
+        topPostsChartOverview: (canvas, palette) => buildTopChart(canvas, topPostsData, palette),
+        topPostsChart: (canvas, palette) => buildTopChart(canvas, topPostsData, palette),
+        topReelsChart: (canvas, palette) => buildTopChart(canvas, topReelsData, palette),
+        mediaChart: (canvas, palette) => buildMediaChart(canvas, palette),
+        earningsChart: (canvas, palette) => buildEarningsChart(canvas, palette),
+        reportReasonsChart: (canvas, palette) => buildReportReasonsChart(canvas, palette),
+    };
+
+    const activePane = () => document.querySelector('.admin-dashboard .tab-pane.active');
+
+    // Charts render inside tab panes, and a chart initialised in a hidden
+    // (display: none) pane comes up with zero size — so each pane's charts
+    // are built the first time that pane is actually shown.
+    const initPaneCharts = pane => {
+        if (!pane) {
+            return;
+        }
 
         const palette = getThemePalette();
         Chart.defaults.color = palette.chartFontColor;
         Chart.defaults.font.family = 'Manrope, system-ui, sans-serif';
 
-        const growthCanvas = document.getElementById('growthChart');
-        if (growthCanvas) {
-            chartInstances.push(new Chart(growthCanvas, {
-                type: 'line',
-                data: {
-                    labels: growthData.map(item => item.date),
-                    datasets: [
-                        {
-                            label: 'Users',
-                            data: growthData.map(item => item.users),
-                            borderColor: palette.primary,
-                            backgroundColor: palette.lineFillOne,
-                            fill: true,
-                            tension: 0.32,
-                            pointRadius: 0,
-                            pointHoverRadius: 5
-                        },
-                        {
-                            label: 'Posts',
-                            data: growthData.map(item => item.posts),
-                            borderColor: palette.secondary,
-                            backgroundColor: palette.lineFillTwo,
-                            fill: true,
-                            tension: 0.32,
-                            pointRadius: 0,
-                            pointHoverRadius: 5
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: palette.tooltipBg,
-                            borderColor: palette.tooltipBorder,
-                            borderWidth: 1,
-                            titleColor: palette.chartFontColor,
-                            bodyColor: palette.chartFontColor
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: { color: palette.chartFontColor },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        },
-                        y: {
-                            min: 0,
-                            suggestedMax: roundedMax([...growthData.map(item => item.users), ...growthData.map(item => item.posts)]),
-                            ticks: { color: palette.chartFontColor, precision: 0 },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        }
-                    }
-                }
-            }));
-        }
+        pane.querySelectorAll('canvas[id]').forEach(canvas => {
+            const build = chartBuilders[canvas.id];
 
-        const reportReasonsCanvas = document.getElementById('reportReasonsChart');
-        if (reportReasonsCanvas) {
-            chartInstances.push(new Chart(reportReasonsCanvas, {
-                type: 'doughnut',
-                data: {
-                    labels: reportReasonsData.map(item => item.name),
-                    datasets: [{
-                        data: reportReasonsData.map(item => item.value),
-                        backgroundColor: [palette.primary, palette.secondary, palette.tertiary, palette.quaternary, '#f2a81d', '#8b7dff'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
-                        },
-                        tooltip: {
-                            backgroundColor: palette.tooltipBg,
-                            borderColor: palette.tooltipBorder,
-                            borderWidth: 1,
-                            titleColor: palette.chartFontColor,
-                            bodyColor: palette.chartFontColor
-                        }
-                    },
-                    cutout: '68%'
-                }
-            }));
-        }
-
-        // Top posts and top reels share one horizontal stacked bar: each row is
-        // a single item, split into the three engagement types that make up it.
-        const renderTopChart = (canvasId, rows) => {
-            const canvas = document.getElementById(canvasId);
-
-            if (!canvas || !rows.length) {
+            if (!build || chartInstances.has(canvas.id)) {
                 return;
             }
 
-            const series = [
-                { label: 'Likes', key: 'likes', color: palette.primary },
-                { label: 'Comments', key: 'comments', color: palette.tertiary },
-                { label: 'Shares', key: 'shares', color: palette.quaternary }
-            ];
+            const chart = build(canvas, palette);
 
-            chartInstances.push(new Chart(canvas, {
-                type: 'bar',
-                data: {
-                    labels: rows.map(row => row.label),
-                    datasets: series.map(item => ({
-                        label: item.label,
-                        data: rows.map(row => row[item.key]),
-                        backgroundColor: item.color,
-                        borderRadius: 6,
-                        maxBarThickness: 24
-                    }))
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
-                        },
-                        tooltip: {
-                            backgroundColor: palette.tooltipBg,
-                            borderColor: palette.tooltipBorder,
-                            borderWidth: 1,
-                            titleColor: palette.chartFontColor,
-                            bodyColor: palette.chartFontColor,
-                            callbacks: {
-                                // The bar label is a truncated caption, so name the author here.
-                                afterTitle: items => rows[items[0].dataIndex].author
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            stacked: true,
-                            min: 0,
-                            ticks: { color: palette.chartFontColor, precision: 0 },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        },
-                        y: {
-                            stacked: true,
-                            ticks: { color: palette.chartFontColor },
-                            grid: { display: false }
-                        }
-                    }
-                }
-            }));
-        };
-
-        renderTopChart('topPostsChart', topPostsData);
-        renderTopChart('topReelsChart', topReelsData);
-
-        const mediaCanvas = document.getElementById('mediaChart');
-        if (mediaCanvas) {
-            chartInstances.push(new Chart(mediaCanvas, {
-                type: 'bar',
-                data: {
-                    labels: mediaData.map(item => item.name),
-                    datasets: [{
-                        label: 'Uploads',
-                        data: mediaData.map(item => item.value),
-                        backgroundColor: [palette.primary, palette.primary, palette.primary, palette.primary, palette.neutralBar, palette.primary],
-                        borderRadius: 12,
-                        maxBarThickness: 70
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: {
-                            ticks: { color: palette.chartFontColor },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        },
-                        y: {
-                            min: 0,
-                            suggestedMax: roundedMax(mediaData.map(item => item.value), 5),
-                            ticks: { color: palette.chartFontColor, precision: 0 },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        }
-                    }
-                }
-            }));
-        }
-
-        const earningsCanvas = document.getElementById('earningsChart');
-        if (earningsCanvas) {
-            chartInstances.push(new Chart(earningsCanvas, {
-                type: 'line',
-                data: {
-                    labels: earningsData.map(item => item.date),
-                    datasets: [
-                        {
-                            label: 'Earnings',
-                            data: earningsData.map(item => item.earnings),
-                            borderColor: palette.primary,
-                            backgroundColor: palette.lineSubtleOne,
-                            tension: 0.36,
-                            fill: false,
-                            pointRadius: 0
-                        },
-                        {
-                            label: 'Withdrawals',
-                            data: earningsData.map(item => item.withdrawals),
-                            borderColor: palette.secondary,
-                            backgroundColor: palette.lineSubtleTwo,
-                            tension: 0.36,
-                            fill: false,
-                            pointRadius: 0
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: { color: palette.chartFontColor, usePointStyle: true, boxWidth: 10 }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: { color: palette.chartFontColor },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        },
-                        y: {
-                            min: 0,
-                            suggestedMax: roundedMax([...earningsData.map(item => item.earnings), ...earningsData.map(item => item.withdrawals)], 100),
-                            ticks: { color: palette.chartFontColor },
-                            grid: { color: palette.gridColor, borderDash: [4, 4] }
-                        }
-                    }
-                }
-            }));
-        }
+            if (chart) {
+                chartInstances.set(canvas.id, chart);
+            }
+        });
     };
 
-    renderCharts();
-    document.addEventListener('stylebite-theme-change', renderCharts);
+    const destroyCharts = () => {
+        chartInstances.forEach(chart => chart.destroy());
+        chartInstances.clear();
+    };
+
+    const tabButtons = document.querySelectorAll('#dashboardTabs [data-bs-toggle="tab"]');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('shown.bs.tab', event => {
+            try {
+                localStorage.setItem(TAB_STORAGE_KEY, event.target.getAttribute('data-bs-target'));
+            } catch (error) {
+                // Storage unavailable — the tab still works, it just won't persist.
+            }
+
+            initPaneCharts(document.querySelector(event.target.getAttribute('data-bs-target')));
+        });
+    });
+
+    // Restore the last-viewed tab, then build whatever pane ends up visible.
+    let storedTarget = null;
+    try {
+        storedTarget = localStorage.getItem(TAB_STORAGE_KEY);
+    } catch (error) {
+        storedTarget = null;
+    }
+
+    if (storedTarget && document.querySelector(storedTarget)) {
+        const button = document.querySelector('#dashboardTabs [data-bs-target="' + storedTarget + '"]');
+
+        if (button && !button.classList.contains('active')) {
+            bootstrap.Tab.getOrCreateInstance(button).show();
+        }
+    }
+
+    initPaneCharts(activePane());
+
+    document.addEventListener('stylebite-theme-change', () => {
+        destroyCharts();
+        initPaneCharts(activePane());
+    });
 });
 </script>
 @endsection
