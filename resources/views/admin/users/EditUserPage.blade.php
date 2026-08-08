@@ -69,11 +69,23 @@
                     @error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
 
                     <label class="form-label small fw-bold text-muted">Status</label>
-                    <select name="status" class="form-select bg-dark-soft border-0 rounded-3 mb-3 @error('status') is-invalid @enderror">
-                        @foreach (['active' => 'Active', 'inactive' => 'Suspended', 'banned' => 'Banned'] as $value => $label)
+                    @php
+                        $statusOptions = ['active' => 'Active', 'banned' => 'Banned'];
+
+                        if (! isset($statusOptions[$user->status])) {
+                            $statusOptions[$user->status] = match ($user->status) {
+                                'inactive' => 'Pending Verification (current)',
+                                'suspended' => 'Suspended (current)',
+                                default => str($user->status)->title().' (current)',
+                            };
+                        }
+                    @endphp
+                    <select name="status" class="form-select bg-dark-soft border-0 rounded-3 mb-1 @error('status') is-invalid @enderror">
+                        @foreach ($statusOptions as $value => $label)
                             <option value="{{ $value }}" @selected(old('status', $user->status) === $value)>{{ $label }}</option>
                         @endforeach
                     </select>
+                    <div class="form-text text-muted extra-small mb-3">Suspensions are applied from the user page's Suspend button, where a duration and reason are set.</div>
                     @error('status')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
 
                     <label class="form-label small fw-bold text-muted">Locale</label>

@@ -5,7 +5,10 @@
     $name = $user->full_name ?: $user->username;
     $avatar = $user->avatar_url;
     $avatarUrl = $avatar ? (str_starts_with($avatar, 'http') || str_starts_with($avatar, '/') ? $avatar : asset($avatar)) : null;
-    $statusLabel = $user->status === 'inactive' ? 'Suspended' : str($user->status)->title();
+    $statusLabel = match ($user->status) {
+        'inactive' => 'Pending Verification',
+        default => str($user->status)->title(),
+    };
     $hasVerifiedBadge = $user->profileBadges->contains(fn ($badge) => $badge->badge_key === 'verified_user');
     $assignedBadgeKeys = $user->profileBadges->pluck('badge_key')->all();
 @endphp
@@ -57,30 +60,18 @@
                         <i class="bi bi-patch-check me-2"></i>{{ $hasVerifiedBadge ? 'Remove Verified' : 'Add Verified' }}
                     </button>
                 </form>
-                <form method="POST" action="{{ route('admin.users.status', $user) }}" id="activate-user-{{ $user->id }}">
-                    @csrf
-                    @method('PATCH')
-                    <input type="hidden" name="action" value="activate">
-                    <button class="btn btn-outline-success rounded-3" type="button" onclick="confirmAction('activate-user-{{ $user->id }}', 'Activate this user?', 'This will restore normal access immediately.')">
-                        <i class="bi bi-check-circle me-2"></i>Activate
-                    </button>
-                </form>
-                <form method="POST" action="{{ route('admin.users.status', $user) }}" id="suspend-user-{{ $user->id }}">
-                    @csrf
-                    @method('PATCH')
-                    <input type="hidden" name="action" value="suspend">
-                    <button class="btn btn-outline-dynamic rounded-3 text-warning" type="button" onclick="confirmAction('suspend-user-{{ $user->id }}', 'Suspend this user?', 'This disables the account without permanently banning it.')">
-                        <i class="bi bi-slash-circle me-2"></i>Suspend
-                    </button>
-                </form>
-                <form method="POST" action="{{ route('admin.users.status', $user) }}" id="ban-user-{{ $user->id }}">
-                    @csrf
-                    @method('PATCH')
-                    <input type="hidden" name="action" value="ban">
-                    <button class="btn btn-outline-danger rounded-3" type="button" onclick="confirmAction('ban-user-{{ $user->id }}', 'Ban this user?', 'This blocks access and marks the account as banned until an admin activates it again.')">
-                        <i class="bi bi-shield-x me-2"></i>Ban
-                    </button>
-                </form>
+                <button class="btn btn-outline-success rounded-3" type="button"
+                    onclick="lifecycleAction('{{ route('admin.users.status', $user) }}', 'activate', @js($name))">
+                    <i class="bi bi-check-circle me-2"></i>Activate
+                </button>
+                <button class="btn btn-outline-dynamic rounded-3 text-warning" type="button"
+                    onclick="lifecycleAction('{{ route('admin.users.status', $user) }}', 'suspend', @js($name))">
+                    <i class="bi bi-slash-circle me-2"></i>Suspend
+                </button>
+                <button class="btn btn-outline-danger rounded-3" type="button"
+                    onclick="lifecycleAction('{{ route('admin.users.status', $user) }}', 'ban', @js($name))">
+                    <i class="bi bi-shield-x me-2"></i>Ban
+                </button>
                 <form method="POST" action="{{ route('admin.users.destroy', $user) }}" id="delete-user-{{ $user->id }}">
                     @csrf
                     @method('DELETE')
@@ -93,6 +84,19 @@
     </div>
 
     @include('admin.users.partials.tabs')
+
+    @if (in_array($user->status, ['banned', 'suspended'], true))
+        <div class="glass rounded-4 p-3 mb-4 border {{ $user->status === 'banned' ? 'border-danger' : 'border-warning' }}">
+            <i class="bi {{ $user->status === 'banned' ? 'bi-shield-x text-danger' : 'bi-slash-circle text-warning' }} me-2"></i>
+            <span class="fw-bold">{{ $user->status === 'banned' ? 'Banned' : 'Suspended' }}</span>
+            @if ($user->status === 'suspended')
+                <span class="text-muted small ms-1">{{ $user->suspended_until ? 'until '.$user->suspended_until->format('M d, Y H:i') : 'until lifted by an admin' }}</span>
+            @endif
+            @if ($user->status_reason)
+                <span class="text-muted small ms-2">— {{ $user->status_reason }}</span>
+            @endif
+        </div>
+    @endif
 
     <div class="row g-3 mb-4">
         @foreach ([
@@ -389,4 +393,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+@include('admin.users.partials.lifecycle-modal')
 @endsection

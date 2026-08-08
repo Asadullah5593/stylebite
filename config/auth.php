@@ -114,4 +114,17 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | API Session Lifetime
+    |--------------------------------------------------------------------------
+    |
+    | Hard lifetime, in hours, of a mobile-API bearer session counted from
+    | login. Sessions are not renewed by activity — when this window closes
+    | the user must log in (and pass the email 2FA) again.
+    |
+    */
+
+    'api_session_hours' => (int) env('API_SESSION_HOURS', 24),
+
 ];

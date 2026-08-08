@@ -19,7 +19,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    Route::post('/login/verify-otp', [AuthController::class, 'verifyLoginOtp'])->middleware('throttle:10,1');
+    Route::post('/login/resend-otp', [AuthController::class, 'resendLoginOtp'])->middleware('throttle:6,1');
     Route::post('/google-login', [AuthController::class, 'googleLogin']);
     Route::post('/apple-login', [AuthController::class, 'appleLogin']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:6,1');

@@ -109,6 +109,7 @@ class DashboardController extends Controller
         $recentActivity = $this->recentActivity();
 
         $bannedUsers = User::where('status', 'banned')->count();
+        $suspendedUsers = User::where('status', 'suspended')->count();
         $postsUnderReview = Post::where('status', 'under_review')->count();
         $actionCards = $this->actionCards($stats, $postsUnderReview, $bannedUsers);
 
@@ -169,6 +170,15 @@ class DashboardController extends Controller
             'route' => route('admin.users.all_users', ['status' => 'banned']),
         ];
 
+        $suspendedUsersTile = [
+            'label' => 'Suspended Users',
+            'value' => number_format($suspendedUsers),
+            'sub' => 'Temporarily locked, lift automatically on expiry',
+            'delta' => null,
+            'deltaLabel' => '',
+            'route' => route('admin.users.all_users', ['status' => 'suspended']),
+        ];
+
         $underReviewTile = [
             'label' => 'Posts Under Review',
             'value' => number_format($postsUnderReview),
@@ -220,6 +230,7 @@ class DashboardController extends Controller
                 $underReviewTile,
                 $tile('Open Reports', route('admin.moderation.reports')),
                 $bannedUsersTile,
+                $suspendedUsersTile,
                 $failedPushesTile,
             ],
         ];

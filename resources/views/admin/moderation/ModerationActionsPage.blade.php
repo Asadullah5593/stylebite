@@ -31,7 +31,7 @@
 
         <select name="action" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Actions</option>
-            @foreach (['warn','hide','remove','ban','unban','restrict','restore'] as $action)
+            @foreach (['warn','hide','remove','ban','unban','suspend','unsuspend','restrict','restore'] as $action)
                 <option value="{{ $action }}" @selected(request('action') === $action)>{{ str($action)->title() }}</option>
             @endforeach
         </select>

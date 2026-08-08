@@ -201,12 +201,12 @@
                                     </form>
 
                                     @if ($supportsAction)
-                                        <form method="POST" action="{{ route('admin.moderation.reports.target.update', $report) }}" class="d-grid gap-2">
+                                        <form method="POST" action="{{ route('admin.moderation.reports.target.update', $report) }}" class="d-grid gap-2 target-action-form">
                                             @csrf
                                             @method('PATCH')
-                                            <select name="action" class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted">
+                                            <select name="action" class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted target-action-select">
                                                 @foreach ([
-                                                    'user' => ['ban' => 'Ban user', 'restore' => 'Restore user'],
+                                                    'user' => ['ban' => 'Ban user', 'suspend' => 'Suspend user', 'restore' => 'Restore user'],
                                                     'post' => ['hide' => 'Hide post', 'restrict' => 'Restrict post', 'ban' => 'Remove post', 'restore' => 'Restore post'],
                                                     'comment' => ['hide' => 'Hide comment', 'restrict' => 'Restrict comment', 'restore' => 'Restore comment'],
                                                     'reply' => ['hide' => 'Hide reply', 'restrict' => 'Restrict reply', 'restore' => 'Restore reply'],
@@ -216,6 +216,20 @@
                                                     <option value="{{ $value }}">{{ $label }}</option>
                                                 @endforeach
                                             </select>
+                                            <textarea name="reason" rows="2" maxlength="500" class="form-control form-control-sm border-0 bg-dark-soft rounded-3" placeholder="Action reason (falls back to report notes)"></textarea>
+                                            @if ($report->target_type === 'user')
+                                                <div class="target-suspend-controls d-none d-grid gap-2">
+                                                    <select class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted target-duration-select">
+                                                        <option value="24">Suspend for 24 hours</option>
+                                                        <option value="72">Suspend for 3 days</option>
+                                                        <option value="168" selected>Suspend for 7 days</option>
+                                                        <option value="720">Suspend for 30 days</option>
+                                                        <option value="custom">Custom end time…</option>
+                                                    </select>
+                                                    <input type="hidden" name="duration_hours" value="168" class="target-duration-hours">
+                                                    <input type="datetime-local" name="suspended_until" class="form-control form-control-sm border-0 bg-dark-soft rounded-3 d-none target-until-input" disabled>
+                                                </div>
+                                            @endif
                                             <button class="btn btn-sm btn-outline-warning rounded-3" type="submit">
                                                 <i class="bi bi-shield-check me-2"></i>Apply Target Action
                                             </button>
@@ -307,4 +321,39 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Show the duration controls only while "Suspend user" is selected, and
+    // swap between preset hours and the custom end-time picker.
+    document.querySelectorAll('.target-action-form').forEach(function (form) {
+        const actionSelect = form.querySelector('.target-action-select');
+        const suspendControls = form.querySelector('.target-suspend-controls');
+
+        if (!suspendControls) {
+            return;
+        }
+
+        const durationSelect = form.querySelector('.target-duration-select');
+        const durationHours = form.querySelector('.target-duration-hours');
+        const untilInput = form.querySelector('.target-until-input');
+
+        function sync() {
+            const suspending = actionSelect.value === 'suspend';
+            const custom = durationSelect.value === 'custom';
+
+            suspendControls.classList.toggle('d-none', !suspending);
+            durationHours.disabled = !suspending || custom;
+            durationHours.value = custom ? '' : durationSelect.value;
+            untilInput.disabled = !suspending || !custom;
+            untilInput.required = suspending && custom;
+            untilInput.classList.toggle('d-none', !custom);
+        }
+
+        actionSelect.addEventListener('change', sync);
+        durationSelect.addEventListener('change', sync);
+        sync();
+    });
+});
+</script>
 @endsection

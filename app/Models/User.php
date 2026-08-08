@@ -29,6 +29,7 @@ class User extends Authenticatable
             'phone_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'suspended_until' => 'datetime',
             'is_online' => 'boolean',
             'is_two_factor_enabled' => 'boolean',
             'deleted_at' => 'datetime',
@@ -38,6 +39,43 @@ class User extends Authenticatable
     public function getAuthPassword(): string
     {
         return $this->password_hash;
+    }
+
+    public function isBanned(): bool
+    {
+        return $this->status === 'banned';
+    }
+
+    /**
+     * Suspended and still inside the window. A NULL suspended_until on a
+     * suspended account means indefinite — only an admin can lift it.
+     */
+    public function isSuspended(): bool
+    {
+        return $this->status === 'suspended'
+            && ($this->suspended_until === null || $this->suspended_until->isFuture());
+    }
+
+    public function hasExpiredSuspension(): bool
+    {
+        return $this->status === 'suspended'
+            && $this->suspended_until !== null
+            && $this->suspended_until->isPast();
+    }
+
+    /**
+     * The JSON body every auth surface returns for a blocked account, so the
+     * mobile app sees one shape whether the 403 came from login or mid-session.
+     */
+    public function blockedAccountPayload(string $code, string $baseMessage): array
+    {
+        return [
+            'status_code' => 0,
+            'code' => $code,
+            'message' => $this->status_reason ? $baseMessage.' Reason: '.$this->status_reason : $baseMessage,
+            'reason' => $this->status_reason,
+            'suspended_until' => $this->suspended_until?->toISOString(),
+        ];
     }
 
     public function authProviders(): HasMany

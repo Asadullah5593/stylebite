@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSetting;
 use App\Models\UserSession;
+use App\Services\UserModerationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -249,17 +250,25 @@ class UserController extends Controller
             'email' => ['required', 'email', 'max:191', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
             'role' => ['required', Rule::in(['user', 'creator', 'moderator', 'admin'])],
-            'status' => ['required', Rule::in(['active', 'inactive', 'banned'])],
+            // Suspensions need a duration, so they only happen through the
+            // dedicated suspend control — the form offers active/banned plus
+            // whatever state the account is already in.
+            'status' => ['required', Rule::in(array_unique(['active', 'banned', $user->status]))],
             'locale' => ['nullable', 'string', 'max:16'],
             'timezone' => ['nullable', 'string', 'max:64'],
         ]);
+
+        if (auth()->id() === $user->id && ($data['role'] !== $user->role || $data['status'] !== $user->status)) {
+            return back()->with('status', 'You cannot change your own role or account status from the edit form.');
+        }
+
+        $statusChanged = $data['status'] !== $user->status;
 
         $user->fill([
             'full_name' => $data['full_name'] ?? null,
             'username' => $data['username'],
             'email' => $data['email'],
             'role' => $data['role'],
-            'status' => $data['status'],
             'locale' => $data['locale'] ?? 'en',
             'timezone' => $data['timezone'] ?? config('app.timezone', 'UTC'),
         ]);
@@ -270,23 +279,190 @@ class UserController extends Controller
 
         $user->save();
 
+        // Status flips go through the moderation service so the reason log and
+        // session revocation can't be skipped by using the edit form.
+        if ($statusChanged) {
+            $service = app(UserModerationService::class);
+
+            match ($data['status']) {
+                'banned' => $service->ban($user, $request->user(), 'Status changed via the admin edit form.'),
+                'active' => $service->reinstate($user, $request->user(), 'Status changed via the admin edit form.'),
+                default => null,
+            };
+        }
+
         return redirect()
             ->route('admin.users.show', $user)
             ->with('status', 'User updated successfully.');
     }
 
-    public function suspend(User $user): RedirectResponse
+    public function suspend(Request $request, User $user): RedirectResponse
     {
-        return $this->changeLifecycleState($user, 'suspend');
+        $request->merge(['action' => 'suspend']);
+
+        return $this->changeStatus($request, $user);
     }
 
     public function changeStatus(Request $request, User $user): RedirectResponse
     {
+        $this->normalizeSuspensionInput($request);
+
         $validated = $request->validate([
             'action' => ['required', Rule::in(['activate', 'suspend', 'ban'])],
+            'reason' => ['required_unless:action,activate', 'nullable', 'string', 'max:500'],
+            'suspended_until' => ['required_if:action,suspend', 'nullable', 'date', 'after:now'],
+        ], [
+            'reason.required_unless' => 'Please provide a reason for this action.',
+            'suspended_until.required_if' => 'Please choose when the suspension should end.',
+            'suspended_until.after' => 'The suspension end time must be in the future.',
         ]);
 
-        return $this->changeLifecycleState($user, $validated['action']);
+        if ($user->trashed()) {
+            return back()->with('status', 'Restore this deleted user before applying lifecycle changes.');
+        }
+
+        if (auth()->id() === $user->id && $validated['action'] !== 'activate') {
+            return back()->with('status', 'You cannot apply this lifecycle action to your own account.');
+        }
+
+        $action = $validated['action'];
+        $targetStatus = match ($action) {
+            'activate' => 'active',
+            'ban' => 'banned',
+            default => 'suspended',
+        };
+
+        // Re-suspending is allowed — it re-times the window. Everything else
+        // is a no-op when the user is already in the requested state.
+        if ($user->status === $targetStatus && $action !== 'suspend') {
+            return back()->with('status', 'User is already in the requested state.');
+        }
+
+        $service = app(UserModerationService::class);
+        $admin = $request->user();
+        $reason = $validated['reason'] ?? null;
+
+        $message = match ($action) {
+            'activate' => 'User activated successfully.',
+            'ban' => 'User banned successfully.',
+            default => 'User suspended successfully.',
+        };
+
+        match ($action) {
+            'activate' => $service->reinstate($user, $admin, $reason),
+            'ban' => $service->ban($user, $admin, $reason),
+            default => $service->suspend(
+                $user,
+                $admin,
+                $reason,
+                CarbonImmutable::parse($validated['suspended_until'])
+            ),
+        };
+
+        return back()->with('status', $message);
+    }
+
+    public function bulkLifecycle(Request $request): RedirectResponse
+    {
+        $this->normalizeSuspensionInput($request);
+
+        $validated = $request->validate([
+            'user_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'user_ids.*' => ['integer', 'distinct'],
+            'action' => ['required', Rule::in(['activate', 'suspend', 'ban'])],
+            'reason' => ['required_unless:action,activate', 'nullable', 'string', 'max:500'],
+            'suspended_until' => ['required_if:action,suspend', 'nullable', 'date', 'after:now'],
+        ], [
+            'user_ids.required' => 'Select at least one user first.',
+            'user_ids.max' => 'Bulk actions are limited to 100 users at a time.',
+            'reason.required_unless' => 'Please provide a reason for this action.',
+            'suspended_until.required_if' => 'Please choose when the suspension should end.',
+            'suspended_until.after' => 'The suspension end time must be in the future.',
+        ]);
+
+        $action = $validated['action'];
+        $targetStatus = match ($action) {
+            'activate' => 'active',
+            'ban' => 'banned',
+            default => 'suspended',
+        };
+
+        $skipped = ['self' => 0, 'admin' => 0, 'unchanged' => 0];
+
+        // Soft-deleted accounts fall out here on purpose: whereIn on the
+        // default scope only returns live users.
+        $eligible = User::query()
+            ->whereIn('id', $validated['user_ids'])
+            ->get()
+            ->filter(function (User $user) use ($action, $targetStatus, &$skipped): bool {
+                if ($user->id === auth()->id()) {
+                    $skipped['self']++;
+
+                    return false;
+                }
+
+                // Other admins can only be moderated one-by-one, never in bulk.
+                if ($user->role === 'admin' && $action !== 'activate') {
+                    $skipped['admin']++;
+
+                    return false;
+                }
+
+                if ($user->status === $targetStatus && $action !== 'suspend') {
+                    $skipped['unchanged']++;
+
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+
+        $count = app(UserModerationService::class)->bulk(
+            $eligible,
+            $request->user(),
+            $action,
+            $validated['reason'] ?? null,
+            $action === 'suspend' ? CarbonImmutable::parse($validated['suspended_until']) : null
+        );
+
+        $verb = match ($action) {
+            'activate' => 'activated',
+            'ban' => 'banned',
+            default => 'suspended',
+        };
+
+        $notes = array_filter([
+            $skipped['self'] ? 'your own account' : null,
+            $skipped['admin'] ? $skipped['admin'].' admin account(s)' : null,
+            $skipped['unchanged'] ? $skipped['unchanged'].' already in that state' : null,
+        ]);
+
+        $message = "{$count} user(s) {$verb} successfully.";
+
+        if ($notes !== []) {
+            $message .= ' Skipped: '.implode(', ', $notes).'.';
+        }
+
+        return back()->with('status', $message);
+    }
+
+    /**
+     * The suspend UI offers preset lengths (posted as duration_hours) or an
+     * explicit end time. Fold presets into suspended_until before validation
+     * so everything downstream deals with a single field.
+     */
+    private function normalizeSuspensionInput(Request $request): void
+    {
+        if ($request->input('action') === 'suspend'
+            && ! $request->filled('suspended_until')
+            && is_numeric($request->input('duration_hours'))) {
+            $request->merge([
+                'suspended_until' => now()
+                    ->addHours(min(8760, max(1, (int) $request->input('duration_hours'))))
+                    ->toDateTimeString(),
+            ]);
+        }
     }
 
     public function revokeSession(User $user, UserSession $session): RedirectResponse
@@ -597,47 +773,6 @@ class UserController extends Controller
             'user_agent' => request()->userAgent(),
             'created_at' => now(),
         ]);
-    }
-
-    private function changeLifecycleState(User $user, string $action): RedirectResponse
-    {
-        if ($user->trashed()) {
-            return back()->with('status', 'Restore this deleted user before applying lifecycle changes.');
-        }
-
-        if (auth()->id() === $user->id && $action !== 'activate') {
-            return back()->with('status', 'You cannot apply this lifecycle action to your own account.');
-        }
-
-        $targetStatus = match ($action) {
-            'activate' => 'active',
-            'ban' => 'banned',
-            default => 'inactive',
-        };
-
-        if ($user->status === $targetStatus) {
-            return back()->with('status', 'User is already in the requested state.');
-        }
-
-        $oldStatus = $user->status;
-
-        $user->update(['status' => $targetStatus]);
-
-        $this->logActivity('user_lifecycle_updated', 'user', $user->id, [
-            'action' => $action,
-            'old_status' => $oldStatus,
-            'new_status' => $targetStatus,
-            'email' => $user->email,
-            'role' => $user->role,
-        ]);
-
-        $message = match ($action) {
-            'activate' => 'User activated successfully.',
-            'ban' => 'User banned successfully.',
-            default => 'User suspended successfully.',
-        };
-
-        return back()->with('status', $message);
     }
 
     private function badgeCatalog(): array

@@ -17,8 +17,64 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 | **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-ad-eligibility` | Refreshes the cached ad-eligibility flag driving reel `show_ad` + earning |
 | **Daily** (e.g. 03:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-activity` | Trims DAU/MAU history past 90 days so the table stays bounded |
 | **Daily** (e.g. 00:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-streaks` | **Required** — breaks streaks that lapsed. Without it a streak never ends |
+| **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:lift-expired-suspensions` | Reactivates users whose suspension window ended (auth paths also lift lazily; this keeps counts honest for users who never return) |
+| **Daily** (e.g. 02:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-sessions` | Deletes sessions dead for 30+ days — required now that 24-hour sessions add ≥1 row per user per day |
 
 Both are required. Without the daily rate sync, **admin crediting is blocked** (by design — the system never credits an unconverted amount).
+
+---
+
+## 2026-08-08 — Real ban/suspend system: reasons, durations, bulk actions 🔨
+
+User moderation went from a bare status flip to a full system. **Run the
+migration on deploy** — it adds a `suspended` account state, `suspended_until` /
+`status_reason` columns, and re-times existing sessions. Two new cron entries
+are required (see the cron table above).
+
+### Ban vs Suspend, now with teeth
+
+- **Ban** — permanent, reason **required**. Only Activate lifts it.
+- **Suspend** — temporary, reason **required**, duration required: 24 h / 3 d /
+  7 d / 30 d presets or a custom end time. Lifts **automatically** when the
+  window passes (lazily on the user's next visit + hourly sweep).
+- Both now **revoke every session and push token instantly** — before this, a
+  banned user's app kept working until their token expired (up to 30 days).
+  Suspended users also no longer share a status with unverified signups, which
+  previously let an unverified suspended user un-suspend themselves via the
+  email-verification flow.
+- The user sees the reason: it's stored on the account and returned in the
+  login error and API 403s until the action is lifted.
+
+### Where
+
+- **Users list / user page** — Activate / Suspend / Ban open a modal asking for
+  reason (+ duration). The old confirm-only dialogs are gone.
+- **Users list bulk bar** — select users with the new checkboxes → Ban /
+  Suspend / Activate up to 100 at once. Your own account and other admins are
+  skipped automatically (admins must be moderated one-by-one).
+- **Moderation → report queue** — user-targeted reports now offer Ban /
+  **Suspend (new)** / Restore with an optional typed reason (falls back to the
+  report's notes). `Hide`/`Restrict` were removed for user targets — they never
+  did anything, yet were logged as if applied.
+- **Moderation → actions log** — every ban/suspend/unban/unsuspend now lands
+  here (the user-list path previously wrote nothing). Editing a suspend
+  action's expiry **re-times the actual suspension**, not just the log row.
+- **Edit user form** — status choices reduced to Active/Banned (suspending
+  needs a duration → use the Suspend button); admins can no longer demote or
+  ban **their own** account from this form; status changes here go through the
+  same logged pipeline.
+- **Dashboard → Trust & Safety** — new "Suspended Users" tile next to Banned.
+
+### Data migration notes
+
+- Verified accounts stuck in the old `inactive` "suspended" state are converted
+  to `suspended` with **no end time** ("until lifted by an admin") — review
+  them under Users → filter → Suspended.
+- The status filter now distinguishes **Pending Verification** (unverified
+  signups) from **Suspended**.
+
+Companion changes on the API side (login 2FA, 24-hour sessions, 403 payloads)
+are in the mobile changelog — they ship in the same deploy.
 
 ---
 

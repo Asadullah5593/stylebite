@@ -31,56 +31,75 @@ class AuthApiTest extends TestCase
 
         $response
             ->assertCreated()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('requires_verification', true)
+            ->assertJsonMissingPath('access_token')
             ->assertJsonStructure([
                 'status_code',
                 'message',
-                'token_type',
-                'access_token',
-                'bearer_token',
                 'user' => ['id', 'name', 'email', 'username', 'role', 'status', 'email_verified_at', 'is_email_verified', 'profile' => ['display_name']],
-            ])
-            ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('token_type', 'Bearer');
+            ]);
 
         $this->assertDatabaseHas('users', [
             'email' => 'asif@example.com',
             'full_name' => 'Asif Younas',
+            'status' => 'inactive',
         ]);
 
         $this->assertDatabaseHas('profiles', [
             'display_name' => 'Asif Younas',
         ]);
 
-        $this->assertDatabaseHas('user_sessions', [
+        // No session or push token until the email OTP is verified.
+        $this->assertDatabaseMissing('user_sessions', [
             'user_id' => $response->json('user.id'),
-            'platform' => 'android',
-            'device_id' => 'device-register-1',
-        ]);
-
-        $this->assertDatabaseHas('device_tokens', [
-            'user_id' => $response->json('user.id'),
-            'device_id' => 'device-register-1',
-            'platform' => 'android',
-            'push_token' => 'push-token-register-1',
         ]);
 
         Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail): bool {
-            return $mail->subjectLine === 'Verify your Stylebite account'
-                && $mail->actionText === 'Verify Email';
+            return $mail->subjectLine === 'Your Stylebite verification code'
+                && $mail->highlightCode !== null
+                && preg_match('/^\d{6}$/', $mail->highlightCode) === 1;
         });
     }
 
-    public function test_user_can_login_via_api(): void
+    public function test_user_can_login_via_api_with_email_two_factor(): void
     {
+        Mail::fake();
+
         $user = User::factory()->create([
             'email' => 'asif@example.com',
             'password_hash' => bcrypt('password123'),
             'status' => 'active',
         ]);
 
-        $response = $this->postJson('/api/auth/login', [
+        // Step 1: password login → 2FA challenge, no token yet.
+        $this->postJson('/api/auth/login', [
             'email' => 'asif@example.com',
             'password' => 'password123',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('requires_two_factor', true)
+            ->assertJsonMissingPath('access_token');
+
+        $code = null;
+
+        Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail) use (&$code): bool {
+            if ($mail->subjectLine !== 'Your Stylebite login code') {
+                return false;
+            }
+
+            $code = $mail->highlightCode;
+
+            return true;
+        });
+
+        $this->assertNotNull($code);
+
+        // Step 2: emailed code → bearer token.
+        $response = $this->postJson('/api/auth/login/verify-otp', [
+            'email' => 'asif@example.com',
+            'code' => $code,
             'device_id' => 'device-login-1',
             'platform' => 'ios',
             'push_token' => 'push-token-login-1',
@@ -215,7 +234,8 @@ class AuthApiTest extends TestCase
 
         Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail): bool {
             return $mail->subjectLine === 'Your Stylebite password reset code'
-                && preg_match('/\b\d{6}\b/', $mail->contentText) === 1;
+                && $mail->highlightCode !== null
+                && preg_match('/^\d{6}$/', $mail->highlightCode) === 1;
         });
     }
 
@@ -232,20 +252,17 @@ class AuthApiTest extends TestCase
             'email' => 'reset@example.com',
         ])->assertOk();
 
-        $sentMail = null;
+        $code = null;
 
-        Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail) use (&$sentMail): bool {
+        Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail) use (&$code): bool {
             if ($mail->subjectLine !== 'Your Stylebite password reset code') {
                 return false;
             }
 
-            $sentMail = $mail;
+            $code = $mail->highlightCode;
 
             return true;
         });
-
-        preg_match('/\b(\d{6})\b/', $sentMail->contentText, $matches);
-        $code = $matches[1] ?? null;
 
         $this->assertNotNull($code);
 
@@ -263,7 +280,7 @@ class AuthApiTest extends TestCase
         $this->assertTrue(Hash::check('newpassword123', $user->fresh()->password_hash));
     }
 
-    public function test_user_can_verify_email_from_mail_link(): void
+    public function test_user_can_verify_email_with_otp_and_receives_token(): void
     {
         Mail::fake();
 
@@ -274,63 +291,75 @@ class AuthApiTest extends TestCase
             'password_confirmation' => 'password123',
         ])->assertCreated();
 
-        $mail = null;
+        $code = null;
 
-        Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $sentMail) use (&$mail): bool {
-            if ($sentMail->subjectLine !== 'Verify your Stylebite account') {
+        Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail) use (&$code): bool {
+            if ($mail->subjectLine !== 'Your Stylebite verification code') {
                 return false;
             }
 
-            $mail = $sentMail;
+            $code = $mail->highlightCode;
 
             return true;
         });
 
-        $this->assertNotNull($mail?->actionUrl);
+        $this->assertNotNull($code);
 
-        $path = parse_url($mail->actionUrl, PHP_URL_PATH);
-        $query = parse_url($mail->actionUrl, PHP_URL_QUERY);
-
-        $verifyResponse = $this->getJson($path.($query ? '?'.$query : ''));
+        $verifyResponse = $this->postJson('/api/auth/verify-email-otp', [
+            'email' => 'verify@example.com',
+            'code' => $code,
+        ]);
 
         $verifyResponse
             ->assertOk()
             ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('message', 'Email verified successfully.');
+            ->assertJsonPath('message', 'Email verified successfully.')
+            ->assertJsonStructure(['access_token', 'bearer_token', 'user']);
 
-        $this->assertNotNull(User::query()->find($response->json('user.id'))->email_verified_at);
+        $user = User::query()->find($response->json('user.id'));
+        $this->assertNotNull($user->email_verified_at);
+        $this->assertSame('active', $user->status);
     }
 
-    public function test_register_can_reuse_existing_push_token_without_returning_raw_database_error(): void
+    public function test_verification_can_reuse_existing_push_token_without_returning_raw_database_error(): void
     {
         Mail::fake();
 
-        $firstResponse = $this->postJson('/api/auth/register', [
-            'name' => 'First User',
-            'email' => 'first@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-            'device_id' => 'device-1',
-            'platform' => 'android',
-            'push_token' => 'push-token-shared',
-            'app_version' => '1.0.0',
-        ])->assertCreated();
+        $verify = function (string $name, string $email, string $deviceId) {
+            $this->postJson('/api/auth/register', [
+                'name' => $name,
+                'email' => $email,
+                'password' => 'password123',
+                'password_confirmation' => 'password123',
+            ])->assertCreated();
 
-        $secondResponse = $this->postJson('/api/auth/register', [
-            'name' => 'Second User',
-            'email' => 'second@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-            'device_id' => 'device-2',
-            'platform' => 'android',
-            'push_token' => 'push-token-shared',
-            'app_version' => '1.0.1',
-        ]);
+            $code = null;
+
+            Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail) use (&$code, $email): bool {
+                if ($mail->subjectLine !== 'Your Stylebite verification code' || ! $mail->hasTo($email)) {
+                    return false;
+                }
+
+                $code = $mail->highlightCode;
+
+                return true;
+            });
+
+            return $this->postJson('/api/auth/verify-email-otp', [
+                'email' => $email,
+                'code' => $code,
+                'device_id' => $deviceId,
+                'platform' => 'android',
+                'push_token' => 'push-token-shared',
+            ]);
+        };
+
+        $firstResponse = $verify('First User', 'first@example.com', 'device-1')->assertOk();
+        $secondResponse = $verify('Second User', 'second@example.com', 'device-2');
 
         $secondResponse
-            ->assertCreated()
-            ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('message', 'Registration successful.');
+            ->assertOk()
+            ->assertJsonPath('status_code', 1);
 
         $this->assertDatabaseHas('device_tokens', [
             'user_id' => $secondResponse->json('user.id'),

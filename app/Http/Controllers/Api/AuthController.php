@@ -12,6 +12,7 @@ use App\Models\UserAuthProvider;
 use App\Models\UserSession;
 use App\Models\UserSetting;
 use App\Services\MediaOptimizer;
+use App\Services\UserModerationService;
 use Carbon\Carbon;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,8 @@ use Symfony\Component\HttpFoundation\Response;
 class AuthController extends Controller
 {
     private const OTP_EXPIRY_MINUTES = 15;
+
+    private const LOGIN_OTP_EXPIRY_MINUTES = 10;
 
     private const OTP_MAX_ATTEMPTS = 5;
 
@@ -115,7 +118,9 @@ class AuthController extends Controller
             ->where('created_at', '>', now()->subSeconds(self::OTP_RESEND_COOLDOWN_SECONDS))
             ->exists();
 
-        if ($user && ! $recentlySent) {
+        // Banned accounts get the same generic response but no email — a ban
+        // should not keep generating mail traffic to the address.
+        if ($user && ! $user->isBanned() && ! $recentlySent) {
             $code = $this->generateNumericCode();
 
             PasswordReset::query()
@@ -180,11 +185,86 @@ class AuthController extends Controller
             ], Response::HTTP_FORBIDDEN);
         }
 
-        if ($user->status !== 'active') {
+        if ($blocked = $this->blockedAccountResponse($user)) {
+            return $blocked;
+        }
+
+        // Password checks out — mandatory second factor: email a login code.
+        // No token is issued until /auth/login/verify-otp confirms the code.
+        $retryAfter = $this->sendLoginOtp($user);
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => $retryAfter === null
+                ? 'We emailed you a 6-digit login code. Enter it to finish signing in.'
+                : "A login code was already sent to your email. You can request a new one in {$retryAfter} seconds.",
+            'requires_two_factor' => true,
+            'email' => $user->email,
+            'otp_resend_in' => $retryAfter ?? self::OTP_RESEND_COOLDOWN_SECONDS,
+        ]);
+    }
+
+    #[BodyParameter('email', required: true, type: 'string', example: 'user@example.com')]
+    #[BodyParameter('code', description: '6-digit login code sent to the email.', required: true, type: 'string', example: '123456')]
+    #[BodyParameter('device_id', description: 'Required when push_token is provided.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    #[BodyParameter('platform', description: 'One of: ios, android, web, desktop.', type: 'string', example: 'android')]
+    #[BodyParameter('push_token', type: 'string', example: 'fcm_token_abc123')]
+    #[BodyParameter('app_version', type: 'string', example: '1.4.2')]
+    public function verifyLoginOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+            'code' => ['required', 'digits:6'],
+            'device_id' => ['nullable', 'string', 'max:191', 'required_with:push_token'],
+            'platform' => ['nullable', 'string', 'in:ios,android,web,desktop'],
+            'push_token' => ['nullable', 'string', 'max:512'],
+            'app_version' => ['nullable', 'string', 'max:32'],
+        ], $this->loginOtpValidationMessages(), $this->authValidationAttributes());
+
+        $user = User::query()->where('email', Str::lower($validated['email']))->first();
+
+        if (! $user) {
             throw ValidationException::withMessages([
-                'email' => ['This account is not active.'],
+                'email' => ['No account was found for this email address.'],
             ]);
         }
+
+        $challenge = EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', 'login')
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->latest('id')
+            ->first();
+
+        if (! $challenge) {
+            throw ValidationException::withMessages([
+                'code' => ['The login code is invalid or has expired. Please log in again to get a new one.'],
+            ]);
+        }
+
+        if ($challenge->attempts >= self::OTP_MAX_ATTEMPTS) {
+            throw ValidationException::withMessages([
+                'code' => ['Too many incorrect attempts. Please log in again to get a new code.'],
+            ]);
+        }
+
+        if (! Hash::check($validated['code'], $challenge->token_hash)) {
+            $challenge->increment('attempts');
+
+            throw ValidationException::withMessages([
+                'code' => ['The login code is incorrect.'],
+            ]);
+        }
+
+        // The account state may have changed between password and code entry.
+        if ($blocked = $this->blockedAccountResponse($user)) {
+            return $blocked;
+        }
+
+        $challenge->forceFill([
+            'verified_at' => now(),
+        ])->save();
 
         $session = $this->createSession($user, $request);
 
@@ -195,6 +275,48 @@ class AuthController extends Controller
             'access_token' => $session['plain_text_token'],
             'bearer_token' => 'Bearer '.$session['plain_text_token'],
             'user' => $this->userPayload($session['user']),
+        ]);
+    }
+
+    #[BodyParameter('email', required: true, type: 'string', example: 'user@example.com')]
+    public function resendLoginOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+        ], $this->loginOtpValidationMessages());
+
+        $user = User::query()->where('email', Str::lower($validated['email']))->first();
+
+        // Only resend while a password-verified challenge is still open —
+        // otherwise this endpoint would let anyone direct emails at any
+        // address. The response stays generic to avoid account enumeration.
+        $hasOpenChallenge = $user && EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', 'login')
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->exists();
+
+        if (! $hasOpenChallenge) {
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'If a login is pending for this email, a new code has been sent.',
+            ]);
+        }
+
+        $retryAfter = $this->sendLoginOtp($user);
+
+        if ($retryAfter !== null) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => "Please wait {$retryAfter} seconds before requesting another code.",
+                'retry_after' => $retryAfter,
+            ], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'A new login code has been sent to your email.',
         ]);
     }
 
@@ -292,6 +414,7 @@ class AuthController extends Controller
 
         $verification = EmailVerificationToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', 'register')
             ->whereNull('verified_at')
             ->where('expires_at', '>', now())
             ->latest('id')
@@ -349,6 +472,7 @@ class AuthController extends Controller
 
         $verification = EmailVerificationToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', 'register')
             ->whereNull('verified_at')
             ->where('expires_at', '>', now())
             ->latest('id')
@@ -385,6 +509,12 @@ class AuthController extends Controller
             ])->save();
         });
 
+        // A banned/suspended account can verify its email, but that must never
+        // turn into a live session.
+        if ($blocked = $this->blockedAccountResponse($user)) {
+            return $blocked;
+        }
+
         // Verification activates the account — log the user in and return a token.
         $session = $this->createSession($user->fresh(), $request);
 
@@ -417,6 +547,7 @@ class AuthController extends Controller
 
         $last = EmailVerificationToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', 'register')
             ->latest('id')
             ->first();
 
@@ -481,7 +612,8 @@ class AuthController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent() ? Str::limit($request->userAgent(), 255, '') : null,
             'last_seen_at' => now(),
-            'expires_at' => now()->addDays(30),
+            // Hard cap: every session dies this long after login, no renewal.
+            'expires_at' => now()->addHours(max(1, (int) config('auth.api_session_hours', 24))),
         ]);
 
         $this->storeDevicePushToken($user, $request, $platform, $deviceId);
@@ -584,10 +716,10 @@ class AuthController extends Controller
             return $user;
         });
 
-        if ($user->status !== 'active') {
-            throw ValidationException::withMessages([
-                'email' => ['This account is not active.'],
-            ]);
+        // Google/Apple have already authenticated the user, so no email OTP —
+        // but banned/suspended accounts are still turned away.
+        if ($blocked = $this->blockedAccountResponse($user)) {
+            return $blocked;
         }
 
         $session = $this->createSession($user, $request);
@@ -708,6 +840,7 @@ class AuthController extends Controller
     {
         EmailVerificationToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', 'register')
             ->whereNull('verified_at')
             ->delete();
 
@@ -716,6 +849,7 @@ class AuthController extends Controller
         EmailVerificationToken::create([
             'user_id' => $user->id,
             'email' => $user->email,
+            'purpose' => 'register',
             'token_hash' => Hash::make($code),
             'expires_at' => now()->addMinutes(self::OTP_EXPIRY_MINUTES),
             'created_at' => now(),
@@ -734,6 +868,104 @@ class AuthController extends Controller
     private function generateNumericCode(): string
     {
         return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * 403 payload for banned/suspended (or otherwise blocked) accounts, with
+     * an expired suspension lifted on the way through. Returns null when the
+     * account is fine to proceed.
+     */
+    private function blockedAccountResponse(User $user): ?JsonResponse
+    {
+        if ($user->hasExpiredSuspension()) {
+            app(UserModerationService::class)->liftExpiredSuspension($user);
+        }
+
+        if ($user->isBanned()) {
+            return response()->json(
+                $user->blockedAccountPayload('account_banned', 'Your account has been banned.'),
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        if ($user->isSuspended()) {
+            return response()->json(
+                $user->blockedAccountPayload('account_suspended', 'Your account is suspended.'),
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        if ($user->status !== 'active') {
+            return response()->json(
+                $user->blockedAccountPayload('account_inactive', 'This account is not active.'),
+                Response::HTTP_FORBIDDEN
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Create + email a login 2FA code. Returns null when a fresh code was
+     * sent, or the cooldown seconds remaining when one went out too recently
+     * (in which case no email is sent and the open challenge stays valid).
+     */
+    private function sendLoginOtp(User $user): ?int
+    {
+        $last = EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', 'login')
+            ->whereNull('verified_at')
+            ->latest('id')
+            ->first();
+
+        if ($last && $last->created_at && $last->created_at->gt(now()->subSeconds(self::OTP_RESEND_COOLDOWN_SECONDS))) {
+            $elapsed = (int) $last->created_at->diffInSeconds(now(), true);
+
+            return max(1, self::OTP_RESEND_COOLDOWN_SECONDS - $elapsed);
+        }
+
+        EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', 'login')
+            ->whereNull('verified_at')
+            ->delete();
+
+        $code = $this->generateNumericCode();
+
+        EmailVerificationToken::create([
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'purpose' => 'login',
+            'token_hash' => Hash::make($code),
+            'expires_at' => now()->addMinutes(self::LOGIN_OTP_EXPIRY_MINUTES),
+            'created_at' => now(),
+        ]);
+
+        stylebite_send_email(
+            $user->email,
+            $user->full_name ?? $user->username,
+            'Your Stylebite login code',
+            'Confirm your login',
+            "Someone just signed in to your Stylebite account with your password.\n\nEnter this 6-digit code to finish logging in. It expires in ".self::LOGIN_OTP_EXPIRY_MINUTES." minutes.\n\nIf this wasn't you, reset your password right away.",
+            highlightCode: $code
+        );
+
+        return null;
+    }
+
+    private function loginOtpValidationMessages(): array
+    {
+        return [
+            'email.required' => 'Please enter your email address.',
+            'email.email' => 'Please enter a valid email address.',
+            'code.required' => 'Please enter the 6-digit login code.',
+            'code.digits' => 'The login code must be 6 digits.',
+            'device_id.required_with' => 'Device ID is required when a push token is provided.',
+            'platform.in' => 'Please choose a valid platform.',
+            'push_token.max' => 'Push token is too long. Please try again.',
+            'app_version.max' => 'App version is too long. Please try again.',
+        ];
     }
 
     private function userPayload(User $user): array

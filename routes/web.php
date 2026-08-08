@@ -74,6 +74,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/', [UserController::class, 'index'])->name('all_users');
         Route::get('/create', [UserController::class, 'create'])->name('create');
         Route::post('/', [UserController::class, 'store'])->name('store');
+        Route::patch('/bulk-lifecycle', [UserController::class, 'bulkLifecycle'])->name('bulk_lifecycle');
         Route::get('/profiles', [UserController::class, 'profiles'])->name('profiles');
         Route::get('/settings', [UserController::class, 'settings'])->name('settings');
         Route::get('/auth-providers', [UserController::class, 'authProviders'])->name('auth_providers');

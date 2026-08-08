@@ -12,6 +12,8 @@ use App\Models\Message;
 use App\Models\Post;
 use App\Models\Report;
 use App\Models\User;
+use App\Services\UserModerationService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -21,7 +23,11 @@ class ModerationController extends Controller
 {
     private const REPORT_STATUSES = ['open', 'under_review', 'resolved', 'rejected'];
     private const TARGET_ACTIONS = ['ban', 'hide', 'restrict', 'restore'];
-    private const ACTION_TYPES_WITH_EXPIRY = ['warn', 'restrict', 'ban'];
+    // Accounts are banned/suspended/restored — hide and restrict only make
+    // sense for content, and used to be logged against users without doing
+    // anything at all.
+    private const USER_TARGET_ACTIONS = ['ban', 'suspend', 'restore'];
+    private const ACTION_TYPES_WITH_EXPIRY = ['warn', 'restrict', 'ban', 'suspend'];
 
     public function reports(Request $request): View
     {
@@ -101,8 +107,27 @@ class ModerationController extends Controller
 
     public function updateTarget(Request $request, Report $report): RedirectResponse
     {
+        $isUserTarget = $report->target_type === 'user';
+
+        // Preset suspension lengths arrive as duration_hours; fold them into
+        // suspended_until so validation deals with a single field.
+        if ($request->input('action') === 'suspend'
+            && ! $request->filled('suspended_until')
+            && is_numeric($request->input('duration_hours'))) {
+            $request->merge([
+                'suspended_until' => now()
+                    ->addHours(min(8760, max(1, (int) $request->input('duration_hours'))))
+                    ->toDateTimeString(),
+            ]);
+        }
+
         $data = $request->validate([
-            'action' => ['required', Rule::in(self::TARGET_ACTIONS)],
+            'action' => ['required', Rule::in($isUserTarget ? self::USER_TARGET_ACTIONS : self::TARGET_ACTIONS)],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'suspended_until' => ['required_if:action,suspend', 'nullable', 'date', 'after:now'],
+        ], [
+            'suspended_until.required_if' => 'Please choose when the suspension should end.',
+            'suspended_until.after' => 'The suspension end time must be in the future.',
         ]);
 
         $target = $this->resolveReportTarget($report);
@@ -112,17 +137,38 @@ class ModerationController extends Controller
         }
 
         $action = $data['action'];
-        $this->applyTargetAction($report->target_type, $target, $action);
+        // The admin's own words win; otherwise inherit the report context.
+        $reason = filled($data['reason'] ?? null)
+            ? $data['reason']
+            : ($report->resolution_notes ?: $report->description ?: $report->reason);
 
-        if ($this->canPersistModerationAction($report->target_type)) {
-            ModerationAction::create([
-                'moderator_user_id' => auth()->id(),
-                'target_type' => $report->target_type,
-                'target_id' => $report->target_id,
-                'action' => $action,
-                'reason' => $report->resolution_notes ?: $report->description ?: $report->reason,
-                'created_at' => now(),
-            ]);
+        if ($isUserTarget) {
+            if ($target->id === auth()->id()) {
+                return back()->with('status', 'You cannot apply this action to your own account.');
+            }
+
+            // The service writes the moderation_actions row, revokes sessions,
+            // and logs the lifecycle change — nothing to persist here.
+            $service = app(UserModerationService::class);
+
+            match ($action) {
+                'ban' => $service->ban($target, $request->user(), $reason),
+                'suspend' => $service->suspend($target, $request->user(), $reason, CarbonImmutable::parse($data['suspended_until'])),
+                default => $service->reinstate($target, $request->user(), $reason),
+            };
+        } else {
+            $this->applyTargetAction($report->target_type, $target, $action);
+
+            if ($this->canPersistModerationAction($report->target_type)) {
+                ModerationAction::create([
+                    'moderator_user_id' => auth()->id(),
+                    'target_type' => $report->target_type,
+                    'target_id' => $report->target_id,
+                    'action' => $action,
+                    'reason' => $reason,
+                    'created_at' => now(),
+                ]);
+            }
         }
 
         if ($report->status === 'open') {
@@ -136,7 +182,7 @@ class ModerationController extends Controller
         $this->logActivity('moderation_target_updated', $report->target_type, $report->target_id, [
             'report_id' => $report->id,
             'action' => $action,
-            'reason' => $report->reason,
+            'reason' => $reason,
         ]);
 
         return back()->with('status', str($report->target_type)->title().' #'.$report->target_id.' updated with '.str($action)->title().' action.');
@@ -151,6 +197,18 @@ class ModerationController extends Controller
         $moderationAction->update([
             'expires_at' => $data['expires_at'] ?? null,
         ]);
+
+        // Re-timing a suspension from the actions log moves the real window,
+        // not just the display row. Clearing it makes the suspension indefinite.
+        if ($moderationAction->action === 'suspend' && $moderationAction->target_type === 'user') {
+            $user = User::query()->find($moderationAction->target_id);
+
+            if ($user && $user->status === 'suspended') {
+                $user->forceFill([
+                    'suspended_until' => isset($data['expires_at']) ? CarbonImmutable::parse($data['expires_at']) : null,
+                ])->save();
+            }
+        }
 
         $this->logActivity('moderation_action_expiry_updated', 'moderation_action', $moderationAction->id, [
             'target_type' => $moderationAction->target_type,
@@ -227,10 +285,9 @@ class ModerationController extends Controller
         return self::ACTION_TYPES_WITH_EXPIRY;
     }
 
-    private function applyTargetAction(string $targetType, User|Post|Comment|CommentReply|Contest|Message $target, string $action): void
+    private function applyTargetAction(string $targetType, Post|Comment|CommentReply|Contest|Message $target, string $action): void
     {
         match ($targetType) {
-            'user' => $this->applyUserAction($target, $action),
             'post' => $this->applyContentAction($target, $action),
             'comment' => $this->applyContentAction($target, $action),
             'reply' => $this->applyContentAction($target, $action),
@@ -238,17 +295,6 @@ class ModerationController extends Controller
             'message' => $this->applyMessageAction($target, $action),
             default => null,
         };
-    }
-
-    private function applyUserAction(User $user, string $action): void
-    {
-        $user->status = match ($action) {
-            'ban' => 'banned',
-            'restore' => 'active',
-            default => $user->status,
-        };
-
-        $user->save();
     }
 
     private function applyContentAction(Post|Comment|CommentReply $target, string $action): void

@@ -2,8 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Models\UserDailyActivity;
 use App\Models\UserSession;
+use App\Services\UserModerationService;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -29,6 +31,26 @@ class SessionTokenAuth
 
         if (! $session || ! $session->user) {
             return $this->unauthorized('Invalid or expired token.');
+        }
+
+        // Account-state gate. Runs before the last-seen/streak bookkeeping so a
+        // banned account stops looking online and stops accruing streaks.
+        $user = $session->user;
+
+        if ($user->hasExpiredSuspension()) {
+            app(UserModerationService::class)->liftExpiredSuspension($user);
+        }
+
+        if ($user->isBanned()) {
+            return $this->forbiddenAccount($user, 'account_banned', 'Your account has been banned.');
+        }
+
+        if ($user->isSuspended()) {
+            return $this->forbiddenAccount($user, 'account_suspended', 'Your account is suspended.');
+        }
+
+        if ($user->status !== 'active') {
+            return $this->forbiddenAccount($user, 'account_inactive', 'This account is not active.');
         }
 
         $now = now();
@@ -90,5 +112,17 @@ class SessionTokenAuth
             'status_code' => 0,
             'message' => $message,
         ], Response::HTTP_UNAUTHORIZED);
+    }
+
+    /**
+     * 403 with a machine-readable code so the app can route the user to the
+     * right screen (banned vs suspended-until) instead of a generic logout.
+     */
+    private function forbiddenAccount(User $user, string $code, string $message): JsonResponse
+    {
+        return response()->json(
+            $user->blockedAccountPayload($code, $message),
+            Response::HTTP_FORBIDDEN
+        );
     }
 }

@@ -8,6 +8,87 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-08 — Email 2FA on login, 24-hour sessions, ban/suspend enforcement 🚨 BREAKING
+
+Three account-security changes land together. **The app must be updated — the
+old login flow no longer returns a token.**
+
+### 1. Password login now requires an emailed code (every login)
+
+`POST /auth/login` with correct credentials **no longer returns
+`access_token`**. Instead it emails a 6-digit code and returns:
+
+```json
+{ "status_code": 1, "requires_two_factor": true, "email": "user@example.com", "otp_resend_in": 60 }
+```
+
+Show the OTP screen (same UX as registration verification), then call:
+
+- `POST /auth/login/verify-otp` — `{ email, code }` plus the usual optional
+  device fields (`device_id`, `platform`, `push_token`, `app_version` — send
+  them **here** now, not on `/login`). Success returns exactly what login used
+  to return: `access_token`, `bearer_token`, `user`.
+- `POST /auth/login/resend-otp` — `{ email }`. 60-second cooldown
+  (`429` + `retry_after` when called too soon). Only works while a
+  password-verified login is pending, so call it from the OTP screen only.
+
+Code rules: expires in **10 minutes**, **5 wrong attempts** kill it, single-use.
+When a code is dead the user must go back to the password step — the login call
+issues a fresh one.
+
+**Google / Apple login are unchanged** (`/auth/google-login`, `/auth/apple-login`
+still return the token directly) — the provider already authenticated the user.
+Registration is also unchanged: `verify-email-otp` still logs the user in; there
+is no double-OTP on signup.
+
+### 2. Sessions now expire 24 hours after login — no renewal
+
+Every token (password *and* social login) dies exactly 24 h after it was
+issued, regardless of activity. Expect a daily `401 Invalid or expired token.`
+and route the user to the login screen. Tokens issued before this deploy were
+capped to 24 h from deploy time. Handle the `401` gracefully on app start —
+this is now an everyday event, not an edge case.
+
+### 3. Banned / suspended accounts get real, distinct errors
+
+Admins can now **ban** (permanent) or **suspend** (timed, auto-lifts) accounts,
+and it takes effect immediately: all the user's sessions are revoked the moment
+the action is taken.
+
+Two places you'll see it:
+
+- **At login** (password or social): `403` with a machine-readable `code`.
+- **Mid-session** on *any* authenticated endpoint (if a token somehow outlives
+  the action): same `403` body — treat it as a forced logout to a dedicated
+  screen, do not retry.
+
+```json
+{
+  "status_code": 0,
+  "code": "account_banned" | "account_suspended" | "account_inactive",
+  "message": "Your account is suspended. Reason: …",
+  "reason": "Repeated harassment reports",   // nullable
+  "suspended_until": "2026-08-15T10:00:00Z"  // nullable; null on bans
+}
+```
+
+Show `reason` and, for suspensions, `suspended_until` ("You're suspended until
+…"). A suspension past its end time lifts automatically the next time the user
+logs in or calls the API — no admin needed.
+
+Also: `POST /auth/forgot-password` silently sends nothing for banned accounts
+(response body unchanged, to avoid leaking ban status).
+
+### Migration checklist for the app
+
+1. Handle `requires_two_factor` on login → OTP screen → `login/verify-otp`.
+2. Move device/push params from `/login` to `/login/verify-otp`.
+3. Handle daily `401` re-login gracefully.
+4. Add banned/suspended screens keyed on the `403` `code` field (login **and**
+   global response interceptor).
+
+---
+
 ## 2026-08-05 — Creator payout counts on the admin dashboard (no app impact) ℹ️
 
 Admin-side reporting only. No endpoint, request, response or database column the

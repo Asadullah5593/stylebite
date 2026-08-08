@@ -42,7 +42,7 @@
 
         <select name="status" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Status</option>
-            @foreach (['active' => 'Active', 'inactive' => 'Suspended', 'banned' => 'Banned', 'deleted' => 'Deleted'] as $value => $label)
+            @foreach (['active' => 'Active', 'inactive' => 'Pending Verification', 'suspended' => 'Suspended', 'banned' => 'Banned', 'deleted' => 'Deleted'] as $value => $label)
                 <option value="{{ $value }}" @selected(request('status') === $value)>{{ $label }}</option>
             @endforeach
         </select>
@@ -69,12 +69,33 @@
         </a>
     </form>
 
+    <div id="bulkActionBar" class="glass rounded-4 p-3 mb-4 border border-warning-soft d-none align-items-center flex-wrap gap-3">
+        <div class="fw-bold small"><span id="bulkSelectedCount">0</span> selected</div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-outline-success rounded-3" onclick="bulkLifecycle('activate')">
+                <i class="bi bi-check-circle me-1"></i>Activate
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning rounded-3" onclick="bulkLifecycle('suspend')">
+                <i class="bi bi-slash-circle me-1"></i>Suspend
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger rounded-3" onclick="bulkLifecycle('ban')">
+                <i class="bi bi-shield-x me-1"></i>Ban
+            </button>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-dynamic rounded-3 ms-auto" onclick="clearBulkSelection()">
+            <i class="bi bi-x-lg me-1"></i>Clear selection
+        </button>
+    </div>
+
     <div class="glass rounded-4 overflow-hidden border-white-05">
         <div class="table-responsive scrollbar-hidden">
             <table class="table table-hover align-middle mb-0" id="usersTable">
                 <thead class="bg-white-05">
                     <tr>
-                        <th class="ps-4 text-muted small fw-bold text-uppercase py-3">User</th>
+                        <th class="ps-4 py-3" style="width: 36px;">
+                            <input class="form-check-input" type="checkbox" id="selectAllUsers" title="Select all on this page">
+                        </th>
+                        <th class="text-muted small fw-bold text-uppercase py-3">User</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Role</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Status</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Content</th>
@@ -91,9 +112,14 @@
                             $avatarUrl = $avatar ? (str_starts_with($avatar, 'http') || str_starts_with($avatar, '/') ? $avatar : asset($avatar)) : null;
                             $statusClass = match ($user->status) {
                                 'active' => 'bg-success',
+                                'suspended' => 'bg-warning',
                                 'banned' => 'bg-danger',
                                 'deleted' => 'bg-danger',
-                                default => 'bg-warning',
+                                default => 'bg-secondary',
+                            };
+                            $statusLabel = match ($user->status) {
+                                'inactive' => 'Pending Verification',
+                                default => str($user->status)->title(),
                             };
                             $roleClass = match ($user->role) {
                                 'admin' => 'bg-primary-soft text-primary',
@@ -104,6 +130,11 @@
                         @endphp
                         <tr class="border-white-05 group">
                             <td class="ps-4">
+                                <input class="form-check-input user-select-box" type="checkbox"
+                                    value="{{ $user->id }}"
+                                    @disabled($user->trashed() || $user->id === auth()->id())>
+                            </td>
+                            <td>
                                 <div class="d-flex align-items-center gap-3">
                                     @if ($avatarUrl)
                                         <img src="{{ $avatarUrl }}" alt="{{ $name }}" class="user-avatar border border-2 border-primary-soft shadow-sm">
@@ -125,8 +156,11 @@
                             <td>
                                 <div class="d-flex align-items-center gap-2">
                                     <span class="dot-indicator {{ $statusClass }}"></span>
-                                    <span class="small fw-medium text-capitalize">{{ $user->status === 'inactive' ? 'Suspended' : $user->status }}</span>
+                                    <span class="small fw-medium">{{ $statusLabel }}</span>
                                 </div>
+                                @if ($user->status === 'suspended')
+                                    <div class="text-warning extra-small">{{ $user->suspended_until ? 'Until '.$user->suspended_until->format('M d, Y H:i') : 'Until lifted by an admin' }}</div>
+                                @endif
                                 @if ($user->trashed())
                                     <div class="text-muted extra-small">Deleted {{ $user->deleted_at?->diffForHumans() }}</div>
                                 @endif
@@ -146,34 +180,22 @@
                                         <button class="btn btn-icon btn-sm hover-bg-white-10" data-bs-toggle="dropdown" type="button"><i class="bi bi-three-dots"></i></button>
                                         <ul class="dropdown-menu dropdown-menu-end shadow-lg border-white-10 glass">
                                             <li>
-                                                <form method="POST" action="{{ route('admin.users.status', $user) }}" id="activate-user-{{ $user->id }}">
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <input type="hidden" name="action" value="activate">
-                                                    <button class="dropdown-item small py-2 text-success" type="button" onclick="confirmAction('activate-user-{{ $user->id }}', 'Activate this user?', 'This will restore normal access immediately.')">
-                                                        <i class="bi bi-check-circle me-2"></i>Activate
-                                                    </button>
-                                                </form>
+                                                <button class="dropdown-item small py-2 text-success" type="button"
+                                                    onclick="lifecycleAction('{{ route('admin.users.status', $user) }}', 'activate', @js($name))">
+                                                    <i class="bi bi-check-circle me-2"></i>Activate
+                                                </button>
                                             </li>
                                             <li>
-                                                <form method="POST" action="{{ route('admin.users.status', $user) }}" id="suspend-user-{{ $user->id }}">
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <input type="hidden" name="action" value="suspend">
-                                                    <button class="dropdown-item small py-2 text-warning" type="button" onclick="confirmAction('suspend-user-{{ $user->id }}', 'Suspend this user?', 'This disables the account without permanently banning it.')">
-                                                        <i class="bi bi-slash-circle me-2"></i>Suspend
-                                                    </button>
-                                                </form>
+                                                <button class="dropdown-item small py-2 text-warning" type="button"
+                                                    onclick="lifecycleAction('{{ route('admin.users.status', $user) }}', 'suspend', @js($name))">
+                                                    <i class="bi bi-slash-circle me-2"></i>Suspend
+                                                </button>
                                             </li>
                                             <li>
-                                                <form method="POST" action="{{ route('admin.users.status', $user) }}" id="ban-user-{{ $user->id }}">
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <input type="hidden" name="action" value="ban">
-                                                    <button class="dropdown-item small py-2 text-danger" type="button" onclick="confirmAction('ban-user-{{ $user->id }}', 'Ban this user?', 'This blocks access and marks the account as banned until an admin activates it again.')">
-                                                        <i class="bi bi-shield-x me-2"></i>Ban
-                                                    </button>
-                                                </form>
+                                                <button class="dropdown-item small py-2 text-danger" type="button"
+                                                    onclick="lifecycleAction('{{ route('admin.users.status', $user) }}', 'ban', @js($name))">
+                                                    <i class="bi bi-shield-x me-2"></i>Ban
+                                                </button>
                                             </li>
                                             <li><hr class="dropdown-divider border-white-10"></li>
                                             @if ($user->trashed())
@@ -204,7 +226,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">No users found for the selected filters.</td>
+                            <td colspan="8" class="text-center py-5 text-muted">No users found for the selected filters.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -265,14 +287,14 @@ document.addEventListener('DOMContentLoaded', function() {
         let csv = 'Name,Username,Email,Role,Status,Created\n';
         document.querySelectorAll('#usersTable tbody tr').forEach(row => {
             const cells = row.querySelectorAll('td');
-            if (cells.length < 7) {
+            if (cells.length < 8) {
                 return;
             }
 
-            const identity = cells[0].innerText.trim().split('\n').filter(Boolean);
-            const role = cells[1].innerText.trim();
-            const status = cells[2].innerText.trim();
-            const created = cells[5].innerText.trim();
+            const identity = cells[1].innerText.trim().split('\n').filter(Boolean);
+            const role = cells[2].innerText.trim();
+            const status = cells[3].innerText.trim().split('\n')[0];
+            const created = cells[6].innerText.trim();
 
             csv += `"${identity[0] ?? ''}","${identity[2]?.replace('@', '') ?? ''}","${identity[1] ?? ''}","${role}","${status}","${created}"\n`;
         });
@@ -287,6 +309,43 @@ document.addEventListener('DOMContentLoaded', function() {
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
     };
+
+    // Bulk selection → shared lifecycle modal.
+    const selectAll = document.getElementById('selectAllUsers');
+    const bulkBar = document.getElementById('bulkActionBar');
+    const bulkCount = document.getElementById('bulkSelectedCount');
+
+    function selectedIds() {
+        return Array.from(document.querySelectorAll('.user-select-box:checked')).map(box => box.value);
+    }
+
+    function refreshBulkBar() {
+        const count = selectedIds().length;
+        bulkCount.textContent = count;
+        bulkBar.classList.toggle('d-none', count === 0);
+        bulkBar.classList.toggle('d-flex', count > 0);
+    }
+
+    document.querySelectorAll('.user-select-box').forEach(box => box.addEventListener('change', refreshBulkBar));
+
+    selectAll?.addEventListener('change', function () {
+        document.querySelectorAll('.user-select-box:not(:disabled)').forEach(box => { box.checked = selectAll.checked; });
+        refreshBulkBar();
+    });
+
+    window.clearBulkSelection = function () {
+        if (selectAll) selectAll.checked = false;
+        document.querySelectorAll('.user-select-box:checked').forEach(box => { box.checked = false; });
+        refreshBulkBar();
+    };
+
+    window.bulkLifecycle = function (action) {
+        const ids = selectedIds();
+        if (ids.length === 0) return;
+        lifecycleBulkAction(action, ids);
+    };
 });
 </script>
+
+@include('admin.users.partials.lifecycle-modal')
 @endsection
