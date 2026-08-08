@@ -62,8 +62,8 @@
                 <div class="bg-white-05 rounded-4 p-3 h-100 border border-white-05">
                     <label class="form-label small fw-bold text-muted">Role</label>
                     <select name="role" class="form-select bg-dark-soft border-0 rounded-3 mb-3 @error('role') is-invalid @enderror">
-                        @foreach (['user' => 'User', 'creator' => 'Creator', 'moderator' => 'Moderator', 'admin' => 'Admin'] as $value => $label)
-                            <option value="{{ $value }}" @selected(old('role', $user->role) === $value)>{{ $label }}</option>
+                        @foreach ($roleOptions as $value)
+                            <option value="{{ $value }}" @selected(old('role', $currentRoleName) === $value)>{{ ucfirst($value) }}</option>
                         @endforeach
                     </select>
                     @error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror

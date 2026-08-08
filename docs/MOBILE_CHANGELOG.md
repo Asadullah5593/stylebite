@@ -8,6 +8,15 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-09 — Admin panel role & permission system (no app impact) ℹ️
+
+Admin-side only: panel access is now governed by Spatie roles/permissions
+(moderators and custom staff roles can hold scoped panel access). No mobile
+endpoint, request, response or column changed — `user.role` in API payloads
+behaves exactly as before.
+
+---
+
 ## 2026-08-08 — Email 2FA on login, 24-hour sessions, ban/suspend enforcement 🚨 BREAKING
 
 Three account-security changes land together. **The app must be updated — the

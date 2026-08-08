@@ -24,6 +24,7 @@ use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\View;
 
 class AppServiceProvider extends ServiceProvider
@@ -41,6 +42,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Break-glass super admins (comma-separated emails in SUPER_ADMIN_EMAILS)
+        // pass every permission check, so a bad role edit can never lock
+        // everyone out of the panel. Mirrors the reference project's
+        // administrator-usernames bypass. Return null (not false) otherwise,
+        // so normal Spatie checks still run.
+        Gate::before(function ($user, string $ability) {
+            return stylebite_is_super_admin($user) ? true : null;
+        });
+
         Scramble::configure()
             ->withDocumentTransformers(function (OpenApi $openApi): void {
                 $openApi->secure(SecurityScheme::http('bearer'));

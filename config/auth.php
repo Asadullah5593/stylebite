@@ -127,4 +127,17 @@ return [
 
     'api_session_hours' => (int) env('API_SESSION_HOURS', 24),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Super Admins
+    |--------------------------------------------------------------------------
+    |
+    | Comma-separated emails that bypass every permission check (Gate::before)
+    | and always retain admin-panel access. Break-glass safety net so a bad
+    | role edit cannot lock every administrator out.
+    |
+    */
+
+    'super_admins' => env('SUPER_ADMIN_EMAILS', ''),
+
 ];

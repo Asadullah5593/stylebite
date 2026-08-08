@@ -335,6 +335,27 @@ if (! function_exists('stylebite_currency_for_country')) {
     }
 }
 
+if (! function_exists('stylebite_is_super_admin')) {
+    /**
+     * Whether this account is on the break-glass super-admin list
+     * (SUPER_ADMIN_EMAILS env, comma-separated). These accounts bypass all
+     * permission checks via Gate::before and can always enter the panel.
+     */
+    function stylebite_is_super_admin($user): bool
+    {
+        if (! $user || empty($user->email)) {
+            return false;
+        }
+
+        $emails = array_values(array_filter(array_map(
+            fn ($email) => strtolower(trim($email)),
+            explode(',', (string) config('auth.super_admins', ''))
+        )));
+
+        return $emails !== [] && in_array(strtolower($user->email), $emails, true);
+    }
+}
+
 if (! function_exists('stylebite_send_email')) {
     function stylebite_send_email(
         string $toEmail,

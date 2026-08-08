@@ -10,11 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, SoftDeletes;
+    use HasFactory, HasRoles, Notifiable, SoftDeletes;
 
     protected $guarded = [];
 
@@ -39,6 +40,24 @@ class User extends Authenticatable
     public function getAuthPassword(): string
     {
         return $this->password_hash;
+    }
+
+    /**
+     * Panel entry = active account + any Spatie permission (through any role
+     * or direct grant). Super-admin emails from config bypass the permission
+     * check entirely, mirroring the Gate::before rule.
+     */
+    public function canAccessAdminPanel(): bool
+    {
+        if ($this->status !== 'active') {
+            return false;
+        }
+
+        if (stylebite_is_super_admin($this)) {
+            return true;
+        }
+
+        return $this->getAllPermissions()->isNotEmpty();
     }
 
     public function isBanned(): bool

@@ -33,13 +33,12 @@ class AdminAuthController extends Controller
         if (
             ! $user ||
             ! Hash::check($credentials['password'], $user->password_hash) ||
-            $user->role !== 'admin' ||
-            $user->status !== 'active'
+            ! $user->canAccessAdminPanel()
         ) {
             Auth::logout();
 
             return back()
-                ->withErrors(['email' => 'Only active admin accounts can access the dashboard.'])
+                ->withErrors(['email' => 'Only active staff accounts can access the dashboard.'])
                 ->onlyInput('email');
         }
 
@@ -63,8 +62,6 @@ class AdminAuthController extends Controller
 
     private function isLoggedInAdmin(): bool
     {
-        return Auth::check()
-            && Auth::user()->role === 'admin'
-            && Auth::user()->status === 'active';
+        return Auth::check() && Auth::user()->canAccessAdminPanel();
     }
 }

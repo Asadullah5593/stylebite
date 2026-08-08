@@ -24,6 +24,49 @@ Both are required. Without the daily rate sync, **admin crediting is blocked** (
 
 ---
 
+## 2026-08-09 — Role & permission system (Spatie) 🔐
+
+The panel moved from a single hard-coded "admin only" gate to real
+per-permission access control built on `spatie/laravel-permission`. **Deploy
+needs:** `composer install` (new package) + migration. Optional env:
+`SUPER_ADMIN_EMAILS=you@example.com,other@example.com` — break-glass accounts
+that bypass every permission check so a bad role edit can never lock everyone
+out.
+
+### How it works
+
+- **36 permissions**, named `module.action` (`users.view`, `users.moderate`,
+  `posts.moderate`, `earnings.manage`, `settings.access`, …). Every admin route
+  is gated by exactly one of them.
+- **Panel entry** = active account holding *at least one* permission — no
+  longer "role admin only". Sidebar sections/links only render for modules the
+  signed-in person can see.
+- **Four built-in roles** mirror the app's account types:
+  - `admin` — locked, always has every permission (cannot be edited/deleted)
+  - `moderator` — 18 permissions out of the box: dashboards, user list +
+    **ban/suspend powers**, content moderation, reports queue, activity logs.
+    No money, no settings, no role management, no user create/delete.
+  - `creator` / `user` — no panel permissions (app-side labels only)
+- Existing accounts were backfilled automatically: everyone with the old
+  `admin`/`moderator` enum value got the matching role. **Moderator accounts
+  can now sign in to the panel** (they couldn't before) — review who holds
+  that role before deploying.
+
+### New pages
+
+- **Users → Roles & Permissions** (`admin/roles`): create/edit/delete custom
+  roles with a per-module permission checkbox grid (e.g. a "support" role with
+  just `users.view` + `messaging.view`, or a "finance" role with
+  `earnings.*`). Built-in roles can be re-tuned but not renamed or deleted;
+  roles still assigned to users can't be deleted.
+- **User create/edit forms** now assign these roles (including custom ones)
+  instead of the fixed enum list. The legacy `users.role` column stays in sync
+  for app-side payloads whenever the assigned role is one of the four
+  account types. Role changes are written to the activity log
+  (`user_role_updated`), and you still can't change your own role or status.
+
+---
+
 ## 2026-08-08 — Real ban/suspend system: reasons, durations, bulk actions 🔨
 
 User moderation went from a bare status flip to a full system. **Run the

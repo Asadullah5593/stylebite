@@ -60,7 +60,9 @@ class UserController extends Controller
 
     public function create(): View
     {
-        return view('admin.users.CreateUserPage');
+        return view('admin.users.CreateUserPage', [
+            'roleOptions' => $this->roleOptions(),
+        ]);
     }
 
     public function profiles(Request $request): View
@@ -188,7 +190,7 @@ class UserController extends Controller
             'username' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:users,username'],
             'email' => ['required', 'email', 'max:191', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'role' => ['required', Rule::in(['user', 'creator', 'moderator', 'admin'])],
+            'role' => ['required', 'string', Rule::exists('roles', 'name')->where('guard_name', 'web')],
             'status' => ['required', Rule::in(['active', 'inactive', 'banned'])],
             'locale' => ['nullable', 'string', 'max:16'],
             'timezone' => ['nullable', 'string', 'max:64'],
@@ -199,11 +201,13 @@ class UserController extends Controller
             'username' => $data['username'],
             'email' => $data['email'],
             'password_hash' => Hash::make($data['password']),
-            'role' => $data['role'],
+            'role' => $this->enumRoleFor($data['role']),
             'status' => $data['status'],
             'locale' => $data['locale'] ?? 'en',
             'timezone' => $data['timezone'] ?? config('app.timezone', 'UTC'),
         ]);
+
+        $user->assignRole($data['role']);
 
         return redirect()
             ->route('admin.users.show', $user)
@@ -239,17 +243,55 @@ class UserController extends Controller
 
     public function edit(User $user): View
     {
-        return view('admin.users.EditUserPage', compact('user'));
+        return view('admin.users.EditUserPage', [
+            'user' => $user,
+            'roleOptions' => $this->roleOptions(),
+            'currentRoleName' => $this->currentRoleName($user),
+        ]);
+    }
+
+    /**
+     * Spatie role names for the role picker (web guard).
+     */
+    private function roleOptions(): array
+    {
+        return \Spatie\Permission\Models\Role::query()
+            ->where('guard_name', 'web')
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+    }
+
+    /**
+     * The user's Spatie role, falling back to the legacy enum column for
+     * accounts that predate the permission system.
+     */
+    private function currentRoleName(User $user): string
+    {
+        return $user->roles()->pluck('name')->first() ?? $user->role;
+    }
+
+    /**
+     * Mirror a Spatie role onto the legacy users.role enum when it coincides
+     * with an app-level account type; custom panel roles leave it untouched.
+     */
+    private function enumRoleFor(string $roleName, string $fallback = 'user'): string
+    {
+        return in_array($roleName, ['user', 'creator', 'moderator', 'admin'], true)
+            ? $roleName
+            : $fallback;
     }
 
     public function update(Request $request, User $user): RedirectResponse
     {
+        $currentRoleName = $this->currentRoleName($user);
+
         $data = $request->validate([
             'full_name' => ['nullable', 'string', 'max:120'],
             'username' => ['required', 'string', 'max:50', 'alpha_dash', Rule::unique('users', 'username')->ignore($user->id)],
             'email' => ['required', 'email', 'max:191', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
-            'role' => ['required', Rule::in(['user', 'creator', 'moderator', 'admin'])],
+            'role' => ['required', 'string', Rule::exists('roles', 'name')->where('guard_name', 'web')],
             // Suspensions need a duration, so they only happen through the
             // dedicated suspend control — the form offers active/banned plus
             // whatever state the account is already in.
@@ -258,17 +300,18 @@ class UserController extends Controller
             'timezone' => ['nullable', 'string', 'max:64'],
         ]);
 
-        if (auth()->id() === $user->id && ($data['role'] !== $user->role || $data['status'] !== $user->status)) {
+        if (auth()->id() === $user->id && ($data['role'] !== $currentRoleName || $data['status'] !== $user->status)) {
             return back()->with('status', 'You cannot change your own role or account status from the edit form.');
         }
 
         $statusChanged = $data['status'] !== $user->status;
+        $roleChanged = $data['role'] !== $currentRoleName;
 
         $user->fill([
             'full_name' => $data['full_name'] ?? null,
             'username' => $data['username'],
             'email' => $data['email'],
-            'role' => $data['role'],
+            'role' => $roleChanged ? $this->enumRoleFor($data['role'], $user->role) : $user->role,
             'locale' => $data['locale'] ?? 'en',
             'timezone' => $data['timezone'] ?? config('app.timezone', 'UTC'),
         ]);
@@ -278,6 +321,15 @@ class UserController extends Controller
         }
 
         $user->save();
+
+        if ($roleChanged) {
+            $user->syncRoles([$data['role']]);
+
+            $this->logActivity('user_role_updated', 'user', $user->id, [
+                'from' => $currentRoleName,
+                'to' => $data['role'],
+            ]);
+        }
 
         // Status flips go through the moderation service so the reason log and
         // session revocation can't be skipped by using the edit form.

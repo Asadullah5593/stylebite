@@ -25,7 +25,10 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'username' => fake()->unique()->userName(),
+            // Real usernames are /^[a-z0-9_]+$/ (enforced at registration), but
+            // faker's userName() emits dots — normalise so round-tripping a
+            // factory user through admin forms never trips alpha_dash rules.
+            'username' => str_replace(['.', '-'], '_', strtolower(fake()->unique()->userName())),
             'email' => fake()->unique()->safeEmail(),
             'full_name' => fake()->name(),
             'email_verified_at' => now(),
@@ -45,5 +48,22 @@ class UserFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
         ]);
+    }
+
+    /**
+     * Keep the legacy enum column and the Spatie role in step: a factory
+     * user created with role => 'admin' also gets the Spatie admin role,
+     * so permission-gated panel routes work in tests.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            if ($user->role && \Spatie\Permission\Models\Role::query()
+                ->where('name', $user->role)
+                ->where('guard_name', 'web')
+                ->exists()) {
+                $user->assignRole($user->role);
+            }
+        });
     }
 }
