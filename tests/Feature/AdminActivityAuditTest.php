@@ -311,6 +311,50 @@ class AdminActivityAuditTest extends TestCase
         );
     }
 
+    public function test_csv_export_contains_every_matching_row_not_just_the_first_chunk(): void
+    {
+        $admin = $this->admin();
+
+        // More than the 500-row export chunk, so a broken keyset pagination
+        // (which silently stops after one chunk) cannot pass. Inserted oldest
+        // first, so newer rows carry higher ids exactly as they do in
+        // production — the ordering that breaks naive id-based chunking.
+        $rows = [];
+        $total = 1200;
+
+        for ($i = 0; $i < $total; $i++) {
+            $rows[] = [
+                'user_id' => null,
+                'actor_type' => 'system',
+                'event_name' => 'bulk_fixture_event',
+                'created_at' => now()->subMinutes($total - $i),
+            ];
+        }
+
+        ActivityLog::insert($rows);
+
+        $expected = ActivityLog::where('event_name', 'bulk_fixture_event')->count();
+        $this->assertSame(1200, $expected);
+
+        $csv = $this->actingAs($admin)
+            ->get(route('admin.activity.export', ['event_name' => 'bulk_fixture_event']))
+            ->assertOk()
+            ->streamedContent();
+
+        $ids = [];
+
+        foreach (preg_split('/\R/', trim($csv)) as $index => $line) {
+            if ($index === 0 || $line === '') {
+                continue; // header
+            }
+
+            $ids[] = str_getcsv($line)[0];
+        }
+
+        $this->assertCount($expected, $ids, 'Every filtered row must reach the CSV.');
+        $this->assertCount($expected, array_unique($ids), 'The CSV must not repeat rows.');
+    }
+
     public function test_prune_command_keeps_recent_rows_and_refuses_short_windows(): void
     {
         ActivityLog::create([

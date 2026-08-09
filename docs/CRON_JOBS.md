@@ -26,7 +26,7 @@ column updated as they go in.
 
 ---
 
-## The list (9 entries)
+## The list (10 entries)
 
 | # | Schedule | Command | Status | Why it matters |
 |---|---|---|---|---|
@@ -38,7 +38,8 @@ column updated as they go in.
 | 6 | **Hourly** | `stylebite:lift-expired-suspensions` | ⬜ Not added | Reactivates users whose suspension window ended. The login/API paths also lift lazily when the user returns, so this is the safety net that keeps admin counts honest for users who never come back. |
 | 7 | **Daily** (02:30) | `stylebite:prune-user-sessions` | ⬜ Not added | Deletes sessions dead for 30+ days. Needed now that sessions expire every 24h — otherwise `user_sessions` grows by at least one row per user per day forever. `--days=` to change retention. |
 | 8 | **Daily** (03:30) | `stylebite:prune-user-activity` | ⬜ Not added | Trims DAU/MAU history past 90 days. MAU only looks back 30 days, so older rows are dead weight. `--days=` to change retention (minimum 31). |
-| 9 | **Weekly** (Sun 04:00) | `stylebite:prune-activity-logs` | ⬜ Not added | Trims the admin audit trail past the retention window (365 days default, `AUDIT_RETENTION_DAYS` in `.env`). Every admin action writes a row, so this table grows steadily. Refuses any window under 30 days. |
+| 9 | **Weekly** (Sun 04:00) | `stylebite:prune-activity-logs` | ⬜ Not added | Trims the admin audit trail past the retention window (365 days default, `AUDIT_RETENTION_DAYS` in `.env` — currently unset, so 365 applies). Every admin action writes a row, so this table grows steadily. Refuses any window under 30 days. |
+| 10 | **Weekly** (Sun 04:30) | `queue:prune-failed --hours=336` | ⬜ Not added | Framework command. Trims `failed_jobs`, which nothing else clears — a run of failures otherwise accumulates permanently. Recommended, not critical. |
 
 ### Copy-paste ready
 
@@ -52,10 +53,43 @@ column updated as they go in.
 30 2 * * * /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-sessions
 30 3 * * * /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-activity
 0 4 * * 0 /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-activity-logs
+30 4 * * 0 /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan queue:prune-failed --hours=336
 ```
 
 The three hourly jobs are staggered (`:00`, `:15`, `:45`) so they never compete for the
 same shared-hosting CPU minute.
+
+---
+
+## Gotchas — failures that are silent
+
+Worth knowing before you trust a green cron list.
+
+- **A broken FX sync looks like success.** If `sync-currency-rates` runs but the API call
+  fails, previously stored rates are deliberately kept and crediting continues on
+  last-known-good rates. The only signal is a `Log::warning`. Rates can therefore go
+  stale for weeks with no visible symptom — check `currency_rates.updated_at`
+  occasionally, not just whether the cron fired.
+- **Only one command guards against overlap.** `settle-ad-earnings` takes a `Cache::lock`,
+  so a slow run cannot double-credit. The prunes and refreshes have no such guard. They
+  are idempotent, but do not schedule any of them more frequently than listed — two
+  concurrent copies of `refresh-ad-eligibility` would just burn shared-hosting CPU.
+- **`refresh-ad-eligibility` is the one that will hurt at scale.** It runs a query pair
+  per video creator, so its cost grows linearly with creators. It is the first cron to
+  revisit when the user base grows.
+- **Ad eligibility currently evaluates to false for everyone**, regardless of cron.
+  Eligibility needs 1000 watch-hours and `post_views.watch_seconds` is never populated,
+  so `watch_hours` reads 0 and nobody passes. Scheduling entry #4 is correct, but do not
+  expect it to make anyone eligible until watch time is actually recorded. This is a
+  product gap, not a cron problem.
+- **Streaks vs timezones.** The streak day boundary uses the reporting timezone
+  (`Asia/Karachi` by default) while cron and `APP_TIMEZONE` are UTC. The "active today or
+  yesterday" grace window absorbs the ~5-hour skew, so any nightly slot is safe — don't
+  try to "correct" for it.
+- **`queue:work` here is not a daemon.** `--stop-when-empty --max-time=50` means it exits
+  every minute by design; shared hosting cannot run a supervised worker. Anything
+  latency-sensitive (a mass push or email send) is therefore limited to
+  minute-granularity progress, not instant delivery.
 
 ---
 

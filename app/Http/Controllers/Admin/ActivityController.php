@@ -66,8 +66,12 @@ class ActivityController extends Controller
                 'Method', 'Route', 'URL', 'IP', 'User Agent', 'Metadata',
             ]);
 
-            $query->latest('created_at')->latest('id')
-                ->lazyById(500)
+            // lazyByIdDesc walks backwards by primary key. Do NOT add an
+            // orderBy here: forPageBeforeId only strips existing orders on the
+            // id column, so any other sort survives and silently breaks the
+            // keyset pagination — the export then repeats its first chunk and
+            // drops everything older.
+            $query->lazyByIdDesc(500)
                 ->each(function (ActivityLog $log) use ($handle): void {
                     fputcsv($handle, [
                         $log->id,
