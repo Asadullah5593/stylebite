@@ -63,7 +63,7 @@
                     <label class="form-label small fw-bold text-muted">Role</label>
                     <select name="role" class="form-select bg-dark-soft border-0 rounded-3 mb-3 @error('role') is-invalid @enderror">
                         @foreach ($roleOptions as $value)
-                            <option value="{{ $value }}" @selected(old('role', $currentRoleName) === $value)>{{ ucfirst($value) }}</option>
+                            <option value="{{ $value }}" @selected(old('role', $currentRoleName) === $value)>{{ str($value)->replace('_', ' ')->title() }}</option>
                         @endforeach
                     </select>
                     @error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror

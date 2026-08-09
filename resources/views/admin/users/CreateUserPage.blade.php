@@ -13,7 +13,7 @@
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
         <div>
             <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Add User</h1>
-            <p class="text-muted small mb-0">Create a member, creator, moderator, or admin account.</p>
+            <p class="text-muted small mb-0">Create an app member or a staff account with a panel role.</p>
         </div>
         <a href="{{ route('admin.users.all_users') }}" class="btn btn-outline-dynamic rounded-3">
             <i class="bi bi-arrow-left me-2"></i>Back to Users
@@ -60,7 +60,7 @@
                     <label class="form-label small fw-bold text-muted">Role</label>
                     <select name="role" class="form-select bg-dark-soft border-0 rounded-3 mb-3 @error('role') is-invalid @enderror">
                         @foreach ($roleOptions as $value)
-                            <option value="{{ $value }}" @selected(old('role', 'user') === $value)>{{ ucfirst($value) }}</option>
+                            <option value="{{ $value }}" @selected(old('role', 'user') === $value)>{{ str($value)->replace('_', ' ')->title() }}</option>
                         @endforeach
                     </select>
                     @error('role')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror

@@ -11,7 +11,7 @@
         <i class="bi bi-chevron-right small"></i>
         <a href="{{ route('admin.roles.index') }}" class="text-decoration-none text-reset fw-bold">Roles &amp; Permissions</a>
         <i class="bi bi-chevron-right small"></i>
-        <span class="fw-bold opacity-50">{{ $isEdit ? ucfirst($role->name) : 'New Role' }}</span>
+        <span class="fw-bold opacity-50">{{ $isEdit ? str($role->name)->replace('_', ' ')->title() : 'New Role' }}</span>
     </nav>
 
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
@@ -39,10 +39,10 @@
                 <label class="form-label small fw-bold text-muted">Role Name</label>
                 <input type="text" name="name" value="{{ old('name', $role?->name) }}"
                     class="form-control bg-dark-soft border-0 rounded-3 @error('name') is-invalid @enderror"
-                    placeholder="e.g. support, finance"
-                    @disabled($locked || ($isEdit && in_array($role->name, ['admin', 'moderator', 'creator', 'user'], true)))>
+                    placeholder="e.g. shift_lead, qa_reviewer"
+                    @disabled($locked || ($isEdit && in_array($role->name, $seededRoles, true)))>
                 @error('name')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-                @if ($isEdit && ! $locked && in_array($role->name, ['moderator', 'creator', 'user'], true))
+                @if ($isEdit && ! $locked && in_array($role->name, $seededRoles, true))
                     <div class="form-text text-muted extra-small">Built-in role names are fixed; permissions below can be changed.</div>
                 @endif
             </div>

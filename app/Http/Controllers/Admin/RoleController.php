@@ -15,16 +15,42 @@ use Spatie\Permission\Models\Role;
 class RoleController extends Controller
 {
     /**
-     * The admin role is the canonical "everything" role — rename, permission
-     * edits, and deletion are blocked so a slip can never brick the panel.
+     * Full-access roles — rename, permission edits, and deletion are blocked
+     * so a slip can never brick the panel.
      */
-    private const LOCKED_ROLES = ['admin'];
+    private const LOCKED_ROLES = ['admin', 'super_admin'];
 
     /**
-     * Seeded roles that mirror the users.role enum column. Their permissions
-     * can be tuned, but name and existence are fixed.
+     * Roles created by migration: the four that mirror the users.role enum
+     * plus the job-shaped staff roles. Their permissions can be tuned, but
+     * name and existence are fixed.
      */
-    private const SEEDED_ROLES = ['admin', 'moderator', 'creator', 'user'];
+    private const SEEDED_ROLES = [
+        'admin',
+        'super_admin',
+        'moderator',
+        'creator',
+        'user',
+        'content_moderator',
+        'contest_manager',
+        'finance_manager',
+        'support_agent',
+    ];
+
+    /**
+     * What each built-in role is for, shown under its name in the list.
+     */
+    private const ROLE_DESCRIPTIONS = [
+        'super_admin' => 'Full access to everything, including roles and system tools',
+        'admin' => 'Full access; also the app-level admin account type',
+        'content_moderator' => 'Posts, reels, comments and the reports queue',
+        'contest_manager' => 'Create and manage contests, participants and winners',
+        'finance_manager' => 'Revenue, wallets, transactions and creator payouts',
+        'support_agent' => 'User lookup and account fixes for support requests',
+        'moderator' => 'App moderator account type with content + account moderation',
+        'creator' => 'App creator account type — no admin panel access',
+        'user' => 'Regular app account type — no admin panel access',
+    ];
 
     public function index(): View
     {
@@ -38,6 +64,7 @@ class RoleController extends Controller
             'roles' => $roles,
             'lockedRoles' => self::LOCKED_ROLES,
             'seededRoles' => self::SEEDED_ROLES,
+            'roleDescriptions' => self::ROLE_DESCRIPTIONS,
         ]);
     }
 
@@ -47,6 +74,7 @@ class RoleController extends Controller
             'role' => null,
             'rolePermissions' => [],
             'permissionGroups' => $this->permissionGroups(),
+            'seededRoles' => self::SEEDED_ROLES,
             'locked' => false,
         ]);
     }
@@ -90,6 +118,7 @@ class RoleController extends Controller
             'role' => $role,
             'rolePermissions' => $role->permissions->pluck('name')->all(),
             'permissionGroups' => $this->permissionGroups(),
+            'seededRoles' => self::SEEDED_ROLES,
             'locked' => in_array($role->name, self::LOCKED_ROLES, true),
         ]);
     }

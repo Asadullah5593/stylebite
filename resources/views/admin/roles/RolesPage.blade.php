@@ -46,7 +46,11 @@
                         @endphp
                         <tr class="border-white-05">
                             <td class="ps-4">
-                                <div class="fw-bold small text-capitalize">{{ $role->name }}</div>
+                                <div class="fw-bold small">{{ str($role->name)->replace('_', ' ')->title() }}</div>
+                                @if (! empty($roleDescriptions[$role->name]))
+                                    <div class="text-muted extra-small">{{ $roleDescriptions[$role->name] }}</div>
+                                @endif
+                                <div class="text-muted extra-small opacity-50">{{ $role->name }}</div>
                             </td>
                             <td>
                                 @if ($isLocked)

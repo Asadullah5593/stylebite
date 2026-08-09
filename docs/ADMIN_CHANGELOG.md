@@ -24,6 +24,40 @@ Both are required. Without the daily rate sync, **admin crediting is blocked** (
 
 ---
 
+## 2026-08-09 — Five job-shaped staff roles 👥
+
+Ready-made roles so staff can be onboarded without hand-picking permissions.
+Assign them on the user create/edit form; tune their permissions any time under
+**Roles & Permissions**. All five are built in (cannot be deleted) and none of
+them changes a person's app-side account type — a Finance Manager stays a
+regular `user` in the app while holding panel access.
+
+| Role | Can do | Cannot do |
+|---|---|---|
+| **Super Admin** | Everything, incl. roles + system tools (36/36). Locked, like `admin`. | — |
+| **Content Moderator** | Posts, reels, comments, memories, media, engagement, reports queue, activity log. Can ban/suspend **through the reports queue**. | Money, contests, settings, roles, create/delete users, user-list ban button |
+| **Contest Manager** | Create/edit contests, participants, invitations, submissions, recalculation, **declaring winners**, plus announcements to publish results. | Money, reports, settings, roles, comments |
+| **Finance / Payout Manager** | Wallets, transactions, reversals, withdrawals/payouts, reconciliation, exports, activity log. | Content, contests, reports, settings, roles |
+| **Support Agent** | Look up users and fix accounts (revoke a stuck session, expire a password reset, disable a device, badges, streak restore), read conversations, view reports. | **No ban/suspend**, no delete, no money, no contests, no settings |
+
+Notes worth knowing:
+
+- **Reels are posts** with video in this schema, so the Content Moderator's
+  post permissions already cover reels — there is no separate reels permission.
+- **Contest winners** are set on the contest edit form, so `contests.update`
+  covers them.
+- **Contest Manager can send announcements** (push to users) because
+  publishing results usually needs it. Say the word and it can be removed.
+- **There is no ticketing system in the codebase**, so "Support Agent" is
+  scoped to the user-support tools that do exist (account lookup + the fix-it
+  actions above). If you want real tickets — inbox, assignment, replies,
+  statuses, SLA — that is a separate feature to build, and the role is ready to
+  gate it when it exists.
+- `super_admin` and `admin` are both full-access and both locked. `admin` also
+  doubles as the app-level account type; `super_admin` is the pure panel role.
+
+---
+
 ## 2026-08-09 — Role & permission system (Spatie) 🔐
 
 The panel moved from a single hard-coded "admin only" gate to real

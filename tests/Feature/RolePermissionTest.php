@@ -222,6 +222,187 @@ class RolePermissionTest extends TestCase
         ]);
     }
 
+    /**
+     * @return array<string, array{0: string, 1: array<int, string>, 2: array<int, string>}>
+     */
+    public static function staffRoleMatrix(): array
+    {
+        return [
+            'super admin' => ['super_admin', [
+                'admin.dashboard', 'admin.settings.configs', 'admin.roles.index',
+                'admin.earnings.wallets', 'admin.moderation.reports', 'admin.contests.contests',
+                'admin.system_health',
+            ], []],
+            'content moderator' => ['content_moderator', [
+                'admin.dashboard', 'admin.posts.all_posts', 'admin.comments.comments',
+                'admin.moderation.reports', 'admin.users.all_users', 'admin.activity.activity_logs',
+            ], [
+                'admin.earnings.wallets', 'admin.contests.contests', 'admin.settings.configs',
+                'admin.roles.index', 'admin.users.create',
+            ]],
+            'contest manager' => ['contest_manager', [
+                'admin.dashboard', 'admin.contests.contests', 'admin.contests.create',
+                'admin.contests.participants', 'admin.contests.submissions', 'admin.users.all_users',
+            ], [
+                'admin.earnings.wallets', 'admin.moderation.reports', 'admin.settings.configs',
+                'admin.roles.index', 'admin.comments.comments',
+            ]],
+            'finance manager' => ['finance_manager', [
+                'admin.dashboard', 'admin.earnings.wallets', 'admin.earnings.transactions',
+                'admin.earnings.withdrawals', 'admin.earnings.reconciliation', 'admin.users.all_users',
+            ], [
+                'admin.moderation.reports', 'admin.contests.contests', 'admin.settings.configs',
+                'admin.roles.index', 'admin.posts.all_posts',
+            ]],
+            'support agent' => ['support_agent', [
+                'admin.dashboard', 'admin.users.all_users', 'admin.users.sessions',
+                'admin.messaging.messages', 'admin.moderation.reports', 'admin.posts.all_posts',
+            ], [
+                'admin.earnings.wallets', 'admin.contests.contests', 'admin.settings.configs',
+                'admin.roles.index', 'admin.users.create', 'admin.activity.activity_logs',
+            ]],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('staffRoleMatrix')]
+    public function test_staff_role_reaches_only_its_own_pages(string $roleName, array $allowed, array $denied): void
+    {
+        $staff = User::factory()->create(['role' => 'user', 'status' => 'active']);
+        $staff->assignRole($roleName);
+
+        foreach ($allowed as $routeName) {
+            $this->actingAs($staff)
+                ->get(route($routeName))
+                ->assertOk("{$roleName} should reach {$routeName}");
+        }
+
+        foreach ($denied as $routeName) {
+            $this->actingAs($staff)
+                ->get(route($routeName))
+                ->assertForbidden("{$roleName} should NOT reach {$routeName}");
+        }
+    }
+
+    public function test_content_moderator_can_ban_through_reports_but_not_the_user_list(): void
+    {
+        $staff = User::factory()->create(['status' => 'active']);
+        $staff->assignRole('content_moderator');
+
+        $target = User::factory()->create(['status' => 'active']);
+
+        $report = \App\Models\Report::create([
+            'reporter_user_id' => User::factory()->create()->id,
+            'target_type' => 'user',
+            'target_id' => $target->id,
+            'reason' => 'harassment',
+            'status' => 'open',
+        ]);
+
+        $this->actingAs($staff)
+            ->patch(route('admin.moderation.reports.target.update', $report), [
+                'action' => 'ban',
+                'reason' => 'Banned from the reports queue',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('banned', $target->fresh()->status);
+
+        // No users.moderate, so the user-list lifecycle endpoint stays closed.
+        $other = User::factory()->create(['status' => 'active']);
+
+        $this->actingAs($staff)
+            ->patch(route('admin.users.status', $other), [
+                'action' => 'ban',
+                'reason' => 'Should not work',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('active', $other->fresh()->status);
+    }
+
+    public function test_support_agent_can_fix_accounts_but_not_ban_or_delete(): void
+    {
+        $staff = User::factory()->create(['status' => 'active']);
+        $staff->assignRole('support_agent');
+
+        $target = User::factory()->create(['status' => 'active']);
+
+        // users.update covers the support toolkit (badges, sessions, streaks).
+        $this->actingAs($staff)
+            ->patch(route('admin.users.badge.verified', $target))
+            ->assertRedirect();
+
+        $this->actingAs($staff)
+            ->patch(route('admin.users.status', $target), [
+                'action' => 'suspend',
+                'reason' => 'Should not work',
+                'duration_hours' => 24,
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($staff)
+            ->delete(route('admin.users.destroy', $target))
+            ->assertForbidden();
+
+        $this->assertSame('active', $target->fresh()->status);
+    }
+
+    public function test_finance_manager_can_action_withdrawals_and_content_moderator_cannot(): void
+    {
+        $finance = User::factory()->create(['status' => 'active']);
+        $finance->assignRole('finance_manager');
+
+        $moderator = User::factory()->create(['status' => 'active']);
+        $moderator->assignRole('content_moderator');
+
+        $this->actingAs($finance)->get(route('admin.earnings.withdrawals'))->assertOk();
+        $this->actingAs($moderator)->get(route('admin.earnings.withdrawals'))->assertForbidden();
+    }
+
+    public function test_super_admin_role_is_locked_from_permission_edits(): void
+    {
+        $admin = $this->admin();
+        $superAdminRole = Role::findByName('super_admin', 'web');
+
+        $this->actingAs($admin)
+            ->put(route('admin.roles.update', $superAdminRole), [
+                'name' => 'super_admin',
+                'permissions' => ['dashboard.view'],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(36, $superAdminRole->fresh()->permissions()->count());
+
+        $this->actingAs($admin)
+            ->delete(route('admin.roles.destroy', $superAdminRole))
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('roles', ['name' => 'super_admin', 'guard_name' => 'web']);
+    }
+
+    public function test_staff_roles_do_not_change_the_app_account_type(): void
+    {
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'username' => 'finance_staff',
+                'email' => 'finance@example.com',
+                'password' => 'password123',
+                'password_confirmation' => 'password123',
+                'role' => 'finance_manager',
+                'status' => 'active',
+            ])
+            ->assertRedirect();
+
+        $staff = User::query()->where('email', 'finance@example.com')->firstOrFail();
+
+        $this->assertTrue($staff->hasRole('finance_manager'));
+        // Panel-only role: the app-side account type stays a regular user.
+        $this->assertSame('user', $staff->role);
+        $this->assertTrue($staff->canAccessAdminPanel());
+    }
+
     public function test_admin_cannot_change_own_role_from_edit_form(): void
     {
         $admin = $this->admin();
