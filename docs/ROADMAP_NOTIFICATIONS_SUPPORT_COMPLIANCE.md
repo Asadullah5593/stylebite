@@ -8,6 +8,22 @@ Companion docs: [CRON_JOBS.md](CRON_JOBS.md) · [ADMIN_CHANGELOG.md](ADMIN_CHANG
 
 ---
 
+## Decisions made
+
+| Date | Question | Decision |
+|---|---|---|
+| 2026-08-09 | Q1 — University as a push audience | **Deferred.** University will be introduced later. Build the sender with the other audiences and leave a seam for it; no schema, no mobile change, no backfill for now. |
+| 2026-08-09 | Q5 — Support tickets: reuse chat tables or own module | **Own schema.** Do *not* mix tickets into `conversations`/`messages`. The messaging schema stays prior art only; the unused `conversations.type = 'support'` value stays unused. |
+| 2026-08-09 | Q9 — Where destructive-action reasons persist | **Decided internally (no client input needed):** `moderation_actions` for anything with a moderatable target (users, posts, comments, replies, memories, messages, contests), since it is already polymorphic with `reason` and `expires_at`. Non-moderation destructive actions (config/cache/job deletion, payout rejection, transaction reversal) keep their reason in `activity_logs` metadata, which the audit middleware already persists. |
+
+### Still open
+
+Q2 (what a "Creator" is), Q3 (City data), Q4 (bug reports location), Q6 (Excel vs CSV),
+Q7 (GDPR export), Q8 (Terms authorship + versioning), Q10 (announcements by email),
+Q11 (tablet width), Q12 (broadcast delivery expectations).
+
+---
+
 ## Status at a glance
 
 | # | Requirement | Status | Where it actually stands |
@@ -67,9 +83,10 @@ support work** — the moderation queue is currently a well-built UI over a tabl
 production code can write to, and there is no way for a user to report abuse (an App
 Store / Play Store exposure for a UGC app).
 
-**B2. Support tickets.** Own tables for ticket state (status, priority, assignment, SLA),
-reusing `conversations`/`messages` for the reply thread if Q5 says so. Gate with a new
-permission; `support_agent` role already exists with the right read grants.
+**B2. Support tickets — own schema** (client decision, 2026-08-09). Dedicated tables for
+ticket state *and* the reply thread; the chat tables are not involved. Gate with a new
+permission; the `support_agent` role already exists with the right read grants and
+deliberately no ban/money powers.
 
 **B3. Destructive-action sweep.** Generalise the existing lifecycle modal into one shared
 partial (runtime action, per-action copy, required-reason flag) and apply it across the
@@ -116,11 +133,11 @@ add UTF-8 BOM and CSV-injection escaping; audit every export.
 
 | # | Question | Why it blocks |
 |---|---|---|
-| Q1 | **Does "University" exist as data at all?** Captured where — registration or profile? Free text or curated list? Backfilled how? | **Zero references anywhere.** This is new schema + API capture + **a mobile app release** + a backfill — the longest lead time in the plan. Recommend shipping 4 of 5 audiences and treating University as a separate tranche. |
+| ~~Q1~~ | ~~Does "University" exist as data at all?~~ | ✅ **DECIDED 2026-08-09 — deferred.** Introduced later; build the other audiences now and leave a seam. |
 | Q2 | **What is a "Creator"?** `users.role='creator'` (currently **zero** users), `profiles.ad_eligible`, or the Spatie `creator` role? | Three competing definitions, and `ad_eligible` can never be true today (needs 1000 watch-hours; `watch_seconds` is never populated). This segment ships empty under any definition. |
 | Q3 | **How does City get populated?** | Only 2 of 24 live profiles have a city, set via an optional profile edit. A City segment against this data looks broken. |
 | Q4 | **Do Bug reports go in `reports` or their own table?** | Enums have no `bug`, `target_id` is NOT NULL, no room for device/app-version/screenshot. Recommend a separate table. The table is empty in production — cheapest moment to decide. (Also: `memory` is missing from `target_type`, so memories can't be reported despite having `is_reported`.) |
-| Q5 | **Tickets: reuse chat tables or own module?** | `conversations.type` has an unused `'support'` value and the schema fits. But 8 hardcoded `where('type','direct')` filters in `Api/ChatController.php` must become type-**aware** (not removed — removing leaks group chats into the 1:1 list), there's no staff→user send path, and `index()` hides conversations with a null `last_message_id` so a staff-opened ticket would be invisible until the user replies. Recommend own tables for state, reuse messages for the thread. |
+| ~~Q5~~ | ~~Tickets: reuse chat tables or own module?~~ | ✅ **DECIDED 2026-08-09 — own schema.** Tickets get their own tables end to end, including their own reply/message table. `conversations`/`messages` are not touched, which also means `Api/ChatController.php`'s eight `where('type','direct')` filters need no changes and the `'support'` enum value stays unused. |
 | Q6 | **True `.xlsx`, or is CSV enough?** | No Excel library installed; adding one is memory-hungry on shared hosting. If the real complaint is "Excel mangles our data", a UTF-8 BOM is a one-line fix. |
 | Q7 | **GDPR per-user data export — in scope? Self-service or admin-only?** | Absent entirely, while a public `/delete-account` page exists — so erasure was recognised and access/portability was not. No manual fallback: ~40 tables. |
 | Q8 | **Who authors the Terms, and do you need versioning with forced re-acceptance?** | No Terms document exists to migrate. No `terms_accepted_at`, no policy version, no consent flag — you currently cannot prove what any user agreed to. |
@@ -146,8 +163,9 @@ add UTF-8 BOM and CSV-injection escaping; audit every export.
   precedent to copy for the campaign job.
 - `reports` + `Report` + `Admin/ModerationController` + `ReportsPage` — the entire
   moderation consumer; B1 doesn't touch it.
-- `conversations`/`messages`/`message_attachments`/`message_reads` + the unused
-  `'support'` enum value — the ticket reply thread.
+- ~~`conversations`/`messages` for the ticket thread~~ — **not being used** (client chose
+  own schema). Still worth reading as prior art for reply threading, attachments and read
+  receipts before designing the ticket tables.
 - `support_agent` role + Spatie permissions — gate new modules with new named permissions.
 - `GlobalAppMail` + `emails/global.blade.php` — fully parameterised; needs `ShouldQueue`
   and branding wiring, not a rewrite.

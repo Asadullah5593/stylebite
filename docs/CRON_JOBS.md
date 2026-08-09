@@ -78,10 +78,12 @@ Worth knowing before you trust a green cron list.
   per video creator, so its cost grows linearly with creators. It is the first cron to
   revisit when the user base grows.
 - **Ad eligibility currently evaluates to false for everyone**, regardless of cron.
-  Eligibility needs 1000 watch-hours and `post_views.watch_seconds` is never populated,
-  so `watch_hours` reads 0 and nobody passes. Scheduling entry #4 is correct, but do not
-  expect it to make anyone eligible until watch time is actually recorded. This is a
-  product gap, not a cron problem.
+  Eligibility needs followers ≥ 500 **and** watch-hours ≥ 1000 (both admin-configurable).
+  The backend is ready — `POST /api/views/batch` accepts and stores `watch_seconds`
+  (`Api/ViewController.php:58-65`) — but **`post_views` is empty (0 rows)**, so the mobile
+  app is not reporting views yet and `watch_hours` reads 0. Scheduling entry #4 is
+  correct; just don't expect it to make anyone eligible until the app starts sending view
+  batches. This is an app-integration gap, not a cron or backend problem.
 - **Streaks vs timezones.** The streak day boundary uses the reporting timezone
   (`Asia/Karachi` by default) while cron and `APP_TIMEZONE` are UTC. The "active today or
   yesterday" grace window absorbs the ~5-hour skew, so any nightly slot is safe — don't
