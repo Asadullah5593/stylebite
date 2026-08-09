@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Profile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -63,11 +64,28 @@ class AccountController extends Controller
             'timezone' => $data['timezone'] ?? $user->timezone ?? config('app.timezone', 'UTC'),
         ]);
 
-        if (! empty($data['password'])) {
+        $passwordChanged = ! empty($data['password']);
+
+        if ($passwordChanged) {
             $user->password_hash = Hash::make($data['password']);
         }
 
+        $changed = array_keys($user->getDirty());
         $user->save();
+
+        ActivityLog::record(
+            eventName: 'admin_account_updated',
+            entityType: 'user',
+            entityId: $user->id,
+            metadata: [
+                // Field names only — never the values, since this is the
+                // admin's own credentials.
+                'changed' => $changed,
+                'password_changed' => $passwordChanged,
+                'profile_changed' => ($data['profile'] ?? []) !== [],
+            ],
+            description: 'Updated own admin account settings',
+        );
 
         $profileData = $data['profile'] ?? [];
 

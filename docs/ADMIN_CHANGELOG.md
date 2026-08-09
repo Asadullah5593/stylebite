@@ -18,9 +18,71 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 | **Daily** (e.g. 03:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-activity` | Trims DAU/MAU history past 90 days so the table stays bounded |
 | **Daily** (e.g. 00:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-streaks` | **Required** — breaks streaks that lapsed. Without it a streak never ends |
 | **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:lift-expired-suspensions` | Reactivates users whose suspension window ended (auth paths also lift lazily; this keeps counts honest for users who never return) |
+| **Weekly** (e.g. Sun 04:00) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-activity-logs` | Trims the audit trail past the retention window (default 365 days, `AUDIT_RETENTION_DAYS`) |
 | **Daily** (e.g. 02:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-sessions` | Deletes sessions dead for 30+ days — required now that 24-hour sessions add ≥1 row per user per day |
 
 Both are required. Without the daily rate sync, **admin crediting is blocked** (by design — the system never credits an unconverted amount).
+
+---
+
+## 2026-08-09 — Full audit trail of every panel action 🔍
+
+**Activity Logs** existed but only covered part of the panel: 9 of the 58
+state-changing admin actions wrote nothing at all — including **admin sign-ins,
+failed sign-in attempts, creating a user, and every post/comment moderation
+decision** — and nothing recorded attempts that were *refused*. It is now
+complete and self-maintaining. **Deploy needs:** migration + one new weekly
+cron (see the cron table above).
+
+### What is captured
+
+Every state-changing request in the panel is now recorded automatically by
+middleware, so coverage cannot drift as new pages are added — a route added
+tomorrow is audited the day it ships. Each row holds:
+
+- **who** — the staff member, plus the role they held at the time (roles change;
+  the log keeps what was true then)
+- **what** — the event, a plain-English description, and the target record
+- **the request** — HTTP method, route name, full URL, IP address, user agent
+- **the outcome** — **Applied**, **Blocked** (no permission), **Rejected**
+  (invalid input), or **Failed** (server error)
+- **what was submitted** — the posted fields, with passwords and tokens
+  stripped and long values truncated
+
+Rejected and blocked attempts are the point, not noise: a Support Agent trying
+the ban endpoint, or five failed sign-ins on one account, now leaves a trace.
+
+### Newly logged (previously invisible)
+
+Admin sign-in · failed sign-in (with the reason: unknown account, wrong
+password, or no panel access) · sign-out · user created · post edited · post
+moderated · comment moderated · reply moderated · memory comment moderated ·
+changes to your own admin account.
+
+### Reading it
+
+**Activity Logs** now filters by staff member, outcome, actor type, HTTP
+method, event, entity and date range, shows 25 per page, and every row opens a
+detail panel with the full request context and submitted payload. **Export CSV**
+respects the current filters and streams, so a long trail exports without
+timing out. Two new tiles — **Blocked Attempts** and **Failed Sign-ins** — link
+straight to those filters.
+
+Exporting the audit trail is itself audited.
+
+### Notes
+
+- **Page views are not logged** — that would bury the trail. The exceptions,
+  where looking *is* the sensitive act, are private conversations, member
+  account pages, session/password-reset lists, and data exports. The list lives
+  in `config/audit.php` if you want to add to it.
+- Actions still write their own detailed row where one exists (old status → new
+  status, the reason, the amount); the middleware only fills gaps, so **one
+  action produces one row, never two**.
+- Failed sign-ins are recorded as actor type *system* — nobody proved who they
+  were — with the attempted email in the detail panel.
+- Retention defaults to **365 days**; the prune command refuses any window
+  under 30 days.
 
 ---
 

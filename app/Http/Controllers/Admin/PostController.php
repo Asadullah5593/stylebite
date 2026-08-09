@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Post;
 use App\Models\PostMedia;
 use App\Models\PostRating;
@@ -99,7 +100,21 @@ class PostController extends Controller
             $post->published_at = now();
         }
 
+        $changes = $post->getDirty();
         $post->save();
+
+        ActivityLog::record(
+            eventName: 'post_updated',
+            entityType: 'post',
+            entityId: $post->id,
+            metadata: [
+                'author_user_id' => $post->user_id,
+                'changed' => array_keys($changes),
+                'status' => $post->status,
+                'moderation_status' => $post->moderation_status,
+            ],
+            description: "Edited post #{$post->id}",
+        );
 
         return redirect()
             ->route('admin.posts.show', $post)
@@ -112,6 +127,11 @@ class PostController extends Controller
             'status' => ['required', Rule::in(self::STATUSES)],
             'moderation_status' => ['required', Rule::in(self::MODERATION_STATUSES)],
         ]);
+
+        $previous = [
+            'status' => $post->status,
+            'moderation_status' => $post->moderation_status,
+        ];
 
         $post->fill($data);
         $post->is_blocked = in_array($data['moderation_status'], ['restricted', 'blocked'], true);
@@ -126,6 +146,20 @@ class PostController extends Controller
         // Taking a post down (or putting it back up) changes whether its day
         // still counts towards the author's streak.
         stylebite_recalculate_streak($post->user_id);
+
+        ActivityLog::record(
+            eventName: 'post_moderated',
+            entityType: 'post',
+            entityId: $post->id,
+            metadata: [
+                'author_user_id' => $post->user_id,
+                'old_status' => $previous['status'],
+                'new_status' => $post->status,
+                'old_moderation_status' => $previous['moderation_status'],
+                'new_moderation_status' => $post->moderation_status,
+            ],
+            description: "Moderated post #{$post->id} to {$post->status}/{$post->moderation_status}",
+        );
 
         return back()->with('status', "Post #{$post->id} moderation updated successfully.");
     }

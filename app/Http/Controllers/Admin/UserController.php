@@ -209,6 +209,13 @@ class UserController extends Controller
 
         $user->assignRole($data['role']);
 
+        $this->logActivity('user_created', 'user', $user->id, [
+            'email' => $user->email,
+            'username' => $user->username,
+            'role' => $data['role'],
+            'status' => $user->status,
+        ]);
+
         return redirect()
             ->route('admin.users.show', $user)
             ->with('status', 'User created successfully.');

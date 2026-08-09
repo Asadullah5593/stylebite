@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -37,6 +38,26 @@ class AdminAuthController extends Controller
         ) {
             Auth::logout();
 
+            // Failed attempts are audited too — a run of these on one account
+            // is exactly what an audit trail exists to surface. Actor is
+            // "system" because nobody proved who they were.
+            ActivityLog::record(
+                eventName: 'admin_login_failed',
+                entityType: 'user',
+                entityId: $user?->id,
+                metadata: [
+                    'email' => $credentials['email'],
+                    'reason' => match (true) {
+                        ! $user => 'no_account',
+                        ! Hash::check($credentials['password'], $user->password_hash) => 'wrong_password',
+                        default => 'no_panel_access',
+                    },
+                ],
+                description: 'Failed admin sign-in for '.$credentials['email'],
+                userId: $user?->id,
+                actorType: 'system',
+            );
+
             return back()
                 ->withErrors(['email' => 'Only active staff accounts can access the dashboard.'])
                 ->onlyInput('email');
@@ -47,11 +68,29 @@ class AdminAuthController extends Controller
 
         $user->forceFill(['last_login_at' => now()])->save();
 
+        ActivityLog::record(
+            eventName: 'admin_signed_in',
+            entityType: 'user',
+            entityId: $user->id,
+            metadata: ['email' => $user->email, 'remembered' => $request->boolean('remember')],
+            description: 'Signed in to the admin panel',
+        );
+
         return redirect()->intended(route('admin.dashboard'));
     }
 
     public function logout(Request $request): RedirectResponse
     {
+        // Recorded before the session is torn down, while the actor is known.
+        if ($user = Auth::user()) {
+            ActivityLog::record(
+                eventName: 'admin_signed_out',
+                entityType: 'user',
+                entityId: $user->id,
+                description: 'Signed out of the admin panel',
+            );
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();

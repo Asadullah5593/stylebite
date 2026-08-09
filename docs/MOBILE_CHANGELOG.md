@@ -8,6 +8,13 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-09 — Admin audit trail (no app impact) ℹ️
+
+Admin-side only: every action taken in the admin panel is now recorded in the
+activity log. No mobile endpoint, request, response or column changed.
+
+---
+
 ## 2026-08-09 — Admin panel role & permission system (no app impact) ℹ️
 
 Admin-side only: panel access is now governed by Spatie roles/permissions

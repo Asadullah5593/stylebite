@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Memory;
 use App\Models\MemoryComment;
 use App\Models\MemoryMedia;
@@ -114,10 +115,25 @@ class MemoryController extends Controller
             'status' => ['required', 'in:active,hidden,deleted,blocked'],
         ]);
 
+        $oldStatus = $memoryComment->status;
+
         $memoryComment->update([
             'status' => $data['status'],
             'is_blocked' => $data['status'] === 'blocked',
         ]);
+
+        ActivityLog::record(
+            eventName: 'memory_comment_moderated',
+            entityType: 'memory_comment',
+            entityId: $memoryComment->id,
+            metadata: [
+                'author_user_id' => $memoryComment->user_id,
+                'memory_id' => $memoryComment->memory_id,
+                'old_status' => $oldStatus,
+                'new_status' => $memoryComment->status,
+            ],
+            description: "Moderated memory comment #{$memoryComment->id} to {$memoryComment->status}",
+        );
 
         return back()->with('status', "Memory comment #{$memoryComment->id} updated successfully.");
     }

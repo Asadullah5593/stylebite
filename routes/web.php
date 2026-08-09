@@ -55,7 +55,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::post('/logout', [AdminAuthController::class, 'logout'])->name('logout');
 });
 
-Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
+Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->group(function () {
     // Main Dashboard
     Route::get('/dashboard', DashboardController::class)->name('dashboard')->middleware('permission:dashboard.view');
 
@@ -190,6 +190,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
 
      Route::prefix('activity')->name('activity.')->middleware('permission:activity.view')->group(function () {
         Route::get('/', [ActivityController::class, 'index'])->name('activity_logs');
+        Route::get('/export', [ActivityController::class, 'export'])->name('export');
     });
 
     // Monetization Module

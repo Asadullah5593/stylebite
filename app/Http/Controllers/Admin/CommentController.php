@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Comment;
 use App\Models\CommentReply;
 use Illuminate\Http\RedirectResponse;
@@ -44,10 +45,30 @@ class CommentController extends Controller
             'moderation_status' => ['required', Rule::in(self::COMMENT_MODERATION_STATUSES)],
         ]);
 
+        $previous = [
+            'status' => $comment->status,
+            'moderation_status' => $comment->moderation_status,
+        ];
+
         $comment->fill($data);
         $comment->is_blocked = $data['status'] === 'blocked' || $data['moderation_status'] === 'restricted';
         $comment->is_reported = $data['moderation_status'] !== 'clean';
         $comment->save();
+
+        ActivityLog::record(
+            eventName: 'comment_moderated',
+            entityType: 'comment',
+            entityId: $comment->id,
+            metadata: [
+                'author_user_id' => $comment->user_id,
+                'post_id' => $comment->post_id,
+                'old_status' => $previous['status'],
+                'new_status' => $comment->status,
+                'old_moderation_status' => $previous['moderation_status'],
+                'new_moderation_status' => $comment->moderation_status,
+            ],
+            description: "Moderated comment #{$comment->id} to {$comment->status}/{$comment->moderation_status}",
+        );
 
         return back()->with('status', "Comment #{$comment->id} updated successfully.");
     }
@@ -81,10 +102,30 @@ class CommentController extends Controller
             'moderation_status' => ['required', Rule::in(self::COMMENT_MODERATION_STATUSES)],
         ]);
 
+        $previous = [
+            'status' => $reply->status,
+            'moderation_status' => $reply->moderation_status,
+        ];
+
         $reply->fill($data);
         $reply->is_blocked = $data['status'] === 'blocked' || $data['moderation_status'] === 'restricted';
         $reply->is_reported = $data['moderation_status'] !== 'clean';
         $reply->save();
+
+        ActivityLog::record(
+            eventName: 'comment_reply_moderated',
+            entityType: 'reply',
+            entityId: $reply->id,
+            metadata: [
+                'author_user_id' => $reply->user_id,
+                'comment_id' => $reply->comment_id,
+                'old_status' => $previous['status'],
+                'new_status' => $reply->status,
+                'old_moderation_status' => $previous['moderation_status'],
+                'new_moderation_status' => $reply->moderation_status,
+            ],
+            description: "Moderated reply #{$reply->id} to {$reply->status}/{$reply->moderation_status}",
+        );
 
         return back()->with('status', "Reply #{$reply->id} updated successfully.");
     }

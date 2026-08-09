@@ -35,6 +35,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         require_once app_path('Support/helpers.php');
+
+        // One audit context per request: ties together every activity_logs row
+        // written while handling it.
+        $this->app->scoped(\App\Support\ActivityContext::class);
     }
 
     /**
