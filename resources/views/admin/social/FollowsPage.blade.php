@@ -123,13 +123,16 @@
                                         </a>
                                     @endif
                                     @if (! $follow->deleted_at)
-                                        <form method="POST" action="{{ route('admin.social.follows.delete', $follow) }}" onsubmit="return confirm('Remove this follow relationship?');">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3">
-                                                <i class="bi bi-trash3 me-1"></i>Remove
-                                            </button>
-                                        </form>
+                                        <button type="button" class="btn btn-sm btn-outline-danger rounded-3 px-3"
+                                            onclick="confirmDestructive('{{ route('admin.social.follows.delete', $follow) }}', 'DELETE', {
+                                                title: 'Remove this follow?',
+                                                message: 'The follow relationship is deleted. Follower counts change for both accounts.',
+                                                submitLabel: 'Remove follow',
+                                                reason: 'required',
+                                                reasonLabel: 'Why are you removing it?'
+                                            })">
+                                            <i class="bi bi-trash3 me-1"></i>Remove
+                                        </button>
                                     @endif
                                 </div>
                             </td>
@@ -150,4 +153,5 @@
         </div>
     </div>
 </div>
+@include('admin.partials.confirm-action')
 @endsection

@@ -69,6 +69,13 @@
                             @endforeach
                         </select>
                     </div>
+                    <div>
+                        <label class="form-label small text-muted">Reason <span class="text-danger">*</span></label>
+                        <textarea name="reason" rows="3" maxlength="500" required
+                                  class="form-control bg-dark-soft border-0 rounded-3"
+                                  placeholder="Why is this post being moderated? Recorded in the moderation log with your name and IP.">{{ old('reason') }}</textarea>
+                        @error('reason')<div class="text-danger extra-small mt-1">{{ $message }}</div>@enderror
+                    </div>
                     <button class="btn btn-outline-warning rounded-3" type="submit">
                         <i class="bi bi-shield-check me-2"></i>Update Moderation
                     </button>

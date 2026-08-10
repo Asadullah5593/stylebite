@@ -100,6 +100,9 @@
                                             <option value="{{ $value }}" @selected($reply->moderation_status === $value)>{{ $label }}</option>
                                         @endforeach
                                     </select>
+                                    <textarea name="reason" rows="2" maxlength="500" required
+                                              class="form-control form-control-sm border-0 bg-dark-soft rounded-3"
+                                              placeholder="Reason (required — recorded in the moderation log)"></textarea>
                                     <button class="btn btn-sm btn-outline-dynamic rounded-3" type="submit">
                                         <i class="bi bi-save me-2"></i>Update
                                     </button>

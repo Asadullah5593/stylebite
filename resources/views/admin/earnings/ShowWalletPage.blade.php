@@ -173,12 +173,16 @@
                                     <td><span class="badge {{ $transaction->status === 'completed' ? 'bg-success-soft text-success' : ($transaction->status === 'reversed' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning') }} rounded-pill">{{ str($transaction->status)->title() }}</span></td>
                                     <td class="text-end">
                                         @if ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
-                                            <form method="POST" action="{{ route('admin.earnings.transactions.reverse', $transaction) }}">
-                                                @csrf
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3">
-                                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reverse
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3 px-3"
+                                                onclick="confirmDestructive('{{ route('admin.earnings.transactions.reverse', $transaction) }}', 'POST', {
+                                                    title: 'Reverse transaction #{{ $transaction->id }}?',
+                                                    message: 'This moves money: it marks the transaction reversed and writes an opposite entry against this wallet. It cannot be undone from the panel.',
+                                                    submitLabel: 'Reverse transaction',
+                                                    reason: 'required',
+                                                    reasonLabel: 'Why is this being reversed?'
+                                                })">
+                                                <i class="bi bi-arrow-counterclockwise me-1"></i>Reverse
+                                            </button>
                                         @endif
                                     </td>
                                 </tr>
@@ -226,4 +230,5 @@
         </div>
     </div>
 </div>
+@include('admin.partials.confirm-action')
 @endsection

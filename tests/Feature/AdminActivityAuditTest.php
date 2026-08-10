@@ -45,6 +45,7 @@ class AdminActivityAuditTest extends TestCase
             ->patch(route('admin.posts.moderate', $post), [
                 'status' => 'under_review',
                 'moderation_status' => 'flagged',
+                'reason' => 'Flagged for review after a report.',
             ])
             ->assertRedirect();
 
@@ -168,6 +169,7 @@ class AdminActivityAuditTest extends TestCase
             ->patch(route('admin.posts.moderate', $post), [
                 'status' => 'published',
                 'moderation_status' => 'clean',
+                'reason' => 'Reviewed and cleared.',
             ])
             ->assertRedirect();
 

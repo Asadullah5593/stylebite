@@ -301,8 +301,13 @@ class EarningsController extends Controller
             'failure_reason' => ['nullable', 'string', 'max:255'],
         ]);
 
+        // A refusal is an error, not a success: reporting it through the status
+        // flash rendered it in the green "done" box, which read as if the payout
+        // had been rejected when nothing had happened at all.
         if (in_array($validated['status'], ['failed', 'rejected'], true) && blank($validated['failure_reason'])) {
-            return back()->with('status', 'Failure or rejection reason is required for failed/rejected withdrawals.');
+            return back()->withErrors([
+                'failure_reason' => 'A reason is required when failing or rejecting a payout.',
+            ])->withInput();
         }
 
         $original = [];
@@ -488,13 +493,31 @@ class EarningsController extends Controller
         return back()->with('status', "Manual adjustment applied: {$baseAmount} {$baseCurrency} = {$converted} (rate ".rtrim(rtrim(number_format($conversion['rate'], 6, '.', ''), '0'), '.').').');
     }
 
-    public function reverseTransaction(EarningTransaction $transaction)
+    /**
+     * Reverse a completed transaction.
+     *
+     * This moves real money, so it now requires a typed reason: previously it
+     * took no Request at all and hardcoded 'Admin reversal' into the audit
+     * metadata, which meant a reversal could never be explained after the fact.
+     */
+    public function reverseTransaction(Request $request, EarningTransaction $transaction)
     {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please record why this transaction is being reversed.',
+            'reason.min' => 'Please give a meaningful reason.',
+        ]);
+
         if ($transaction->status !== 'completed' || $transaction->source_type === 'withdrawal') {
-            return back()->with('status', 'This transaction cannot be reversed from the admin panel.');
+            return back()->withErrors([
+                'reason' => 'This transaction cannot be reversed from the admin panel.',
+            ]);
         }
 
-        DB::transaction(function () use ($transaction) {
+        $reason = $validated['reason'];
+
+        DB::transaction(function () use ($transaction, $reason) {
             $transaction->loadMissing('wallet');
             $wallet = $transaction->wallet;
 
@@ -528,8 +551,10 @@ class EarningsController extends Controller
                 'status' => 'completed',
                 'note' => 'Reversal for transaction #'.$transaction->id,
                 'metadata_json' => [
-                    'reason' => 'Admin reversal',
+                    // The admin's own words, not a hardcoded string.
+                    'reason' => $reason,
                     'reversed_transaction_id' => $transaction->id,
+                    'reversed_by_user_id' => auth()->id(),
                 ],
                 'processed_at' => now(),
                 'created_at' => now(),
@@ -551,6 +576,7 @@ class EarningsController extends Controller
             'user_id' => $transaction->user_id,
             'amount' => round((float) $transaction->amount, 2),
             'transaction_type' => $transaction->transaction_type,
+            'reason' => $reason,
         ]);
 
         return back()->with('status', 'Transaction reversed successfully.');

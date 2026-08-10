@@ -34,6 +34,56 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-10 — Destructive actions now demand a reason 🛑
+
+**Run nothing — no migration.** But note this changes how several forms behave:
+they will refuse to submit without a reason.
+
+The requirement was that every destructive action has a confirmation dialog *and*
+reason logging. Only ban/suspend did both. The rest either fired on a single
+click or asked a bare "are you sure?" that captured nothing.
+
+### The one that mattered most
+
+**Reversing an earnings transaction moved real money on one click.** The method
+took no request object at all, so a reason was impossible, and it wrote the
+literal string `'Admin reversal'` into the audit metadata — meaning no reversal
+could ever be explained afterwards. It now requires a typed reason (minimum 3
+characters), stores it on the reversal transaction *and* in the activity log
+alongside who did it, and shows a confirmation that spells out that money moves.
+
+### Now confirm + reason
+
+| Action | What changed |
+|---|---|
+| Reverse a transaction | Reason required; confirmation names the transaction and warns it cannot be undone |
+| Delete a user | Reason required; you also can no longer delete your own account |
+| Remove a follow | Reason required; confirmation notes follower counts change |
+| Remove a block | Reason required; confirmation warns the two users can contact each other again. The blocking user's own stated reason is kept in the log for context |
+| Moderate a post | Reason required, in the list and on the detail page |
+| Moderate a comment or reply | Reason required |
+| Reject or fail a payout | Already required a reason — but a refusal was reported in the **green success box**, reading as though the payout had been rejected when nothing had happened. It is now an error on the field |
+
+### Takedowns finally appear in the moderation history
+
+A post or comment removed from the content lists previously wrote **nothing** to
+**Moderation → Actions** — only the report queue did — so most real decisions
+were missing from the moderation history. Content moderation now records a
+`moderation_actions` row with the moderator, target and reason, mapped from the
+moderation status (clean → restore, flagged → hide, restricted → restrict,
+blocked → remove).
+
+### Deliberately left as confirm-only
+
+Operational actions that do not touch users or money — clearing a cache, deleting
+a queued or failed job, removing a cache lock or an app config row — keep a
+confirmation but do not demand a written reason. They are already fully audited
+(actor, IP, route, payload, outcome) by the activity middleware, and requiring an
+essay to clear a cache would only train people to type "x". Say the word if you
+want reasons there too.
+
+---
+
 ## 2026-08-10 — Section 3.9: user reports and support tickets 🎟️
 
 Completes 3.9. **Run the migration on deploy** — it adds the ticket tables, three

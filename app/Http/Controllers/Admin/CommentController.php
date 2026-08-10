@@ -43,6 +43,10 @@ class CommentController extends Controller
         $data = $request->validate([
             'status' => ['required', Rule::in(self::COMMENT_STATUSES)],
             'moderation_status' => ['required', Rule::in(self::COMMENT_MODERATION_STATUSES)],
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please record why this comment is being moderated.',
+            'reason.min' => 'Please give a meaningful reason.',
         ]);
 
         $previous = [
@@ -50,10 +54,18 @@ class CommentController extends Controller
             'moderation_status' => $comment->moderation_status,
         ];
 
-        $comment->fill($data);
+        $comment->fill(['status' => $data['status'], 'moderation_status' => $data['moderation_status']]);
         $comment->is_blocked = $data['status'] === 'blocked' || $data['moderation_status'] === 'restricted';
         $comment->is_reported = $data['moderation_status'] !== 'clean';
         $comment->save();
+
+        app(\App\Services\ModerationActionRecorder::class)->recordStatusChange(
+            'comment',
+            $comment->id,
+            $comment->moderation_status,
+            $data['reason'],
+            $request->user()
+        );
 
         ActivityLog::record(
             eventName: 'comment_moderated',
@@ -66,6 +78,7 @@ class CommentController extends Controller
                 'new_status' => $comment->status,
                 'old_moderation_status' => $previous['moderation_status'],
                 'new_moderation_status' => $comment->moderation_status,
+                'reason' => $data['reason'],
             ],
             description: "Moderated comment #{$comment->id} to {$comment->status}/{$comment->moderation_status}",
         );
@@ -100,6 +113,10 @@ class CommentController extends Controller
         $data = $request->validate([
             'status' => ['required', Rule::in(self::COMMENT_STATUSES)],
             'moderation_status' => ['required', Rule::in(self::COMMENT_MODERATION_STATUSES)],
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please record why this reply is being moderated.',
+            'reason.min' => 'Please give a meaningful reason.',
         ]);
 
         $previous = [
@@ -107,10 +124,18 @@ class CommentController extends Controller
             'moderation_status' => $reply->moderation_status,
         ];
 
-        $reply->fill($data);
+        $reply->fill(['status' => $data['status'], 'moderation_status' => $data['moderation_status']]);
         $reply->is_blocked = $data['status'] === 'blocked' || $data['moderation_status'] === 'restricted';
         $reply->is_reported = $data['moderation_status'] !== 'clean';
         $reply->save();
+
+        app(\App\Services\ModerationActionRecorder::class)->recordStatusChange(
+            'reply',
+            $reply->id,
+            $reply->moderation_status,
+            $data['reason'],
+            $request->user()
+        );
 
         ActivityLog::record(
             eventName: 'comment_reply_moderated',
@@ -123,6 +148,7 @@ class CommentController extends Controller
                 'new_status' => $reply->status,
                 'old_moderation_status' => $previous['moderation_status'],
                 'new_moderation_status' => $reply->moderation_status,
+                'reason' => $data['reason'],
             ],
             description: "Moderated reply #{$reply->id} to {$reply->status}/{$reply->moderation_status}",
         );

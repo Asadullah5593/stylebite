@@ -81,12 +81,17 @@ class SocialController extends Controller
         return view('admin.social.BlocksPage', compact('blocks'));
     }
 
-    public function deleteFollow(UserFollow $follow): RedirectResponse
+    public function deleteFollow(Request $request, UserFollow $follow): RedirectResponse
     {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], ['reason.required' => 'Please record why this follow is being removed.']);
+
         $this->logActivity('social_follow_deleted', 'user_follow', $follow->id, [
             'follower_user_id' => $follow->follower_user_id,
             'following_user_id' => $follow->following_user_id,
             'status' => $follow->status,
+            'reason' => $validated['reason'],
         ]);
 
         $follow->delete();
@@ -94,12 +99,18 @@ class SocialController extends Controller
         return back()->with('status', 'Follow record removed successfully.');
     }
 
-    public function deleteBlock(UserBlock $block): RedirectResponse
+    public function deleteBlock(Request $request, UserBlock $block): RedirectResponse
     {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], ['reason.required' => 'Please record why this block is being removed.']);
+
         $this->logActivity('social_block_deleted', 'user_block', $block->id, [
             'blocker_user_id' => $block->blocker_user_id,
             'blocked_user_id' => $block->blocked_user_id,
-            'reason' => $block->reason,
+            // The user's own stated reason for blocking, kept for context.
+            'user_block_reason' => $block->reason,
+            'reason' => $validated['reason'],
         ]);
 
         $block->delete();

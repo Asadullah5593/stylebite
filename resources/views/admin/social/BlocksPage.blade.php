@@ -99,13 +99,16 @@
                                             <i class="bi bi-person-badge me-1"></i>Blocked
                                         </a>
                                     @endif
-                                    <form method="POST" action="{{ route('admin.social.blocks.delete', $block) }}" onsubmit="return confirm('Remove this block record?');">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3">
-                                            <i class="bi bi-trash3 me-1"></i>Remove
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-sm btn-outline-danger rounded-3 px-3"
+                                        onclick="confirmDestructive('{{ route('admin.social.blocks.delete', $block) }}', 'DELETE', {
+                                            title: 'Remove this block?',
+                                            message: 'The two users will be able to see and contact each other again. Consider whether the person who blocked wanted that.',
+                                            submitLabel: 'Remove block',
+                                            reason: 'required',
+                                            reasonLabel: 'Why are you removing it?'
+                                        })">
+                                        <i class="bi bi-trash3 me-1"></i>Remove
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -125,4 +128,5 @@
         </div>
     </div>
 </div>
+@include('admin.partials.confirm-action')
 @endsection

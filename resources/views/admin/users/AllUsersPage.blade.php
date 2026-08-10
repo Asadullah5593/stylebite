@@ -210,13 +210,16 @@
                                                 </li>
                                             @else
                                             <li>
-                                                <form method="POST" action="{{ route('admin.users.destroy', $user) }}" id="delete-user-{{ $user->id }}">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button class="dropdown-item small py-2 text-danger" type="button" onclick="confirmAction('delete-user-{{ $user->id }}', 'Delete this user?', 'This will remove the user from the admin list. This action needs confirmation.')">
-                                                        <i class="bi bi-trash3 me-2"></i>Delete
-                                                    </button>
-                                                </form>
+                                                <button class="dropdown-item small py-2 text-danger" type="button"
+                                                    onclick="confirmDestructive('{{ route('admin.users.destroy', $user) }}', 'DELETE', {
+                                                        title: 'Delete {{ addslashes($name) }}?',
+                                                        message: 'The account is soft-deleted and loses all access. It can be restored later, but the user is signed out immediately.',
+                                                        submitLabel: 'Delete account',
+                                                        reason: 'required',
+                                                        reasonLabel: 'Why is this account being deleted?'
+                                                    })">
+                                                    <i class="bi bi-trash3 me-2"></i>Delete
+                                                </button>
                                             </li>
                                             @endif
                                         </ul>
@@ -348,4 +351,5 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 @include('admin.users.partials.lifecycle-modal')
+@include('admin.partials.confirm-action')
 @endsection

@@ -126,6 +126,10 @@ class PostController extends Controller
         $data = $request->validate([
             'status' => ['required', Rule::in(self::STATUSES)],
             'moderation_status' => ['required', Rule::in(self::MODERATION_STATUSES)],
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please record why this post is being moderated.',
+            'reason.min' => 'Please give a meaningful reason.',
         ]);
 
         $previous = [
@@ -133,7 +137,7 @@ class PostController extends Controller
             'moderation_status' => $post->moderation_status,
         ];
 
-        $post->fill($data);
+        $post->fill(['status' => $data['status'], 'moderation_status' => $data['moderation_status']]);
         $post->is_blocked = in_array($data['moderation_status'], ['restricted', 'blocked'], true);
         $post->is_reported = $data['moderation_status'] !== 'clean';
 
@@ -147,6 +151,16 @@ class PostController extends Controller
         // still counts towards the author's streak.
         stylebite_recalculate_streak($post->user_id);
 
+        // Also lands in Moderation → Actions, so the moderation history covers
+        // decisions made from the content lists, not just from the report queue.
+        app(\App\Services\ModerationActionRecorder::class)->recordStatusChange(
+            'post',
+            $post->id,
+            $post->moderation_status,
+            $data['reason'],
+            $request->user()
+        );
+
         ActivityLog::record(
             eventName: 'post_moderated',
             entityType: 'post',
@@ -157,6 +171,7 @@ class PostController extends Controller
                 'new_status' => $post->status,
                 'old_moderation_status' => $previous['moderation_status'],
                 'new_moderation_status' => $post->moderation_status,
+                'reason' => $data['reason'],
             ],
             description: "Moderated post #{$post->id} to {$post->status}/{$post->moderation_status}",
         );

@@ -766,10 +766,23 @@ class UserController extends Controller
         return back()->with('status', $badgeDefinition['title'].' added successfully.');
     }
 
-    public function destroy(User $user): RedirectResponse
+    public function destroy(Request $request, User $user): RedirectResponse
     {
+        // Deleting an account is the most destructive thing in the panel, so it
+        // records who did it and why alongside the account details.
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please record why this account is being deleted.',
+            'reason.min' => 'Please give a meaningful reason.',
+        ]);
+
         if ($user->trashed()) {
             return back()->with('status', 'User is already deleted.');
+        }
+
+        if (auth()->id() === $user->id) {
+            return back()->withErrors(['reason' => 'You cannot delete your own account.']);
         }
 
         $user->forceFill(['status' => 'deleted'])->save();
@@ -779,6 +792,7 @@ class UserController extends Controller
             'status' => 'deleted',
             'email' => $user->email,
             'role' => $user->role,
+            'reason' => $validated['reason'],
         ]);
 
         return redirect()
