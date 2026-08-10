@@ -45,11 +45,16 @@ class NotificationController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+        // The picker filters client-side, so it can only search what is loaded.
+        // The total is passed through so the view can say so plainly rather
+        // than silently hiding users behind an invisible cap.
+        $recipientTotal = User::query()->where('status', 'active')->count();
+
         $recipientOptions = User::query()
             ->where('status', 'active')
-            ->orderBy('full_name')
-            ->orderBy('username')
-            ->limit(200)
+            ->orderByDesc('last_seen_at')
+            ->orderByDesc('id')
+            ->limit(500)
             ->get(['id', 'username', 'full_name', 'email']);
 
         // Only offer cities users have actually set, so the picker can never
@@ -61,7 +66,12 @@ class NotificationController extends Controller
             ->orderBy('city')
             ->pluck('city');
 
-        return view('admin.notifications.NotificationsPage', compact('notifications', 'recipientOptions', 'cityOptions'));
+        return view('admin.notifications.NotificationsPage', compact(
+            'notifications',
+            'recipientOptions',
+            'recipientTotal',
+            'cityOptions'
+        ));
     }
 
     /**

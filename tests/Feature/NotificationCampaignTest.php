@@ -529,6 +529,48 @@ class NotificationCampaignTest extends TestCase
         $this->assertSame('failed', $notification->fresh()->delivery_status);
     }
 
+    public function test_sender_uses_searchable_checkbox_pickers_with_readable_labels(): void
+    {
+        $admin = $this->admin();
+
+        // Seed data reflects real rows where the display name *is* the email,
+        // which the old native <select> rendered as "x@y.com - x@y.com".
+        User::factory()->create([
+            'status' => 'active',
+            'username' => 'dupe_user',
+            'full_name' => 'dupe@yopmail.com',
+            'email' => 'dupe@yopmail.com',
+        ]);
+
+        $named = User::factory()->create([
+            'status' => 'active',
+            'username' => 'named_user',
+            'full_name' => 'Real Person',
+            'email' => 'real@example.com',
+        ]);
+
+        Profile::create(['user_id' => $named->id, 'display_name' => 'Real Person', 'city' => 'Lahore']);
+
+        $response = $this->actingAs($admin)
+            ->get(route('admin.notifications.notifications'))
+            ->assertOk();
+
+        // Checkboxes, not a native multi-select that needs Ctrl+click.
+        $response->assertSee('name="user_ids[]"', false);
+        $response->assertSee('name="cities[]"', false);
+        $response->assertDontSee('<select name="user_ids[]"', false);
+        $response->assertDontSee('Hold Ctrl/Cmd', false);
+
+        // Readable labels: a name when there is one, the username when the
+        // "name" is just the email again.
+        $response->assertSee('Real Person');
+        $response->assertSee('@dupe_user');
+        $response->assertDontSee('dupe@yopmail.com - dupe@yopmail.com');
+
+        // Cities come from real profile data.
+        $response->assertSee('Lahore');
+    }
+
     public function test_specific_audience_requires_user_ids(): void
     {
         $admin = $this->admin();

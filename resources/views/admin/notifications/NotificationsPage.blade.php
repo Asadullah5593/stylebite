@@ -44,14 +44,16 @@
                 <div class="form-text text-muted extra-small">University targeting is not available yet.</div>
             </div>
 
-            <div class="col-lg-4 audience-option" data-audience="city" hidden>
+            <div class="col-lg-5 audience-option" data-audience="city" hidden>
                 <label class="form-label small text-uppercase text-muted fw-bold">Cities</label>
-                <select name="cities[]" class="form-select border-0 bg-dark-soft rounded-3" multiple size="4">
-                    @foreach ($cityOptions as $city)
-                        <option value="{{ $city }}" @selected(in_array($city, (array) old('cities', []), true))>{{ $city }}</option>
-                    @endforeach
-                </select>
-                <div class="form-text text-muted extra-small">Hold Ctrl/Cmd to pick several. Only cities users have actually set appear here.</div>
+                @include('admin.partials.checkbox-picker', [
+                    'name' => 'cities[]',
+                    'options' => $cityOptions->map(fn ($city) => ['value' => $city, 'label' => $city])->all(),
+                    'selected' => (array) old('cities', []),
+                    'placeholder' => 'Search cities…',
+                    'emptyText' => 'No user has set a city yet, so this audience would be empty.',
+                    'note' => 'Only cities users have actually entered are listed.',
+                ])
             </div>
 
             <div class="col-lg-4 audience-option" data-audience="active_posters" hidden>
@@ -62,14 +64,24 @@
 
             <div class="col-lg-5 audience-option" data-audience="specific" hidden>
                 <label class="form-label small text-uppercase text-muted fw-bold">Users</label>
-                <select name="user_ids[]" class="form-select border-0 bg-dark-soft rounded-3" multiple size="4">
-                    @foreach ($recipientOptions as $recipientOption)
-                        <option value="{{ $recipientOption->id }}" @selected(in_array((string) $recipientOption->id, array_map('strval', (array) old('user_ids', [])), true))>
-                            {{ $recipientOption->full_name ?: '@'.$recipientOption->username }}{{ $recipientOption->email ? ' - '.$recipientOption->email : '' }}
-                        </option>
-                    @endforeach
-                </select>
-                <div class="form-text text-muted extra-small">Hold Ctrl/Cmd to pick several.</div>
+                @include('admin.partials.checkbox-picker', [
+                    'name' => 'user_ids[]',
+                    'options' => $recipientOptions->map(fn ($user) => [
+                        'value' => $user->id,
+                        // Avoid the "000@yopmail.com - 000@yopmail.com" duplication
+                        // that appears when a display name is itself an email.
+                        'label' => filled($user->full_name) && $user->full_name !== $user->email
+                            ? $user->full_name
+                            : '@'.$user->username,
+                        'sublabel' => $user->email,
+                    ])->all(),
+                    'selected' => (array) old('user_ids', []),
+                    'placeholder' => 'Search by name, username or email…',
+                    'emptyText' => 'No active users to choose from.',
+                    'note' => $recipientTotal > $recipientOptions->count()
+                        ? 'Showing the '.number_format($recipientOptions->count()).' most recent of '.number_format($recipientTotal).' active users. Search filters this list only.'
+                        : null,
+                ])
             </div>
 
             <div class="col-lg-4">
