@@ -21,8 +21,9 @@ hPanel → Advanced → Cron Jobs. Adding a single `schedule:run` entry will do 
 - **Mail:** SMTP, sent **synchronously** inside the request — mail does *not* depend on
   the queue, and OTP/login emails will still deliver even if cron is broken.
 
-**Status as of 2026-08-09: none of these are on the server yet.** Keep the Status
-column updated as they go in.
+**Status as of 2026-08-10: all live except entry 11**, which needs re-adding after a
+bad schedule was removed. Every command was run by hand on the server on
+2026-08-10 and all twelve executed cleanly.
 
 ---
 
@@ -30,18 +31,18 @@ column updated as they go in.
 
 | # | Schedule | Command | Status | Why it matters |
 |---|---|---|---|---|
-| 1 | **Every minute** | `queue:work --stop-when-empty --max-time=50 --tries=3` | ⬜ Not added | **Now critical.** Runs queued jobs: post-media optimization (`app/Jobs/OptimizePostMedia.php`) *and* push-notification campaigns (`app/Jobs/ProcessNotificationCampaign.php`). Without it, uploaded images are never compressed **and every push campaign sits at 0% forever** — the admin sees "queued" and nothing is ever delivered. |
-| 2 | **Daily** (01:00) | `stylebite:sync-currency-rates` | ⬜ Not added | Fetches FX rates for creator earnings conversion. **Blocking:** with no stored rates, admin crediting refuses to run by design (it never credits an unconverted amount). Run once by hand right after first deploy. |
-| 3 | **Hourly** | `stylebite:settle-ad-earnings` | ⬜ Not added | Credits reel owners their accumulated ad-revenue share into their wallets. Without it, creators earn nothing. Supports `--dry-run` to preview. |
-| 4 | **Hourly** | `stylebite:refresh-ad-eligibility` | ⬜ Not added | Recomputes the cached ad-eligibility flag that drives `show_ad` on reels and who earns. Stale flag = wrong ads and wrong earnings. |
-| 5 | **Daily** (00:30) | `stylebite:refresh-streaks` | ⬜ Not added | **Required.** Breaks streaks that lapsed. Without it a streak never ends, so every user's streak counts up forever. `--all` recomputes everyone instead of only at-risk profiles. |
-| 6 | **Hourly** | `stylebite:lift-expired-suspensions` | ⬜ Not added | Reactivates users whose suspension window ended. The login/API paths also lift lazily when the user returns, so this is the safety net that keeps admin counts honest for users who never come back. |
-| 7 | **Daily** (02:30) | `stylebite:prune-user-sessions` | ⬜ Not added | Deletes sessions dead for 30+ days. Needed now that sessions expire every 24h — otherwise `user_sessions` grows by at least one row per user per day forever. `--days=` to change retention. |
-| 8 | **Daily** (03:30) | `stylebite:prune-user-activity` | ⬜ Not added | Trims DAU/MAU history past 90 days. MAU only looks back 30 days, so older rows are dead weight. `--days=` to change retention (minimum 31). |
-| 9 | **Weekly** (Sun 04:00) | `stylebite:prune-activity-logs` | ⬜ Not added | Trims the admin audit trail past the retention window (365 days default, `AUDIT_RETENTION_DAYS` in `.env` — currently unset, so 365 applies). Every admin action writes a row, so this table grows steadily. Refuses any window under 30 days. |
-| 10 | **Weekly** (Sun 04:30) | `queue:prune-failed --hours=336` | ⬜ Not added | Framework command. Trims `failed_jobs`, which nothing else clears — a run of failures otherwise accumulates permanently. Recommended, not critical. |
-| 11 | **Hourly** (:20) | `stylebite:send-streak-reminders` | ⬜ Not added | Warns users whose streak lapses tonight (last qualifying day was yesterday, nothing today). One reminder per user per day — safe to run hourly. **Schedule it plainly hourly**: the command itself refuses to send outside 09:00–21:00 in the app's reporting timezone, because cron is UTC and an hour range here would drift five hours. Window and on/off live in Admin → Settings → Streaks; `--force` bypasses it for manual runs; `--limit=` caps a run and says so when capped. |
-| 12 | **Hourly** (:50) | `stylebite:send-contest-ending-reminders` | ⬜ Not added | Tells participants of active contests that entries close within the configured window (Admin → Settings → Contests, default 24h). One reminder per user per contest — safe to run hourly. |
+| 1 | **Every minute** | `queue:work --stop-when-empty --max-time=50 --tries=3` | ✅ Live | **Now critical.** Runs queued jobs: post-media optimization (`app/Jobs/OptimizePostMedia.php`) *and* push-notification campaigns (`app/Jobs/ProcessNotificationCampaign.php`). Without it, uploaded images are never compressed **and every push campaign sits at 0% forever** — the admin sees "queued" and nothing is ever delivered. |
+| 2 | **Daily** (01:00) | `stylebite:sync-currency-rates` | ✅ Live | Fetches FX rates for creator earnings conversion. **Blocking:** with no stored rates, admin crediting refuses to run by design (it never credits an unconverted amount). Run once by hand right after first deploy. |
+| 3 | **Hourly** | `stylebite:settle-ad-earnings` | ✅ Live | Credits reel owners their accumulated ad-revenue share into their wallets. Without it, creators earn nothing. Supports `--dry-run` to preview. |
+| 4 | **Hourly** | `stylebite:refresh-ad-eligibility` | ✅ Live | Recomputes the cached ad-eligibility flag that drives `show_ad` on reels and who earns. Stale flag = wrong ads and wrong earnings. |
+| 5 | **Daily** (00:30) | `stylebite:refresh-streaks` | ✅ Live | **Required.** Breaks streaks that lapsed. Without it a streak never ends, so every user's streak counts up forever. `--all` recomputes everyone instead of only at-risk profiles. |
+| 6 | **Hourly** | `stylebite:lift-expired-suspensions` | ✅ Live | Reactivates users whose suspension window ended. The login/API paths also lift lazily when the user returns, so this is the safety net that keeps admin counts honest for users who never come back. |
+| 7 | **Daily** (02:30) | `stylebite:prune-user-sessions` | ✅ Live | Deletes sessions dead for 30+ days. Needed now that sessions expire every 24h — otherwise `user_sessions` grows by at least one row per user per day forever. `--days=` to change retention. |
+| 8 | **Daily** (03:30) | `stylebite:prune-user-activity` | ✅ Live | Trims DAU/MAU history past 90 days. MAU only looks back 30 days, so older rows are dead weight. `--days=` to change retention (minimum 31). |
+| 9 | **Weekly** (Sun 04:00) | `stylebite:prune-activity-logs` | ✅ Live | Trims the admin audit trail past the retention window (365 days default, `AUDIT_RETENTION_DAYS` in `.env` — currently unset, so 365 applies). Every admin action writes a row, so this table grows steadily. Refuses any window under 30 days. |
+| 10 | **Weekly** (Sun 04:30) | `queue:prune-failed --hours=336` | ✅ Live | Framework command. Trims `failed_jobs`, which nothing else clears — a run of failures otherwise accumulates permanently. Recommended, not critical. |
+| 11 | **Hourly** (:20) | `stylebite:send-streak-reminders` | ⬜ Needs re-adding | Warns users whose streak lapses tonight (last qualifying day was yesterday, nothing today). One reminder per user per day — safe to run hourly. **Schedule it plainly hourly**: the command itself refuses to send outside 09:00–21:00 in the app's reporting timezone, because cron is UTC and an hour range here would drift five hours. Window and on/off live in Admin → Settings → Streaks; `--force` bypasses it for manual runs; `--limit=` caps a run and says so when capped. |
+| 12 | **Hourly** (:50) | `stylebite:send-contest-ending-reminders` | ✅ Live | Tells participants of active contests that entries close within the configured window (Admin → Settings → Contests, default 24h). One reminder per user per contest — safe to run hourly. |
 
 ### Copy-paste ready
 
@@ -141,3 +142,30 @@ and **Activity Logs** shows admin-side effects.
 2. **Add a row to the table above** with its schedule, status, and what breaks without it.
 3. Add it to the cron table in `ADMIN_CHANGELOG.md` too, so the change is dated.
 4. Tell the client it needs a new server entry — nothing schedules itself here.
+
+
+---
+
+## Verified on the server — 2026-08-10
+
+Every scheduled command was run by hand and all executed cleanly. Notable results:
+
+- `sync-currency-rates` — **stored 166 rates**, which unblocks creator crediting
+  (it refuses to credit an unconverted amount, so this had been a hard blocker).
+- `prune-user-sessions` — pruned 9 dead sessions on its first run.
+- `refresh-ad-eligibility` — 3 creators checked, **0 eligible**. Correct: eligibility
+  needs 1000 watch-hours and `post_views` is empty until the app sends view batches.
+- `refresh-streaks` — **0 profiles checked**, because no user currently holds a
+  streak (only 3 accounts have ever posted, none in the last 30 days). The streak
+  reminder will stay idle until people post daily. Not a fault.
+- The four prunes and `queue:prune-failed` returned 0 — nothing is old enough yet.
+- `queue:work` exited immediately: no backlog.
+
+To re-run this health check:
+
+```bash
+cd ~/domains/stylebiteapp.com/public_html && for c in "stylebite:sync-currency-rates" "stylebite:refresh-ad-eligibility" "stylebite:lift-expired-suspensions" "stylebite:prune-user-sessions" "stylebite:prune-user-activity" "stylebite:prune-activity-logs" "queue:prune-failed --hours=336" "stylebite:settle-ad-earnings --dry-run" "stylebite:refresh-streaks"; do echo "=== $c ==="; php artisan $c 2>&1 | tail -6; echo; done
+```
+
+`settle-ad-earnings` is the one to keep `--dry-run` on when testing — without it,
+it credits real money.
