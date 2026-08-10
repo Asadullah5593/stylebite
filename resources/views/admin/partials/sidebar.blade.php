@@ -17,7 +17,8 @@
     ];
 @endphp
 
-<aside id="sidebar" class="admin-sidebar text-white h-100 flex-column d-none d-md-flex">
+<aside id="sidebar" tabindex="-1" aria-label="Admin navigation"
+       class="admin-sidebar offcanvas-lg offcanvas-start text-white flex-column">
     <div class="sidebar-brand">
         <div class="sidebar-brand-icon">
             <i class="bi bi-stars"></i>
@@ -26,6 +27,8 @@
             <h5 class="mb-0">StyleBite</h5>
             <small>Admin Console</small>
         </div>
+        <button type="button" class="btn-close btn-close-white ms-auto d-lg-none"
+                data-bs-dismiss="offcanvas" data-bs-target="#sidebar" aria-label="Close navigation"></button>
     </div>
 
     <nav class="flex-grow-1 overflow-auto py-3 px-3 scrollbar-hidden">
@@ -177,7 +180,7 @@
 
 <style>
     .admin-sidebar {
-        width: 80%;
+        width: min(84vw, 300px);
         min-height: 100vh;
         background: var(--sb-sidebar-bg);
         border-right: 1px solid var(--sb-sidebar-border);
@@ -185,7 +188,7 @@
         overflow: hidden;
     }
     
-    @media (min-width: 768px) {
+    @media (min-width: 992px) {
         .admin-sidebar {
             position: fixed;
             top: 0;

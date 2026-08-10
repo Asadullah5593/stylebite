@@ -1,7 +1,7 @@
 <header class="admin-header sticky-top">
     <div class="container-fluid px-2 px-md-2 px-xl-3 h-100">
         <div class="d-flex align-items-center gap-3 gap-lg-4 h-100">
-            <button class="btn btn-link text-white-50 d-md-none p-0 me-1" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar">
+            <button class="btn btn-link text-white-50 d-lg-none p-0 me-1" aria-label="Open navigation" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar">
                 <i class="bi bi-list fs-3"></i>
             </button>
 

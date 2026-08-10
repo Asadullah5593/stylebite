@@ -119,7 +119,9 @@
             background: var(--sb-content-bg);
         }
 
-        @media (min-width: 768px) {
+        /* The sidebar is a drawer below lg, so content owns the full width
+           there. Above lg it sits beside the fixed sidebar. */
+        @media (min-width: 992px) {
             .content-area {
                 margin-left: var(--admin-sidebar-width);
             }
@@ -654,7 +656,7 @@
             border-color: transparent !important;
             color: white !important;
         }
-        @media (max-width: 767.98px) {
+        @media (max-width: 991.98px) {
             .content-area {
                 width: 100%;
             }
@@ -680,6 +682,21 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Several pages declare their modals inside a .glass panel — sometimes inside
+    // a table cell. .glass sets backdrop-filter, which makes it the containing
+    // block for position:fixed, and overflow:hidden on top of that, so the dialog
+    // was clipped instead of covering the viewport. Moving every modal to <body>
+    // before anything instantiates it fixes the whole class of case, and keeps
+    // element references (and therefore data-bs-target) valid.
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.modal').forEach(function (modal) {
+            if (modal.parentElement !== document.body) {
+                document.body.appendChild(modal);
+            }
+        });
+    }, true);
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         (function () {

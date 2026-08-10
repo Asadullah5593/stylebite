@@ -34,6 +34,43 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-10 — The panel works on tablets now 📱
+
+No migration. Layout only — no page lost a feature.
+
+### Navigation existed but was unreachable
+
+Below 768px the sidebar was simply hidden, so **there was no navigation at all**
+— you could reach a page but not leave it except by editing the URL. The
+hamburger button in the header had been there the whole time, pointing at
+`#sidebar`, but the sidebar was never an off-canvas element, so pressing it did
+nothing.
+
+The sidebar is now a proper drawer below **992px** and the fixed rail above it,
+with a close button and the full permission-filtered menu. The hamburger works.
+
+### The squeezed tablet band is gone
+
+The layout had exactly one breakpoint at 768px, so an iPad in portrait rendered
+the desktop shell: a 255px fixed sidebar leaving roughly 500px of content, which
+is where the cramped tables and wrapped filter bars came from. The desktop shell
+now starts at 992px instead, so tablets get the full width with the menu one tap
+away, and nothing between 768 and 991px is squeezed any more.
+
+### Modals were being clipped
+
+Several pages declare their modals inside a `.glass` panel — sometimes inside a
+table cell. `.glass` sets `backdrop-filter`, which makes it the containing block
+for `position: fixed`, and `overflow: hidden` on top of that, so those dialogs
+were cut off instead of covering the screen. Every modal is now moved to the end
+of the document on load, which fixes all of them at once regardless of where they
+are written.
+
+Phone-width (<768px) is still not a design target — but it is now navigable
+rather than a dead end.
+
+---
+
 ## 2026-08-10 — Destructive actions now demand a reason 🛑
 
 **Run nothing — no migration.** But note this changes how several forms behave:
