@@ -167,14 +167,21 @@
         @endcanany
 
         <!-- System -->
-        @can('settings.access')
+        @canany(['settings.access', 'legal.view'])
         <div class="mb-2">
             <div class="sidebar-section-title">System</div>
+            @can('settings.access')
             <a href="{{ route('admin.settings.configs') }}" class="nav-link {{ request()->routeIs('admin.settings*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-gear"></i> <span>App Settings</span>
             </a>
+            @endcan
+            @can('legal.view')
+            <a href="{{ route('admin.legal.index') }}" class="nav-link {{ request()->routeIs('admin.legal*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+                <i class="bi bi-file-earmark-text"></i> <span>Legal Documents</span>
+            </a>
+            @endcan
         </div>
-        @endcan
+        @endcanany
     </nav>
 </aside>
 

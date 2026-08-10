@@ -8,6 +8,7 @@ use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
 use App\Models\WithdrawalRequest;
 use App\Services\CurrencyConverter;
+use App\Support\CsvExport;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -194,104 +195,93 @@ class EarningsController extends Controller
 
     public function exportTransactions(Request $request): StreamedResponse
     {
-        $transactions = $this->filteredTransactionsQuery($request)->get();
-        $filename = 'earnings-transactions-'.now()->format('Ymd-His').'.csv';
+        // reorder() drops the shared query's latest('created_at') sort. Without
+        // it, lazyByIdDesc's keyset paging breaks silently — forPageBeforeId only
+        // strips orders on the id column, so the export would repeat its first
+        // chunk and drop every older row.
+        $query = $this->filteredTransactionsQuery($request)->reorder();
 
         $this->logActivity('earnings_transactions_exported', 'earnings_transaction', null, [
-            'exported_count' => $transactions->count(),
+            'exported_count' => $query->clone()->count(),
             'filters' => $request->only(['q', 'status', 'transaction_type', 'source_type']),
         ]);
 
-        return response()->streamDownload(function () use ($transactions) {
-            $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['ID', 'User', 'Wallet', 'Type', 'Source', 'Amount', 'Currency', 'Status', 'Note', 'Created']);
-
-            foreach ($transactions as $transaction) {
-                fputcsv($handle, [
-                    $transaction->id,
-                    $transaction->user?->full_name ?: $transaction->user?->username,
-                    $transaction->wallet_id,
-                    $transaction->transaction_type,
-                    $transaction->source_type,
-                    $transaction->amount,
-                    $transaction->currency_code,
-                    $transaction->status,
-                    $transaction->note,
-                    $transaction->created_at?->toDateTimeString(),
-                ]);
-            }
-
-            fclose($handle);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+        return CsvExport::stream(
+            'earnings-transactions-'.now()->format('Ymd-His').'.csv',
+            ['ID', 'User', 'Wallet', 'Type', 'Source', 'Amount', 'Currency', 'Status', 'Note', 'Created'],
+            fn () => $query->lazyByIdDesc(500)->map(fn (EarningTransaction $transaction) => [
+                $transaction->id,
+                $transaction->user?->full_name ?: $transaction->user?->username,
+                $transaction->wallet_id,
+                $transaction->transaction_type,
+                $transaction->source_type,
+                $transaction->amount,
+                $transaction->currency_code,
+                $transaction->status,
+                $transaction->note,
+                $transaction->created_at?->toDateTimeString(),
+            ])
+        );
     }
 
     public function exportWithdrawals(Request $request): StreamedResponse
     {
-        $withdrawals = $this->filteredWithdrawalsQuery($request)->get();
-        $filename = 'earnings-withdrawals-'.now()->format('Ymd-His').'.csv';
+        // See exportTransactions: reorder() is required before keyset paging.
+        $query = $this->filteredWithdrawalsQuery($request)->reorder();
 
         $this->logActivity('earnings_withdrawals_exported', 'withdrawal_request', null, [
-            'exported_count' => $withdrawals->count(),
+            'exported_count' => $query->clone()->count(),
             'filters' => $request->only(['q', 'status', 'method']),
         ]);
 
-        return response()->streamDownload(function () use ($withdrawals) {
-            $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['ID', 'User', 'Wallet', 'Amount', 'Currency', 'Method', 'Account Ref', 'Status', 'Failure Reason', 'Requested At', 'Processed At']);
-
-            foreach ($withdrawals as $withdrawal) {
-                fputcsv($handle, [
-                    $withdrawal->id,
-                    $withdrawal->user?->full_name ?: $withdrawal->user?->username,
-                    $withdrawal->wallet_id,
-                    $withdrawal->amount,
-                    $withdrawal->currency_code,
-                    $withdrawal->method,
-                    $withdrawal->account_ref,
-                    $withdrawal->status,
-                    $withdrawal->failure_reason,
-                    $withdrawal->requested_at?->toDateTimeString(),
-                    $withdrawal->processed_at?->toDateTimeString(),
-                ]);
-            }
-
-            fclose($handle);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+        return CsvExport::stream(
+            'earnings-withdrawals-'.now()->format('Ymd-His').'.csv',
+            ['ID', 'User', 'Wallet', 'Amount', 'Currency', 'Method', 'Account Ref', 'Status', 'Failure Reason', 'Requested At', 'Processed At'],
+            fn () => $query->lazyByIdDesc(500)->map(fn (WithdrawalRequest $withdrawal) => [
+                $withdrawal->id,
+                $withdrawal->user?->full_name ?: $withdrawal->user?->username,
+                $withdrawal->wallet_id,
+                $withdrawal->amount,
+                $withdrawal->currency_code,
+                $withdrawal->method,
+                $withdrawal->account_ref,
+                $withdrawal->status,
+                $withdrawal->failure_reason,
+                $withdrawal->requested_at?->toDateTimeString(),
+                $withdrawal->processed_at?->toDateTimeString(),
+            ])
+        );
     }
 
     public function exportReconciliation(Request $request): StreamedResponse
     {
+        // Reconciliation is computed per wallet in PHP, so this one is already a
+        // materialised collection rather than a lazy query.
         $rows = $this->buildReconciliationRows($request);
-        $filename = 'earnings-reconciliation-'.now()->format('Ymd-His').'.csv';
 
         $this->logActivity('earnings_reconciliation_exported', 'earnings_wallet', null, [
             'exported_count' => $rows->count(),
             'filters' => $request->only(['q', 'currency_code', 'issue']),
         ]);
 
-        return response()->streamDownload(function () use ($rows) {
-            $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['Wallet ID', 'User', 'Currency', 'Available', 'Pending', 'Reserved Withdrawals', 'Pending Gap', 'Missing Withdrawal Transactions', 'Completed Withdrawals', 'Completed Credits', 'Completed Debits', 'Issues']);
-
-            foreach ($rows as $row) {
-                fputcsv($handle, [
-                    $row['wallet_id'],
-                    $row['user_name'],
-                    $row['currency_code'],
-                    $row['available_balance'],
-                    $row['pending_balance'],
-                    $row['reserved_withdrawals'],
-                    $row['pending_gap'],
-                    $row['missing_withdrawal_transactions'],
-                    $row['completed_withdrawals'],
-                    $row['completed_credits'],
-                    $row['completed_debits'],
-                    implode('; ', $row['issues']),
-                ]);
-            }
-
-            fclose($handle);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+        return CsvExport::stream(
+            'earnings-reconciliation-'.now()->format('Ymd-His').'.csv',
+            ['Wallet ID', 'User', 'Currency', 'Available', 'Pending', 'Reserved Withdrawals', 'Pending Gap', 'Missing Withdrawal Transactions', 'Completed Withdrawals', 'Completed Credits', 'Completed Debits', 'Issues'],
+            fn () => $rows->map(fn (array $row) => [
+                $row['wallet_id'],
+                $row['user_name'],
+                $row['currency_code'],
+                $row['available_balance'],
+                $row['pending_balance'],
+                $row['reserved_withdrawals'],
+                $row['pending_gap'],
+                $row['missing_withdrawal_transactions'],
+                $row['completed_withdrawals'],
+                $row['completed_credits'],
+                $row['completed_debits'],
+                implode('; ', $row['issues']),
+            ])
+        );
     }
 
     public function updateWithdrawal(Request $request, WithdrawalRequest $withdrawal)

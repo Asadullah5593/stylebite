@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\EmailTemplate;
+use App\Models\LegalDocument;
 use App\Models\User;
 use App\Services\EmailTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,6 +60,24 @@ class AdminPageRenderTest extends TestCase
         }
     }
 
+    public function test_every_legal_document_editor_and_version_page_renders(): void
+    {
+        $admin = $this->admin();
+
+        foreach (array_keys(LegalDocument::KEYS) as $key) {
+            $this->actingAs($admin)
+                ->get(route('admin.legal.edit', $key))
+                ->assertOk()
+                ->assertSee(LegalDocument::KEYS[$key], false);
+        }
+
+        foreach (LegalDocument::all() as $document) {
+            $this->actingAs($admin)
+                ->get(route('admin.legal.show', $document))
+                ->assertOk();
+        }
+    }
+
     /**
      * @return array<int, array<int, string>>
      */
@@ -85,6 +104,7 @@ class AdminPageRenderTest extends TestCase
             'contests' => ['admin.contests.contests'],
             'earnings' => ['admin.earnings.wallets'],
             'settings' => ['admin.settings.configs'],
+            'legal documents' => ['admin.legal.index'],
             'system health' => ['admin.system_health'],
         ];
     }

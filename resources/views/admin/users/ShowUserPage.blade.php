@@ -44,6 +44,13 @@
             <a href="{{ route('admin.users.edit', $user) }}" class="btn btn-outline-dynamic rounded-3">
                 <i class="bi bi-pencil me-2"></i>Edit
             </a>
+            @can('users.export')
+                {{-- Answers a "send me my data" request (GDPR Art. 15/20) without hand-querying tables. --}}
+                <a href="{{ route('admin.users.personal_data', $user) }}" class="btn btn-outline-dynamic rounded-3"
+                   title="Download everything held about this user as JSON">
+                    <i class="bi bi-file-earmark-arrow-down me-2"></i>Personal Data
+                </a>
+            @endcan
             @if ($user->trashed())
                 <form method="POST" action="{{ route('admin.users.restore', $user) }}" id="restore-user-{{ $user->id }}">
                     @csrf

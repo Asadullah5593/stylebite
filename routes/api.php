@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\ContestController;
 use App\Http\Controllers\Api\EarningsController;
 use App\Http\Controllers\Api\FeedController;
 use App\Http\Controllers\Api\FollowController;
+use App\Http\Controllers\Api\LegalDocumentController;
 use App\Http\Controllers\Api\MemoryController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PostController;
@@ -33,7 +34,14 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp'])->middleware('throttle:6,1');
 });
 
+// Legal documents are readable without a session: a user must be able to read
+// the terms before signing up.
+Route::get('/legal/{key}', [LegalDocumentController::class, 'show']);
+
 Route::middleware('session.auth')->group(function (): void {
+    Route::get('/legal/pending/all', [LegalDocumentController::class, 'pending']);
+    Route::post('/legal/{key}/accept', [LegalDocumentController::class, 'accept']);
+
     Route::post('/broadcasting/auth', BroadcastAuthController::class);
     Route::get('/feed/home', [FeedController::class, 'home']);
     Route::get('/earnings/overview', [EarningsController::class, 'overview']);

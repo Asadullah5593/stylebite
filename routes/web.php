@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\EarningsController;
 use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EngagementController;
+use App\Http\Controllers\Admin\LegalDocumentController;
 use App\Http\Controllers\Admin\MemoryController;
 use App\Http\Controllers\Admin\MediaController;
 use App\Http\Controllers\Admin\MessagingController;
@@ -32,7 +33,23 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
-Route::view('/privacy-policy', 'privacy-policy')->name('privacy-policy');
+Route::get('/privacy-policy', function () {
+    // Falls back to the original hardcoded page until real text is published,
+    // so this URL can never break.
+    $document = \App\Models\LegalDocument::current(\App\Models\LegalDocument::KEY_PRIVACY);
+
+    return $document && ! str_contains($document->body, 'has not been finalised')
+        ? view('legal-document', ['document' => $document])
+        : view('privacy-policy');
+})->name('privacy-policy');
+
+Route::get('/terms', function () {
+    $document = \App\Models\LegalDocument::current(\App\Models\LegalDocument::KEY_TERMS);
+
+    abort_unless($document, 404);
+
+    return view('legal-document', ['document' => $document]);
+})->name('terms');
 Route::view('/delete-account', 'delete-account')->name('delete-account');
 
 Route::get('/preview/email-template', function () {
@@ -79,12 +96,14 @@ Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->gr
         Route::get('/create', [UserController::class, 'create'])->name('create')->middleware('permission:users.create');
         Route::post('/', [UserController::class, 'store'])->name('store')->middleware('permission:users.create');
         Route::patch('/bulk-lifecycle', [UserController::class, 'bulkLifecycle'])->name('bulk_lifecycle')->middleware('permission:users.moderate');
+        Route::get('/export', [UserController::class, 'export'])->name('export')->middleware('permission:users.export');
         Route::get('/profiles', [UserController::class, 'profiles'])->name('profiles')->middleware('permission:users.view');
         Route::get('/settings', [UserController::class, 'settings'])->name('settings')->middleware('permission:users.view');
         Route::get('/auth-providers', [UserController::class, 'authProviders'])->name('auth_providers')->middleware('permission:users.view');
         Route::get('/sessions', [UserController::class, 'sessions'])->name('sessions')->middleware('permission:users.view');
         Route::get('/devices', [UserController::class, 'devices'])->name('devices')->middleware('permission:users.view');
         Route::get('/password-resets', [UserController::class, 'passwordResets'])->name('password_resets')->middleware('permission:users.view');
+        Route::get('/{user}/personal-data', [UserController::class, 'exportPersonalData'])->withTrashed()->name('personal_data')->middleware('permission:users.export');
         Route::get('/{user}', [UserController::class, 'show'])->withTrashed()->name('show')->middleware('permission:users.view');
         Route::get('/{user}/edit', [UserController::class, 'edit'])->withTrashed()->name('edit')->middleware('permission:users.update');
         Route::put('/{user}', [UserController::class, 'update'])->withTrashed()->name('update')->middleware('permission:users.update');
@@ -205,7 +224,16 @@ Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->gr
         Route::patch('/actions/{moderationAction}/expiry', [ModerationController::class, 'updateActionExpiry'])->name('actions.expiry')->middleware('permission:moderation.manage');
     });
 
-     // Support tickets
+     // Legal documents (Privacy Policy, Terms) with version history
+    Route::prefix('legal')->name('legal.')->group(function () {
+        Route::get('/', [LegalDocumentController::class, 'index'])->name('index')->middleware('permission:legal.view');
+        Route::get('/versions/{legalDocument}', [LegalDocumentController::class, 'show'])->name('show')->middleware('permission:legal.view');
+        Route::get('/{key}/acceptances/export', [LegalDocumentController::class, 'exportAcceptances'])->name('acceptances.export')->middleware('permission:legal.view');
+        Route::get('/{key}', [LegalDocumentController::class, 'edit'])->name('edit')->middleware('permission:legal.manage');
+        Route::post('/{key}', [LegalDocumentController::class, 'store'])->name('store')->middleware('permission:legal.manage');
+    });
+
+    // Support tickets
      Route::prefix('support')->name('support.')->group(function () {
         Route::get('/', [SupportTicketController::class, 'index'])->name('index')->middleware('permission:tickets.view');
         Route::get('/{ticket}', [SupportTicketController::class, 'show'])->name('show')->middleware('permission:tickets.view');

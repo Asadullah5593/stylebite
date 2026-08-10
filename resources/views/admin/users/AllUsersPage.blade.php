@@ -60,9 +60,12 @@
             <i class="bi bi-arrow-clockwise me-2"></i>Reset
         </a>
 
-        <button class="btn btn-outline-dynamic rounded-3 px-3" type="button" onclick="exportToCSV()">
-            <i class="bi bi-download me-2"></i>Export
-        </button>
+        @can('users.export')
+            {{-- Submits the filter form to the export route, so the download matches what is on screen. --}}
+            <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit" formaction="{{ route('admin.users.export') }}" formmethod="GET">
+                <i class="bi bi-download me-2"></i>Export CSV
+            </button>
+        @endcan
 
         <a href="{{ route('admin.users.create') }}" class="btn bg-primary-gradient text-white fw-bold rounded-3 px-3 shadow-glow border-0">
             <i class="bi bi-plus-lg me-2"></i>Add User
@@ -286,32 +289,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    window.exportToCSV = function() {
-        let csv = 'Name,Username,Email,Role,Status,Created\n';
-        document.querySelectorAll('#usersTable tbody tr').forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length < 8) {
-                return;
-            }
-
-            const identity = cells[1].innerText.trim().split('\n').filter(Boolean);
-            const role = cells[2].innerText.trim();
-            const status = cells[3].innerText.trim().split('\n')[0];
-            const created = cells[6].innerText.trim();
-
-            csv += `"${identity[0] ?? ''}","${identity[2]?.replace('@', '') ?? ''}","${identity[1] ?? ''}","${role}","${status}","${created}"\n`;
-        });
-
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'stylebite-users.csv';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-    };
 
     // Bulk selection → shared lifecycle modal.
     const selectAll = document.getElementById('selectAllUsers');

@@ -8,6 +8,82 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-10 — Privacy Policy & Terms come from the API now 🆕 NEW ENDPOINTS
+
+Stop hardcoding or WebView-ing the legal text. It's editable from the admin panel,
+it's versioned, and we now have to record who accepted which version.
+
+### 1. Fetch a document — no login needed
+
+- `GET /legal/privacy_policy`
+- `GET /legal/terms`
+
+Both are **public** (no `Authorization` header) — a user has to be able to read the
+terms before they have an account.
+
+```json
+{
+  "status_code": 1,
+  "document": {
+    "key": "privacy_policy",
+    "version": 3,
+    "title": "Privacy Policy",
+    "body": "Full text…\n\nWith blank-line paragraph breaks.",
+    "paragraphs": ["Full text…", "With blank-line paragraph breaks."],
+    "summary_of_changes": "Reduced data collection.",
+    "requires_reacceptance": true,
+    "published_at": "2026-08-10T09:12:00.000000Z"
+  }
+}
+```
+
+Use **`paragraphs`** to render — it's `body` already split on blank lines, so you
+don't need to parse anything. `404` means nothing is published yet for that key;
+show a graceful empty state rather than an error.
+
+### 2. What the user still has to agree to
+
+`GET /legal/pending/all` (needs a session)
+
+```json
+{ "status_code": 1, "has_pending": true,
+  "pending": [ { "key": "terms", "version": 2, "title": "Terms", "requires_reacceptance": false } ] }
+```
+
+Call this after login. If `has_pending` is `false`, show nothing.
+
+### 3. Record the acceptance
+
+`POST /legal/{key}/accept` with `{ "version": 3 }` — the version you actually
+displayed, not a hardcoded number.
+
+- `200` — recorded. Calling it twice is safe (no duplicate row)
+- **`409`** — the user was looking at stale text. The response carries
+  `current_version`; **re-fetch the document, show it again, and ask again.** Do
+  not retry with the new version number without showing the new text — the whole
+  point is that they agreed to what was on screen
+- `404` — not published yet
+
+### ⚠️ A new version means asking again
+
+Acceptance is tied to a **version**, not to the document. When we publish a new
+version, that document reappears in `pending` even for users who accepted the old
+one. So: don't cache "accepted" as a boolean forever — check `pending` on login
+and gate on that.
+
+`requires_reacceptance: true` marks a material change. Suggested handling: block
+the app behind a consent screen for `true`, and use a dismissible banner for
+`false`.
+
+### What we need from you
+
+1. Legal screens read from these endpoints instead of hardcoded/WebView text
+2. Registration links to `GET /legal/terms` and `GET /legal/privacy_policy`
+3. After login: `GET /legal/pending/all` → consent screen if `has_pending`
+4. `POST /legal/{key}/accept` on agree, and handle `409` by re-fetching
+
+---
+
 ## 2026-08-10 — Reporting and support tickets are live 🆕 NEW ENDPOINTS
 
 Two new features for the app to build, plus one bug fix you'll notice.

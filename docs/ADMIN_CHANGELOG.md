@@ -34,6 +34,93 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-10 — Editable legal pages + compliance exports 📄
+
+The last of the cross-cutting requirements: Privacy Policy and Terms are editable
+from the panel, and data can leave the system in a form a lawyer or regulator can
+read.
+
+### Privacy Policy & Terms are now editable — **System → Legal Documents**
+
+Previously `/privacy-policy` was a hardcoded Blade file, and there was no Terms
+page at all. Both are now database-backed and versioned.
+
+- **System → Legal Documents** lists both documents, their live version, and how
+  many users have accepted it
+- **Edit** writes a **draft** by default — nothing reaches users until you tick
+  *Publish*. Save as often as you like; repeated draft saves overwrite the draft
+  rather than stacking versions
+- **Publishing never edits the live version — it creates the next one.** v1 stays
+  in the database forever. This is deliberate: the only way to answer "what did
+  this user actually agree to in March?" is to still have March's text
+- **Requires re-acceptance** marks a version as a material change
+- Every version is viewable and diff-able by eye from the version list
+- Publishing and draft-saving are both written to the activity log with the
+  summary of changes
+
+Public pages: `/privacy-policy` and `/terms` render the published version (the old
+hardcoded view is kept as a fallback in case the table is ever empty).
+
+> **Still needed from the client:** the actual Terms of Service copy. The editor is
+> built and v1 is a placeholder — paste the real text in and publish.
+
+### Who accepted what
+
+`legal_acceptances` records user, document, **version**, IP, user agent and
+timestamp. Because acceptance is tied to a version, publishing a new version puts
+the document back in every user's "pending" list rather than silently inheriting
+the old consent. Old acceptance rows are never deleted — they are the evidence.
+
+Export per document, optionally per version: **Legal Documents → Acceptances →
+Export CSV**.
+
+### CSV exports are now real, and safe to open
+
+The users-list "Export CSV" button **used to be a lie** — it read the 10 rows
+already rendered on the page out of the DOM and called that an export. It now
+streams the full filtered result set from the database (15 columns).
+
+All exports moved to one shared writer (`App\Support\CsvExport`), which fixes two
+silent problems across the board:
+
+- **UTF-8 BOM** — without it Excel on Windows reads the file as Latin-1 and
+  mangles every non-ASCII name. This is what people mean by "we need Excel, not
+  CSV"
+- **Formula injection** — a cell starting with `=` `+` `-` `@` tab or CR is
+  *executed* by Excel, Sheets and LibreOffice. A user whose display name is
+  `=HYPERLINK("http://evil","click")` became a live link in your spreadsheet.
+  Such values are now prefixed with an apostrophe: neutral, still readable
+
+Retrofitted: users, activity log, earnings transactions, earnings withdrawals,
+earnings reconciliation, legal acceptances. The two earnings exports also stopped
+loading every row into memory first — they stream by primary key now, so a large
+export can't exhaust memory.
+
+### "Send me my data" — one click
+
+**Users → (a user) → Personal Data** downloads everything held about that person as
+structured JSON: account, profile, settings, linked accounts, badges, posts,
+memories, comments, replies, messages sent, notifications, support tickets,
+reports filed, wallet, transactions, withdrawals, sessions, devices, legal
+acceptances, blocks. Empty sections are still present — an absent key would read
+as "we hold nothing".
+
+Erasure was already possible via the public delete-account page; access and
+portability (GDPR Art. 15/20) had no answer short of hand-querying ~20 tables.
+
+### ⚠️ Permission change: bulk export is no longer `users.view`
+
+Both exports were gated on `users.view`, which **Support Agent** and **Finance
+Manager** hold. Looking one account up to help its owner and downloading a
+spreadsheet of every user's email address are not the same act, so bulk export now
+needs a new **`users.export`** permission, granted to **Admin** and **Super Admin**
+only.
+
+If you want a specific support lead to keep this ability, add `users.export` to a
+custom role — don't widen the built-in one.
+
+---
+
 ## 2026-08-10 — The panel works on tablets now 📱
 
 No migration. Layout only — no page lost a feature.

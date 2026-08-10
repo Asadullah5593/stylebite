@@ -14,6 +14,7 @@ use App\Models\UserAuthProvider;
 use App\Models\UserSetting;
 use App\Models\UserSession;
 use App\Services\UserModerationService;
+use App\Support\CsvExport;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,10 +27,24 @@ class UserController extends Controller
 {
     public function index(Request $request): View
     {
-        $users = User::query()
-            ->when($request->boolean('with_deleted') || $request->string('status')->toString() === 'deleted', fn ($query) => $query->withTrashed())
+        $users = $this->filteredUsers($request)
             ->with('profile')
             ->withCount(['posts', 'memories', 'sessions', 'deviceTokens'])
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('admin.users.AllUsersPage', compact('users'));
+    }
+
+    /**
+     * The user-list query, shared by the table and the CSV export so an export
+     * always matches what the admin is looking at.
+     */
+    private function filteredUsers(Request $request)
+    {
+        return User::query()
+            ->when($request->boolean('with_deleted') || $request->string('status')->toString() === 'deleted', fn ($query) => $query->withTrashed())
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
@@ -50,12 +65,118 @@ class UserController extends Controller
                 }
 
                 $query->where('status', $status);
-            })
-            ->latest()
-            ->paginate(10)
-            ->withQueryString();
+            });
+    }
 
-        return view('admin.users.AllUsersPage', compact('users'));
+    /**
+     * Server-side CSV of the current filter.
+     *
+     * Replaces a client-side "Export" button that scraped the rendered table:
+     * with pagination at 10, asking for "all users" produced a ten-row file, it
+     * wrote no audit row because no request reached the server, and it built CSV
+     * by string interpolation so any value containing a quote corrupted the file.
+     */
+    public function export(Request $request)
+    {
+        ActivityLog::record(
+            eventName: 'users_exported',
+            entityType: 'user',
+            entityId: null,
+            metadata: [
+                'filters' => $request->only(['q', 'role', 'status', 'with_deleted']),
+            ],
+            description: 'Exported the user list as CSV',
+        );
+
+        $query = $this->filteredUsers($request)->with('profile');
+
+        return CsvExport::stream(
+            'stylebite-users-'.now()->format('Y-m-d-His').'.csv',
+            ['ID', 'Username', 'Full Name', 'Email', 'Role', 'Status', 'Suspended Until', 'Status Reason',
+             'Email Verified At', 'Last Login', 'Last Seen', 'City', 'Country', 'Created At', 'Deleted At'],
+            fn () => $query->lazyByIdDesc(500)->map(fn (User $user) => [
+                $user->id,
+                $user->username,
+                $user->full_name,
+                $user->email,
+                $user->role,
+                $user->status,
+                $user->suspended_until?->toDateTimeString(),
+                $user->status_reason,
+                $user->email_verified_at?->toDateTimeString(),
+                $user->last_login_at?->toDateTimeString(),
+                $user->last_seen_at?->toDateTimeString(),
+                $user->profile?->city,
+                $user->profile?->country,
+                $user->created_at?->toDateTimeString(),
+                $user->deleted_at?->toDateTimeString(),
+            ])
+        );
+    }
+
+    /**
+     * Everything held about one person, as JSON.
+     *
+     * This is the access/portability request (GDPR Art. 15/20) counterpart to the
+     * public delete-account page: erasure was already possible, but there was no
+     * way to answer "send me my data" short of hand-querying dozens of tables.
+     * JSON rather than CSV because the data is nested and must stay structured.
+     */
+    public function exportPersonalData(User $user)
+    {
+        ActivityLog::record(
+            eventName: 'user_personal_data_exported',
+            entityType: 'user',
+            entityId: $user->id,
+            metadata: ['email' => $user->email],
+            description: "Exported all personal data held for user #{$user->id}",
+        );
+
+        $user->load(['profile', 'settings', 'authProviders', 'profileBadges']);
+
+        $payload = [
+            'exported_at' => now()->toISOString(),
+            'exported_by_admin_id' => auth()->id(),
+            'account' => $user->only([
+                'id', 'username', 'email', 'full_name', 'phone_country_code', 'phone_number',
+                'role', 'status', 'status_reason', 'suspended_until', 'locale', 'timezone',
+                'email_verified_at', 'phone_verified_at', 'last_login_at', 'last_seen_at',
+                'created_at', 'updated_at', 'deleted_at',
+            ]),
+            'profile' => $user->profile?->toArray(),
+            'settings' => $user->settings?->toArray(),
+            'linked_accounts' => $user->authProviders->map(fn ($provider) => [
+                'provider' => $provider->provider,
+                'provider_email' => $provider->provider_email,
+                'linked_at' => $provider->created_at?->toISOString(),
+            ])->values(),
+            'badges' => $user->profileBadges->pluck('badge_key')->values(),
+            'posts' => $user->posts()->get(['id', 'post_type', 'caption', 'status', 'visibility', 'city', 'country', 'created_at']),
+            'memories' => $user->memories()->get(['id', 'title', 'created_at']),
+            'comments' => $user->comments()->get(['id', 'post_id', 'body', 'status', 'created_at']),
+            'comment_replies' => $user->commentReplies()->get(['id', 'comment_id', 'body', 'status', 'created_at']),
+            'messages_sent' => $user->sentMessages()->get(['id', 'conversation_id', 'body', 'created_at']),
+            'notifications' => $user->notifications()->get(['id', 'type', 'title', 'body', 'is_read', 'created_at']),
+            'support_tickets' => $user->supportTickets()->with('visibleMessages:id,support_ticket_id,author_type,body,created_at')->get(),
+            'reports_filed' => $user->reportsMade()->get(['id', 'target_type', 'target_id', 'reason', 'status', 'created_at']),
+            'earnings_wallet' => $user->earningsWallet,
+            'earning_transactions' => $user->earningTransactions()->get(['id', 'transaction_type', 'source_type', 'amount', 'currency_code', 'status', 'created_at']),
+            'withdrawal_requests' => $user->withdrawalRequests()->get(['id', 'amount', 'currency_code', 'status', 'created_at']),
+            'sessions' => $user->sessions()->get(['id', 'platform', 'device_name', 'ip_address', 'created_at', 'expires_at', 'revoked_at']),
+            'devices' => $user->deviceTokens()->get(['id', 'platform', 'device_id', 'app_version', 'is_active', 'last_used_at']),
+            'legal_acceptances' => \App\Models\LegalAcceptance::where('user_id', $user->id)
+                ->get(['document_key', 'document_version', 'accepted_at', 'ip_address']),
+            'blocks_made' => $user->blockedUsersEntries()->get(['blocked_user_id', 'reason', 'created_at']),
+        ];
+
+        $filename = 'personal-data-user-'.$user->id.'-'.now()->format('Y-m-d').'.json';
+
+        return response()->streamDownload(function () use ($payload) {
+            echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }, $filename, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache',
+        ]);
     }
 
     public function create(): View

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Support\CsvExport;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -55,47 +56,37 @@ class ActivityController extends Controller
             description: 'Exported the activity log',
         );
 
-        $filename = 'stylebite-activity-log-'.now()->format('Y-m-d-His').'.csv';
-
-        return response()->streamDownload(function () use ($query): void {
-            $handle = fopen('php://output', 'wb');
-
-            fputcsv($handle, [
+        // lazyByIdDesc walks backwards by primary key. Do NOT add an orderBy
+        // here: forPageBeforeId only strips existing orders on the id column, so
+        // any other sort survives and silently breaks the keyset pagination —
+        // the export then repeats its first chunk and drops everything older.
+        return CsvExport::stream(
+            'stylebite-activity-log-'.now()->format('Y-m-d-His').'.csv',
+            [
                 'ID', 'When (UTC)', 'Actor', 'Actor Role', 'Actor Type', 'Event',
                 'Description', 'Entity', 'Entity ID', 'Outcome', 'Status',
                 'Method', 'Route', 'URL', 'IP', 'User Agent', 'Metadata',
-            ]);
-
-            // lazyByIdDesc walks backwards by primary key. Do NOT add an
-            // orderBy here: forPageBeforeId only strips existing orders on the
-            // id column, so any other sort survives and silently breaks the
-            // keyset pagination — the export then repeats its first chunk and
-            // drops everything older.
-            $query->lazyByIdDesc(500)
-                ->each(function (ActivityLog $log) use ($handle): void {
-                    fputcsv($handle, [
-                        $log->id,
-                        $log->created_at?->toDateTimeString(),
-                        $log->user ? ($log->user->full_name ?: $log->user->username) : '—',
-                        $log->actor_role,
-                        $log->actor_type,
-                        $log->event_name,
-                        $log->description,
-                        $log->entity_type,
-                        $log->entity_id,
-                        $log->outcomeLabel(),
-                        $log->response_status,
-                        $log->http_method,
-                        $log->route_name,
-                        $log->url,
-                        $log->ip_address,
-                        $log->user_agent,
-                        $log->metadata_json ? json_encode($log->metadata_json, JSON_UNESCAPED_SLASHES) : null,
-                    ]);
-                });
-
-            fclose($handle);
-        }, $filename, ['Content-Type' => 'text/csv']);
+            ],
+            fn () => $query->lazyByIdDesc(500)->map(fn (ActivityLog $log) => [
+                $log->id,
+                $log->created_at?->toDateTimeString(),
+                $log->user ? ($log->user->full_name ?: $log->user->username) : '-',
+                $log->actor_role,
+                $log->actor_type,
+                $log->event_name,
+                $log->description,
+                $log->entity_type,
+                $log->entity_id,
+                $log->outcomeLabel(),
+                $log->response_status,
+                $log->http_method,
+                $log->route_name,
+                $log->url,
+                $log->ip_address,
+                $log->user_agent,
+                $log->metadata_json ? json_encode($log->metadata_json, JSON_UNESCAPED_SLASHES) : null,
+            ])
+        );
     }
 
     /**
