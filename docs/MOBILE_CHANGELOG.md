@@ -15,6 +15,28 @@ activity log. No mobile endpoint, request, response or column changed.
 
 ---
 
+## 2026-08-09 — Push campaigns behind the scenes (no app change needed) ℹ️
+
+Admin announcements are now delivered by a background campaign worker instead of
+inside the admin's request. **The notification payload the app receives is
+byte-for-byte identical** — still `type: "system"`, `entity_type: "system"`,
+`entity_id: null`, same title/body/action_url/image_url, same
+`GET /notifications` shape. Nothing to change.
+
+Two behavioural notes that may show up in testing:
+
+- **A broadcast now arrives in waves, not all at once.** Recipients are processed
+  in chunks of 200 per worker run, so a large announcement lands over minutes
+  rather than simultaneously. A device receiving a push later than another device
+  is expected, not a bug.
+- **Multi-device users get one push per registered device**, sent concurrently
+  (this was already true, just slower before).
+
+Push still respects the user's `push_notifications_enabled` setting, and banned
+or suspended accounts are never included in a campaign.
+
+---
+
 ## 2026-08-09 — Admin panel role & permission system (no app impact) ℹ️
 
 Admin-side only: panel access is now governed by Spatie roles/permissions

@@ -1,6 +1,7 @@
 @php
     $tabs = [
         ['route' => 'admin.notifications.notifications', 'key' => 'notifications', 'label' => 'Notifications'],
+        ['route' => 'admin.notifications.campaigns', 'key' => 'campaigns', 'label' => 'Campaigns'],
         ['route' => 'admin.notifications.push_logs', 'key' => 'push_logs', 'label' => 'Push Logs'],
         ['route' => 'admin.notifications.saved_searches', 'key' => 'saved_searches', 'label' => 'Saved Searches'],
     ];

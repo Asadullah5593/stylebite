@@ -49,6 +49,10 @@ return [
         'project_id' => env('FIREBASE_PROJECT_ID'),
         'token_uri' => env('FIREBASE_TOKEN_URI', 'https://oauth2.googleapis.com/token'),
         'messaging_base_url' => env('FIREBASE_MESSAGING_BASE_URL', 'https://fcm.googleapis.com/v1/projects'),
+
+        // How many device tokens are pushed concurrently per batch. Raising it
+        // speeds up campaigns but competes for shared-hosting resources.
+        'push_concurrency' => (int) env('FIREBASE_PUSH_CONCURRENCY', 20),
     ],
 
     'stylebite' => [

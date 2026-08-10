@@ -20,32 +20,56 @@
     <div class="glass rounded-4 p-4 border-white-05 mb-4">
         <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
             <div>
-                <h2 class="h5 fw-bold mb-1">Send announcement</h2>
-                <p class="text-muted small mb-0">Create a system notification for one active user or broadcast it to all active users.</p>
+                <h2 class="h5 fw-bold mb-1">Push notification sender</h2>
+                <p class="text-muted small mb-0">Pick an audience, check the recipient count, then queue the campaign. Delivery runs in the background — track it on the Campaigns tab.</p>
             </div>
             <span class="badge bg-info-soft text-info rounded-pill px-3 py-2">Operations</span>
         </div>
 
-        <form method="POST" action="{{ route('admin.notifications.announcements.send') }}" class="row g-3">
+        <form method="POST" action="{{ route('admin.notifications.announcements.send') }}" class="row g-3" id="campaignForm">
             @csrf
-            <div class="col-lg-3">
-                <label class="form-label small text-uppercase text-muted fw-bold">Recipient Scope</label>
-                <select name="recipient_scope" class="form-select border-0 bg-dark-soft rounded-3 js-announcement-scope" required>
-                    <option value="all_active" @selected(old('recipient_scope', 'all_active') === 'all_active')>All Active Users</option>
-                    <option value="single" @selected(old('recipient_scope') === 'single')>Single User</option>
+            <div class="col-lg-4">
+                <label class="form-label small text-uppercase text-muted fw-bold">Audience</label>
+                <select name="audience_type" class="form-select border-0 bg-dark-soft rounded-3" id="audienceType" required>
+                    @foreach ([
+                        'all_active' => 'All active users',
+                        'city' => 'By city',
+                        'active_posters' => 'Active posters',
+                        'creator_role' => 'Creator accounts',
+                        'specific' => 'Specific users',
+                    ] as $value => $label)
+                        <option value="{{ $value }}" @selected(old('audience_type', 'all_active') === $value)>{{ $label }}</option>
+                    @endforeach
                 </select>
+                <div class="form-text text-muted extra-small">University targeting is not available yet.</div>
             </div>
 
-            <div class="col-lg-5 js-recipient-user" style="{{ old('recipient_scope') === 'single' ? '' : 'display: none;' }}">
-                <label class="form-label small text-uppercase text-muted fw-bold">Recipient User</label>
-                <select name="recipient_user_id" class="form-select border-0 bg-dark-soft rounded-3">
-                    <option value="">Select active user</option>
+            <div class="col-lg-4 audience-option" data-audience="city" hidden>
+                <label class="form-label small text-uppercase text-muted fw-bold">Cities</label>
+                <select name="cities[]" class="form-select border-0 bg-dark-soft rounded-3" multiple size="4">
+                    @foreach ($cityOptions as $city)
+                        <option value="{{ $city }}" @selected(in_array($city, (array) old('cities', []), true))>{{ $city }}</option>
+                    @endforeach
+                </select>
+                <div class="form-text text-muted extra-small">Hold Ctrl/Cmd to pick several. Only cities users have actually set appear here.</div>
+            </div>
+
+            <div class="col-lg-4 audience-option" data-audience="active_posters" hidden>
+                <label class="form-label small text-uppercase text-muted fw-bold">Posted within (days)</label>
+                <input type="number" name="poster_days" value="{{ old('poster_days', 30) }}" min="1" max="365" class="form-control border-0 bg-dark-soft rounded-3">
+                <div class="form-text text-muted extra-small">Users who published a post in this window.</div>
+            </div>
+
+            <div class="col-lg-5 audience-option" data-audience="specific" hidden>
+                <label class="form-label small text-uppercase text-muted fw-bold">Users</label>
+                <select name="user_ids[]" class="form-select border-0 bg-dark-soft rounded-3" multiple size="4">
                     @foreach ($recipientOptions as $recipientOption)
-                        <option value="{{ $recipientOption->id }}" @selected((string) old('recipient_user_id') === (string) $recipientOption->id)>
+                        <option value="{{ $recipientOption->id }}" @selected(in_array((string) $recipientOption->id, array_map('strval', (array) old('user_ids', [])), true))>
                             {{ $recipientOption->full_name ?: '@'.$recipientOption->username }}{{ $recipientOption->email ? ' - '.$recipientOption->email : '' }}
                         </option>
                     @endforeach
                 </select>
+                <div class="form-text text-muted extra-small">Hold Ctrl/Cmd to pick several.</div>
             </div>
 
             <div class="col-lg-4">
@@ -64,15 +88,66 @@
             </div>
 
             <div class="col-12 d-flex align-items-center justify-content-between flex-wrap gap-3 pt-2">
-                <div class="text-muted small">
-                    Uses the existing in-app notification pipeline and device push delivery logic.
+                <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <button class="btn btn-outline-dynamic rounded-3" type="button" id="previewAudienceButton">
+                        <i class="bi bi-people me-2"></i>Check recipients
+                    </button>
+                    <span class="text-muted small" id="audiencePreviewResult"></span>
                 </div>
                 <button class="btn btn-primary rounded-3 px-4" type="submit">
-                    <i class="bi bi-send me-2"></i>Send Announcement
+                    <i class="bi bi-send me-2"></i>Queue Campaign
                 </button>
             </div>
         </form>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const typeSelect = document.getElementById('audienceType');
+        const options = document.querySelectorAll('.audience-option');
+        const previewButton = document.getElementById('previewAudienceButton');
+        const previewResult = document.getElementById('audiencePreviewResult');
+        const form = document.getElementById('campaignForm');
+
+        function syncAudienceOptions() {
+            options.forEach(function (option) {
+                const matches = option.dataset.audience === typeSelect.value;
+                option.hidden = !matches;
+                option.querySelectorAll('select, input').forEach(function (field) {
+                    field.disabled = !matches;
+                });
+            });
+            previewResult.textContent = '';
+        }
+
+        typeSelect.addEventListener('change', syncAudienceOptions);
+        syncAudienceOptions();
+
+        previewButton.addEventListener('click', function () {
+            previewResult.textContent = 'Checking…';
+
+            const body = new FormData(form);
+
+            fetch('{{ route('admin.notifications.audience.preview') }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json',
+                },
+                body: body,
+            })
+                .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+                .then(function (result) {
+                    if (!result.ok) {
+                        previewResult.textContent = result.data.message || 'Could not work out that audience.';
+                        return;
+                    }
+                    previewResult.textContent = result.data.count + ' recipient(s) — ' + result.data.label;
+                })
+                .catch(function () { previewResult.textContent = 'Could not reach the server.'; });
+        });
+    });
+    </script>
 
     <form method="GET" action="{{ route('admin.notifications.notifications') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
         <div class="position-relative flex-grow-1" style="min-width: 250px;">

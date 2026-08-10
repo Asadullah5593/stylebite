@@ -514,22 +514,31 @@ if (! function_exists('stylebite_notify_user')) {
         $hasFailedPush = false;
 
         try {
-            foreach ($deviceTokens as $deviceToken) {
-                $pushResult = stylebite_send_firebase_push_notification(
-                    $deviceToken->push_token,
-                    $title,
-                    $body,
-                    [
-                        'notification_id' => (string) $notification->id,
-                        'type' => $type,
-                        'entity_type' => $entityType,
-                        'entity_id' => $entityId !== null ? (string) $entityId : '',
-                        'recipient_user_id' => (string) $recipientUserId,
-                        'actor_user_id' => $actorUserId !== null ? (string) $actorUserId : '',
-                        'action_url' => $actionUrl ?? '',
-                    ],
-                    $imageUrl
-                );
+            // One concurrent batch instead of a serial request per device. A
+            // user with three devices costs one round-trip's latency, not three
+            // — which is what makes campaign fan-out viable.
+            $pushResults = stylebite_send_firebase_push_batch(
+                $deviceTokens->pluck('push_token')->all(),
+                $title,
+                $body,
+                [
+                    'notification_id' => (string) $notification->id,
+                    'type' => $type,
+                    'entity_type' => $entityType,
+                    'entity_id' => $entityId !== null ? (string) $entityId : '',
+                    'recipient_user_id' => (string) $recipientUserId,
+                    'actor_user_id' => $actorUserId !== null ? (string) $actorUserId : '',
+                    'action_url' => $actionUrl ?? '',
+                ],
+                $imageUrl
+            );
+
+            foreach ($deviceTokens as $index => $deviceToken) {
+                $pushResult = $pushResults[$index] ?? [
+                    'status' => 'failed',
+                    'provider_response' => 'No provider response for this device.',
+                    'sent_at' => null,
+                ];
 
                 PushNotificationLog::create([
                     'notification_id' => $notification->id,
@@ -577,14 +586,34 @@ if (! function_exists('stylebite_notify_user')) {
     }
 }
 
-if (! function_exists('stylebite_send_firebase_push_notification')) {
-    function stylebite_send_firebase_push_notification(
-        string $pushToken,
+if (! function_exists('stylebite_send_firebase_push_batch')) {
+    /**
+     * Send the same notification to many device tokens concurrently.
+     *
+     * FCM HTTP v1 has no multicast endpoint (that was legacy FCM), and the
+     * /batch multipart endpoint is not worth hand-rolling here — so this fires
+     * the per-token sends in parallel with Http::pool instead. Results come
+     * back in the same order as $pushTokens.
+     *
+     * The OAuth token is fetched once up front: doing it inside the pool would
+     * race every worker into its own token exchange.
+     *
+     * @param  array<int, string>  $pushTokens
+     * @return array<int, array{status:string, provider_response:string, sent_at:?\Illuminate\Support\Carbon}>
+     */
+    function stylebite_send_firebase_push_batch(
+        array $pushTokens,
         ?string $title,
         ?string $body,
         array $data = [],
         ?string $image = null
     ): array {
+        $pushTokens = array_values(array_filter($pushTokens, fn ($token) => is_string($token) && trim($token) !== ''));
+
+        if ($pushTokens === []) {
+            return [];
+        }
+
         $serviceAccount = stylebite_firebase_service_account();
         $projectId = $serviceAccount['project_id'] ?? config('services.firebase.project_id');
 
@@ -593,6 +622,64 @@ if (! function_exists('stylebite_send_firebase_push_notification')) {
         }
 
         $accessToken = stylebite_firebase_access_token($serviceAccount);
+        $endpoint = rtrim((string) config('services.firebase.messaging_base_url'), '/').'/'.$projectId.'/messages:send';
+        $concurrency = max(1, (int) config('services.firebase.push_concurrency', 20));
+        $results = [];
+
+        foreach (array_chunk($pushTokens, $concurrency) as $chunk) {
+            $responses = Http::pool(fn ($pool) => array_map(
+                fn (string $pushToken) => $pool
+                    ->withToken($accessToken)
+                    ->acceptJson()
+                    ->post($endpoint, [
+                        'message' => stylebite_firebase_message_payload($pushToken, $title, $body, $data, $image),
+                    ]),
+                $chunk
+            ));
+
+            foreach ($chunk as $index => $pushToken) {
+                $response = $responses[$index] ?? null;
+
+                // A pooled request can hand back a connection exception rather
+                // than a response; that is a failed delivery, not a crash.
+                if ($response instanceof \Throwable) {
+                    $results[] = [
+                        'status' => 'failed',
+                        'provider_response' => Str::limit($response->getMessage(), 65000, ''),
+                        'sent_at' => null,
+                    ];
+
+                    continue;
+                }
+
+                $successful = $response !== null && $response->successful();
+
+                $results[] = [
+                    'status' => $successful ? 'sent' : 'failed',
+                    'provider_response' => $response !== null
+                        ? Str::limit($response->body(), 65000, '')
+                        : 'No response from provider.',
+                    'sent_at' => $successful ? now() : null,
+                ];
+            }
+        }
+
+        return $results;
+    }
+}
+
+if (! function_exists('stylebite_firebase_message_payload')) {
+    /**
+     * The FCM v1 "message" object for one device token. Shared by the single
+     * and batched senders so both stay byte-identical on the wire.
+     */
+    function stylebite_firebase_message_payload(
+        string $pushToken,
+        ?string $title,
+        ?string $body,
+        array $data = [],
+        ?string $image = null
+    ): array {
         $notificationPayload = array_filter([
             'title' => $title,
             'body' => $body,
@@ -604,7 +691,7 @@ if (! function_exists('stylebite_send_firebase_push_notification')) {
             ->map(fn ($value) => (string) $value)
             ->all();
 
-        $message = array_filter([
+        return array_filter([
             'token' => $pushToken,
             'notification' => $notificationPayload,
             'data' => $dataPayload,
@@ -629,11 +716,30 @@ if (! function_exists('stylebite_send_firebase_push_notification')) {
                 ], fn ($value) => $value !== null && $value !== ''),
             ],
         ], fn ($value) => ! (is_array($value) && $value === []));
+    }
+}
+
+if (! function_exists('stylebite_send_firebase_push_notification')) {
+    function stylebite_send_firebase_push_notification(
+        string $pushToken,
+        ?string $title,
+        ?string $body,
+        array $data = [],
+        ?string $image = null
+    ): array {
+        $serviceAccount = stylebite_firebase_service_account();
+        $projectId = $serviceAccount['project_id'] ?? config('services.firebase.project_id');
+
+        if (! is_string($projectId) || trim($projectId) === '') {
+            throw new RuntimeException('Firebase project ID is missing.');
+        }
+
+        $accessToken = stylebite_firebase_access_token($serviceAccount);
 
         $response = Http::withToken($accessToken)
             ->acceptJson()
             ->post(rtrim((string) config('services.firebase.messaging_base_url'), '/').'/'.$projectId.'/messages:send', [
-                'message' => $message,
+                'message' => stylebite_firebase_message_payload($pushToken, $title, $body, $data, $image),
             ]);
 
         return [

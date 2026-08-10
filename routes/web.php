@@ -173,6 +173,9 @@ Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->gr
      Route::prefix('notifications')->name('notifications.')->group(function () {
         Route::get('/', [NotificationController::class, 'notifications'])->name('notifications')->middleware('permission:notifications.view');
         Route::post('/announcements', [NotificationController::class, 'sendAnnouncement'])->name('announcements.send')->middleware('permission:notifications.send');
+        Route::post('/audience-preview', [NotificationController::class, 'previewAudience'])->name('audience.preview')->middleware('permission:notifications.send');
+        Route::get('/campaigns', [NotificationController::class, 'campaigns'])->name('campaigns')->middleware('permission:notifications.view');
+        Route::patch('/campaigns/{campaign}/cancel', [NotificationController::class, 'cancelCampaign'])->name('campaigns.cancel')->middleware('permission:notifications.send');
         Route::get('/push-logs', [NotificationController::class, 'pushLogs'])->name('push_logs')->middleware('permission:notifications.view');
         Route::post('/push-logs/{pushLog}/retry', [NotificationController::class, 'retryPushLog'])->name('push_logs.retry')->middleware('permission:notifications.send');
         Route::get('/saved-searches', [NotificationController::class, 'savedSearches'])->name('saved_searches')->middleware('permission:notifications.view');

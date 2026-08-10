@@ -16,11 +16,21 @@ Companion docs: [CRON_JOBS.md](CRON_JOBS.md) · [ADMIN_CHANGELOG.md](ADMIN_CHANG
 | 2026-08-09 | Q5 — Support tickets: reuse chat tables or own module | **Own schema.** Do *not* mix tickets into `conversations`/`messages`. The messaging schema stays prior art only; the unused `conversations.type = 'support'` value stays unused. |
 | 2026-08-09 | Q9 — Where destructive-action reasons persist | **Decided internally (no client input needed):** `moderation_actions` for anything with a moderatable target (users, posts, comments, replies, memories, messages, contests), since it is already polymorphic with `reason` and `expires_at`. Non-moderation destructive actions (config/cache/job deletion, payout rejection, transaction reversal) keep their reason in `activity_logs` metadata, which the audit middleware already persists. |
 
+| 2026-08-09 | Q2 — What is a "Creator"? | **Both, as two separate audiences.** *Active posters* (published within the last N days, default 30) is the behavioural segment for engagement messaging; `users.role = 'creator'` stays the curated/manual label for designated creators. "Monetised creators" (`ad_eligible`) is added later, once the app reports view time. |
+| 2026-08-09 | Q3 — City targeting with sparse data | **Ship it anyway.** City lives on `profiles.city` (2 of 24 filled). The segment is correct; the audience is small because the data is. Campaign UI must show a recipient count *before* sending so nobody mistakes an empty audience for a broken feature. |
+| 2026-08-09 | Q4 — Where bug reports live | **A ticket category, not a report type.** Bugs need device model, app version and a screenshot — none of which fit the `reports` enums — and they need a conversation. `reports` stays for content/user abuse only. |
+| 2026-08-09 | Tickets — categories, workflow | Categories: Bug · Payment/Payout · Account & Login · Content appeal · Other. Statuses: open → in progress → waiting on user → resolved → closed. Priority: low/normal/high/urgent. **No SLA timers in v1** — age column + overdue highlight. User gets push + in-app on staff reply (email later). Screenshot attachments via the existing upload path. |
+| 2026-08-09 | Q6 — Excel vs CSV | **CSV with a UTF-8 BOM** plus CSV-injection-safe escaping. No `.xlsx` library on shared hosting unless contractually required. |
+| 2026-08-09 | Q7 — GDPR per-user export | **In scope, admin-triggered.** |
+| 2026-08-09 | Q8 — Terms of Service | **We build the editor + versioning + acceptance tracking; the client supplies the copy** (there is no existing Terms document to migrate). |
+| 2026-08-09 | Q10 — Announcements by email | **Push + in-app only for v1.** Email broadcast waits until a marketing-consent/opt-out flag exists — legally distinct from transactional OTP mail. |
+| 2026-08-09 | Q11 — Responsive floor | **Tablet down to 768px** (iPad portrait). Phone-width admin is out of scope, but note there is currently *no* navigation below 768px. |
+| 2026-08-09 | Q12 — Broadcast delivery window | **Minutes-to-hours accepted.** Build chunked + resumable for shared hosting. Revisit only if the client moves to a VPS. |
+
 ### Still open
 
-Q2 (what a "Creator" is), Q3 (City data), Q4 (bug reports location), Q6 (Excel vs CSV),
-Q7 (GDPR export), Q8 (Terms authorship + versioning), Q10 (announcements by email),
-Q11 (tablet width), Q12 (broadcast delivery expectations).
+Nothing blocking. Remaining unknowns are downstream product details (ticket
+notification copy, export column sets) that can be settled as each piece is built.
 
 ---
 
@@ -54,17 +64,24 @@ identically in production.
 
 ### Phase A — Delivery backbone (unblocks all of 3.8)
 
-**A1. Make sending asynchronous and batched.** Move fan-out into a queued, chunked,
-resumable campaign job; switch FCM to multicast; queue `GlobalAppMail`. Fix the
-"Retry push" button, which today reports success, sends nothing, and **downgrades the
-notification's `delivery_status` from sent/failed back to `pending`**, destroying the
-delivery record.
-*This is the feature, not infrastructure polish — everything below fails without it.*
+**A1. Make sending asynchronous and batched.** ✅ **DONE 2026-08-09.**
+`notification_campaigns` + `ProcessNotificationCampaign` (chunked at 200, keyset resume
+cursor, self-requeueing, cache-locked against overlap); concurrent per-device sends via
+`Http::pool` (`stylebite_send_firebase_push_batch`, 20 at a time); the announcement
+request now only records intent. "Retry push" performs a real send and can no longer
+downgrade a delivered notification. The inflated sent-count and the
+sender-never-receives-their-own-broadcast bugs are fixed. 15 feature tests.
+*Still outstanding from A1:* `GlobalAppMail` is deliberately **not** queued — OTP and
+login codes must not wait for a once-per-minute cron. Bulk email, when it arrives, gets a
+queued job that sends inside the worker instead.
 
-**A2. Audience segmentation + the real Push Sender UI.** A segment resolver (All /
-City / Creators / Specific users), audience preview count before sending, campaign
-history. Reuse the existing city fan-out precedent in `Api/ContestController.php` rather
-than duplicating it. *University excluded — see Q1.*
+**A2. Audience segmentation + the real Push Sender UI.** ✅ **DONE 2026-08-09.**
+`NotificationAudience` resolves All active / By city / Active posters / Creator accounts /
+Specific users, always excluding banned and suspended accounts; recipient-count preview
+before sending; Campaigns tab with progress, per-outcome counts and a Stop control.
+*University excluded — deferred (Q1).* Not yet done: the city fan-out in
+`Api/ContestController.php:1158-1196` still duplicates this logic and should be moved onto
+the resolver.
 
 **A3. Email templates.** DB-stored templates rendered through `GlobalAppMail` (already
 fully parameterised — it becomes the renderer nearly as-is), with an admin editor,

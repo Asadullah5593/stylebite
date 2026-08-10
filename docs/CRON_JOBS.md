@@ -30,7 +30,7 @@ column updated as they go in.
 
 | # | Schedule | Command | Status | Why it matters |
 |---|---|---|---|---|
-| 1 | **Every minute** | `queue:work --stop-when-empty --max-time=50 --tries=3` | ⬜ Not added | Runs queued jobs. Only user-visible consumer today is post-media optimization (`app/Jobs/OptimizePostMedia.php`) — without it, uploaded images are never compressed into mobile renditions. |
+| 1 | **Every minute** | `queue:work --stop-when-empty --max-time=50 --tries=3` | ⬜ Not added | **Now critical.** Runs queued jobs: post-media optimization (`app/Jobs/OptimizePostMedia.php`) *and* push-notification campaigns (`app/Jobs/ProcessNotificationCampaign.php`). Without it, uploaded images are never compressed **and every push campaign sits at 0% forever** — the admin sees "queued" and nothing is ever delivered. |
 | 2 | **Daily** (01:00) | `stylebite:sync-currency-rates` | ⬜ Not added | Fetches FX rates for creator earnings conversion. **Blocking:** with no stored rates, admin crediting refuses to run by design (it never credits an unconverted amount). Run once by hand right after first deploy. |
 | 3 | **Hourly** | `stylebite:settle-ad-earnings` | ⬜ Not added | Credits reel owners their accumulated ad-revenue share into their wallets. Without it, creators earn nothing. Supports `--dry-run` to preview. |
 | 4 | **Hourly** | `stylebite:refresh-ad-eligibility` | ⬜ Not added | Recomputes the cached ad-eligibility flag that drives `show_ad` on reels and who earns. Stale flag = wrong ads and wrong earnings. |

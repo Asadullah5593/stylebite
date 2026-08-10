@@ -120,6 +120,75 @@ Notes worth knowing:
 
 ---
 
+## 2026-08-09 — Push notification sender: audiences, campaigns, real delivery 📣
+
+The announcement box became a proper campaign sender. **Run the migration on
+deploy, and make sure the `queue:work` cron entry exists** — campaigns are
+delivered by the queue worker, so without that cron every campaign sits at 0%
+forever.
+
+### Audiences
+
+Notifications → Notifications now targets **All active users · By city ·
+Active posters · Creator accounts · Specific users** (it previously offered only
+one user or all active users). A **Check recipients** button reports the exact
+audience size *before* you send, because a segment can legitimately be empty —
+only 2 of 24 profiles currently have a city set, and the city picker only lists
+cities users have actually entered.
+
+Two things worth knowing about audiences:
+
+- **"Creator" means two different things on purpose.** *Active posters* is
+  behavioural (published within the last N days, default 30) and needs no admin
+  upkeep. *Creator accounts* is the curated `role = creator` label an admin
+  assigns on the user edit form. Pick whichever matches the message.
+- **Banned and suspended accounts are never included**, whichever audience is
+  chosen. Recipients who turned push off, or have no registered device, are
+  recorded as **skipped** — that is not a failure.
+- University targeting is deliberately absent (deferred; no university data
+  exists in the schema yet).
+
+### Campaigns tab
+
+A new **Notifications → Campaigns** tab lists every campaign with a live
+progress bar, its audience, sent/skipped/failed counts, who sent it, and a
+**Stop** button for anything still running. Stopping keeps notifications already
+delivered and sends nothing further.
+
+### Why sends now take minutes instead of appearing instant
+
+The old sender looped the whole audience **inside the admin's HTTP request**,
+one Firebase call per device. That is fine for 25 users and impossible for
+25,000 — the request would simply time out mid-send, with no record of who had
+been reached. Delivery now happens in a queued job that processes
+**200 recipients per run**, records a resume cursor, and re-queues itself, so a
+large campaign makes progress on every cron tick and survives the worker being
+killed. Pushes within a chunk go out concurrently (20 at a time, tunable via
+`FIREBASE_PUSH_CONCURRENCY`).
+
+Practical effect: a campaign to a large audience completes over minutes to
+hours, not instantly. That is the shared-hosting ceiling — there is no
+always-on worker available on this plan.
+
+### Two things that were quietly broken, now fixed
+
+- **"Retry" on a failed push did nothing.** It wrote a `queued` log row that no
+  code ever consumed, told you it had been queued, and **reset the
+  notification's delivery status to `pending`** — destroying the delivery record
+  it was supposed to repair. It now performs the send and reports the provider's
+  real answer. A failed retry can no longer downgrade a notification that
+  already reached another device, and it refuses cleanly when the device is
+  disabled or its token is gone.
+- **The "sent to N recipients" count was inflated.** The old sender counted
+  everyone it looped over, including people the delivery layer had skipped — and
+  because it passed the admin as the notification's actor, the delivery layer's
+  "don't notify yourself" rule meant **the sending admin never received their own
+  announcement** while still being counted. Campaigns are now sent as the system,
+  so the sender receives their own message, and the counts separate
+  sent/skipped/failed.
+
+---
+
 ## 2026-08-09 — Role & permission system (Spatie) 🔐
 
 The panel moved from a single hard-coded "admin only" gate to real
