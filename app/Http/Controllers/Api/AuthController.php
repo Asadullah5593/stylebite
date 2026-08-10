@@ -192,6 +192,23 @@ class AuthController extends Controller
             return $blocked;
         }
 
+        // Rollout switch. Mandatory 2FA is a breaking change for app builds that
+        // predate the OTP screen — with it on, those builds can never finish a
+        // login. Setting LOGIN_TWO_FACTOR=false keeps the old single-step login
+        // working while the new app version reaches users.
+        if (! config('auth.login_two_factor')) {
+            $session = $this->createSession($user, $request);
+
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'Login successful.',
+                'token_type' => 'Bearer',
+                'access_token' => $session['plain_text_token'],
+                'bearer_token' => 'Bearer '.$session['plain_text_token'],
+                'user' => $this->userPayload($session['user']),
+            ]);
+        }
+
         // Password checks out — mandatory second factor: email a login code.
         // No token is issued until /auth/login/verify-otp confirms the code.
         $retryAfter = $this->sendLoginOtp($user);

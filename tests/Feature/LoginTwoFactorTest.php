@@ -73,6 +73,58 @@ class LoginTwoFactorTest extends TestCase
         Mail::assertSent(GlobalAppMail::class, fn (GlobalAppMail $mail) => $mail->subjectLine === 'Your Stylebite login code');
     }
 
+    public function test_login_returns_a_token_directly_when_two_factor_is_switched_off(): void
+    {
+        // Rollout switch for app builds that predate the OTP screen: with 2FA
+        // off, login must behave exactly as it did before — one step, token in
+        // the response, no email sent.
+        config(['auth.login_two_factor' => false]);
+        Mail::fake();
+
+        $user = $this->activeUser();
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'user@example.com',
+            'password' => 'password123',
+            'device_id' => 'legacy-device',
+            'platform' => 'android',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('user.id', $user->id)
+            ->assertJsonPath('token_type', 'Bearer')
+            ->assertJsonStructure(['access_token', 'bearer_token', 'user'])
+            ->assertJsonMissingPath('requires_two_factor');
+
+        $this->assertDatabaseHas('user_sessions', [
+            'user_id' => $user->id,
+            'device_id' => 'legacy-device',
+        ]);
+
+        Mail::assertNothingSent();
+    }
+
+    public function test_banned_account_is_still_refused_when_two_factor_is_switched_off(): void
+    {
+        config(['auth.login_two_factor' => false]);
+
+        User::factory()->create([
+            'email' => 'banned2@example.com',
+            'password_hash' => bcrypt('password123'),
+            'status' => 'banned',
+            'status_reason' => 'Fraud',
+        ]);
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'banned2@example.com',
+            'password' => 'password123',
+        ])
+            ->assertStatus(403)
+            ->assertJsonPath('code', 'account_banned');
+
+        $this->assertDatabaseCount('user_sessions', 0);
+    }
+
     public function test_verify_login_otp_issues_token_with_24_hour_session(): void
     {
         Mail::fake();

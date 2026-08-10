@@ -129,6 +129,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Login Two-Factor
+    |--------------------------------------------------------------------------
+    |
+    | When true, a password login only issues a token after the emailed 6-digit
+    | code is verified. This is the intended production behaviour.
+    |
+    | It is a switch because it is a BREAKING change for mobile builds that
+    | predate the OTP screen: with it on, an old build can never complete a
+    | login. Set LOGIN_TWO_FACTOR=false to keep the old single-step login while
+    | the updated app rolls out, then remove the override to enable it.
+    |
+    */
+
+    'login_two_factor' => filter_var(env('LOGIN_TWO_FACTOR', true), FILTER_VALIDATE_BOOLEAN),
+
+    /*
+    |--------------------------------------------------------------------------
     | Super Admins
     |--------------------------------------------------------------------------
     |
