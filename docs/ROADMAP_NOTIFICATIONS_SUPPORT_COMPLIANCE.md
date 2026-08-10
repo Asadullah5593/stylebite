@@ -38,17 +38,17 @@ notification copy, export column sets) that can be settled as each piece is buil
 
 | # | Requirement | Status | Where it actually stands |
 |---|---|---|---|
-| 3.8a | Push Sender — All / City / University / Creators / Specific | 🔴 **Mostly missing** | The sender supports exactly **two** audiences: one specific user, or all active users. No city, university, creator, or multi-user targeting. Delivery loops token-by-token **inside the HTTP request** — unusable past a few hundred recipients. |
-| 3.8b | Email / Templates | 🔴 **Missing** | No template storage of any kind. Three hardcoded transactional emails (all auth OTP). Every subject and sentence is a PHP literal. `GlobalAppMail` is *not* queued. |
-| 3.8c | Contest Announcement Templates | 🔴 **Missing** | Nothing contest-specific exists in the mail or announcement paths. |
-| 3.8d | Automated Notifications (streak reminder, contest ending soon) | 🔴 **Missing** | No scheduled-notification infrastructure at all. All five notification write points fire synchronously from a user action. Nothing warns about a lapsing streak or a closing contest. |
+| 3.8a | Push Sender — All / City / University / Creators / Specific | 🟢 **Done 2026-08-09** | All / City / Creators / Specific-users audiences with live recipient preview; University deferred by client decision (Q1) with the seam left in. Delivery moved to a queued, chunked job using `Http::pool()`. **Needs the per-minute `queue:work` cron or nothing is ever delivered.** |
+| 3.8b | Email / Templates | 🟢 **Done 2026-08-09** | `email_templates` table + `EmailTemplates` registry; subjects and bodies editable in the panel with placeholder tokens. Sending is queued. |
+| 3.8c | Contest Announcement Templates | 🟢 **Done 2026-08-09** | Contest announcement templates ship in the built-in set. |
+| 3.8d | Automated Notifications (streak reminder, contest ending soon) | 🟢 **Done 2026-08-09** | `stylebite:send-streak-reminders` and `stylebite:send-contest-ending-reminders`, both idempotent and quiet-hours aware (there is no Laravel scheduler on this host, so each needs its own hPanel cron — see [CRON_JOBS.md](CRON_JOBS.md)). |
 | 3.9a | User Reports (Content, Users, **Bugs**) | 🟢 **Done 2026-08-10** | `POST /api/reports` feeds the existing queue for user/post/comment/reply/message/contest, with duplicate, self-report, message-membership and rate-limit guards. Bugs went to tickets instead, as decided. |
 | 3.9b | Support Ticket System | 🟢 **Done 2026-08-10** | Own schema (`support_tickets`, `support_ticket_messages`, `support_ticket_attachments`); 5 categories, 5 statuses, 4 priorities, quotable reference, screenshots, device metadata, internal notes, assignment; mobile API + admin queue; `tickets.*` permissions. Chat tables untouched. |
-| X1 | Admin panel responsive (Desktop + Tablet) | 🟠 **Desktop yes, tablet no** | Desktop ≥1200px is genuinely well built (all 55 tables wrapped, filter bars wrap). The **768–1199px tablet band renders as a squeezed single-column mobile layout**, and **below 768px there is no navigation at all** — the sidebar is `d-none d-md-flex` with no off-canvas replacement. |
-| X2 | Destructive actions: confirm + reason | 🟠 **1 of 33** | Only the ban/suspend/bulk-lifecycle path does both. 33 destructive actions enumerated: 2 compliant, ~10 confirm-without-reason, the rest neither. **`reverseTransaction` moves money with no dialog, no reason, and a hardcoded `'reason' => 'Admin reversal'`.** |
+| X1 | Admin panel responsive (Desktop + Tablet) | 🟢 **Done 2026-08-10** | Sidebar became a Bootstrap `offcanvas-lg` drawer, so the 768–1199px band gets real navigation instead of nothing, and the breakpoint moved 768→992 to match. Modals are relocated to `<body>` on load because the layout's `backdrop-filter` created a containing block that broke `position: fixed`. |
+| X2 | Destructive actions: confirm + reason | 🟢 **Done 2026-08-10** | Shared confirm modal (`window.confirmDestructive`) plus server-side required reasons. `reverseTransaction` now demands a reason and records it with the reversing admin. Reasons are persisted, not just logged — moderation actions write a `moderation_actions` row. `DestructiveActionReasonTest` pins the server half, because a dialog is worthless if the endpoint still accepts a bare request. |
 | X3 | Every admin action logged (timestamp, admin ID, IP) | 🟢 **Done** | `LogAdminActivity` middleware audits every mutating admin request plus sensitive reads — actor, role held at the time, IP, user agent, route, payload, and outcome (applied/blocked/rejected/failed). All 58 mutating routes covered. |
-| X4 | Privacy Policy & Terms editable in admin | 🔴 **Missing** | Both pages are hardcoded Blade. **There is no Terms page at all** — no route, no view, no stub. No long-form editor anywhere (`app_configs.value_type` is `string\|number\|boolean\|json`, no text type). No acceptance/version tracking. |
-| X5 | Data export CSV / Excel | 🟠 **Partial and partly untrustworthy** | 5 server-side CSV exports; **no Excel and no Excel library installed**. The users-list "Export" is client-side JavaScript that scrapes the rendered page — with pagination at 10, "export all users" yields a **10-row file**, writes no audit row, and does not escape quotes. Most entities (users, posts, comments, reports, contests) have no real export. No GDPR per-user export. |
+| X4 | Privacy Policy & Terms editable in admin | 🟢 **Done 2026-08-10** | `legal_documents` + `legal_acceptances`. Versioned by insert: publishing creates the next version and never edits a published one, so the text a user accepted stays recoverable. Drafts are invisible to users. `/privacy-policy` keeps its URL and `/terms` now exists. Acceptance is recorded per version, with an export. **Client still owes the actual Terms copy — v1 is a placeholder.** |
+| X5 | Data export CSV / Excel | 🟢 **Done 2026-08-10** | The DOM-scraping users "export" is gone; it streams the full filtered set (15 columns) and writes an audit row. All exports share `App\Support\CsvExport`, which adds the UTF-8 BOM (without it Excel reads Latin-1 and mangles non-ASCII names) and neutralises formula injection. Per-user GDPR JSON export across ~20 relations. Bulk export moved off `users.view` to a new `users.export` permission. **Caveat: this is BOM'd CSV that Excel opens correctly, not native `.xlsx`** — no spreadsheet library is installed, and none was added. |
 
 **Fixed during this audit:** the activity-log CSV export silently truncated to ~500 rows
 with duplicates (`latest()` combined with `lazyById()` broke the keyset pagination). Now
@@ -237,9 +237,19 @@ Both requirements are live. Notes for whoever picks this up next:
 
 ### Still open on this roadmap
 
-**B3** destructive-action sweep (31 of 33 actions lack confirm + reason; worst is
-`reverseTransaction`, which moves money on one click with no dialog and a
-hardcoded reason) · **B4** tablet responsiveness (768–1199px renders as squeezed
-mobile; below 768px there is no navigation at all) · **B5** legal pages and
-compliance exports (no Terms document exists; the users-list "Export" is still
-client-side DOM scraping).
+**Nothing, in code.** B3 (destructive actions), B4 (tablet), and B5 (legal pages +
+compliance exports) all landed 2026-08-10. What remains needs someone other than a
+developer:
+
+- **The client owes the Terms of Service copy.** The versioned editor is live and
+  Terms v1 is a placeholder. Privacy Policy was seeded from the old hardcoded view.
+- **Native `.xlsx` was not built** (X5). Exports are BOM'd CSV, which Excel opens
+  correctly. If the client specifically wants xlsx formatting or multiple sheets,
+  that is `phpoffice/phpspreadsheet` and a separate piece of work.
+- **Consent records need app work to ever fill.** `legal_acceptances` only receives
+  rows when the mobile app calls `POST /api/legal/{key}/accept`. Reading the
+  document does not imply consent. Until then the acceptances export returns
+  headers only — fine unless the policy changes materially and someone asks who
+  agreed to what.
+- **Nothing here is deployed.** All of 3.8, 3.9 and X1–X5 sit on `asad`, and three
+  legal migrations (`2026_08_10_000005`–`000007`) need `php artisan migrate`.
