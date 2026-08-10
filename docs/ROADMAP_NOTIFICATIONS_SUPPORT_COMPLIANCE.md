@@ -83,14 +83,27 @@ before sending; Campaigns tab with progress, per-outcome counts and a Stop contr
 `Api/ContestController.php:1158-1196` still duplicates this logic and should be moved onto
 the resolver.
 
-**A3. Email templates.** DB-stored templates rendered through `GlobalAppMail` (already
-fully parameterised — it becomes the renderer nearly as-is), with an admin editor,
-placeholder support, and a test-send. Contest announcement templates are a seeded
-category of this, not a separate system.
+**A3. Email templates.** ✅ **DONE 2026-08-09.** `email_templates` + `EmailTemplates`
+service rendering through `GlobalAppMail`; six seeded templates (verification, login code,
+password reset, contest announcement / ending-soon / winner); admin editor with
+placeholder help, live preview, test-send-to-me and restore-defaults; new
+`email_templates.view|manage` permissions on admin/super_admin only. **Built-in copy is
+retained in code as a fallback**, so a deactivated, blanked or deleted template cannot stop
+a login or reset email. Transactional mail stays synchronous by design.
 
-**A4. Automated notifications.** Streak-reminder and contest-ending-soon commands on
-cron (add them to `CRON_JOBS.md` when they land), plus two new notification enum values.
-Depends on A1 for batched delivery.
+**A4. Automated notifications.** ✅ **DONE 2026-08-09.**
+`stylebite:send-streak-reminders` (streak lapses tonight) and
+`stylebite:send-contest-ending-reminders` (participants of contests closing inside a
+configurable window), both toggleable from Admin → Settings, both idempotent via the new
+`automated_notification_sends` ledger so an hourly cron cannot spam, both capped per run
+with an explicit warning when capped. No notification enum changes were needed — the
+existing `system`/`user` and `contest`/`contest` values cover both, so the mobile contract
+is untouched.
+
+**Section 3.8 is complete.** Remaining in that area, deliberately deferred: University
+targeting (needs schema + a mobile release), email *broadcast* (needs a marketing-consent
+flag first — Q10), and moving `Api/ContestController.php`'s duplicated city fan-out onto
+the audience resolver.
 
 ### Phase B — Reports, support, compliance
 

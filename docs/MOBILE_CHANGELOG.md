@@ -15,6 +15,31 @@ activity log. No mobile endpoint, request, response or column changed.
 
 ---
 
+## 2026-08-09 — Two new automatic notifications (no app change needed) ℹ️
+
+Users will start receiving two notifications nobody triggered by hand. Both
+arrive through the existing `GET /notifications` list and the normal push
+pipeline — **no new fields, no new endpoints, no payload changes.**
+
+| Notification | `type` | `entity_type` | `entity_id` |
+|---|---|---|---|
+| "Your N-day streak ends tonight" | `system` | `user` | the user's own id |
+| "{Contest} closes soon" | `contest` | `contest` | the contest id |
+
+Both use `type`/`entity_type` values the app already handles, so existing
+deep-link handling applies unchanged — a contest reminder should route to the
+contest exactly as other contest notifications do. Neither carries an
+`action_url`; tapping should fall back to your usual behaviour for that
+`entity_type`.
+
+Worth knowing for testing: these fire from hourly server jobs, are sent **at most
+once per user per day** (streaks) or **once per user per contest**, and are never
+sent to banned or suspended accounts. Email copy for verification, login and
+password-reset codes is now admin-editable, so the exact wording of those emails
+may change without any backend release — the 6-digit code behaviour is unchanged.
+
+---
+
 ## 2026-08-09 — Push campaigns behind the scenes (no app change needed) ℹ️
 
 Admin announcements are now delivered by a background campaign worker instead of

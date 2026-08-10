@@ -98,7 +98,10 @@ class ReelApiTest extends TestCase
             ->assertJsonPath('reels.0.id', $reelPost->id)
             ->assertJsonPath('reels.0.primary_media_type', 'video')
             ->assertJsonPath('reels.0.author.username', 'alex.style')
-            ->assertJsonPath('reels.0.location.name', 'Karachi')
+            // Slim list payload: location is the flat place name here. The
+            // detail endpoint returns the richer {name, city, country, lat, lng}
+            // object instead.
+            ->assertJsonPath('reels.0.location', 'Karachi')
             ->assertJsonPath('reels.0.caption', 'Casual streetwear look for summer.');
     }
 

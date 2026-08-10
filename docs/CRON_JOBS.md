@@ -26,7 +26,7 @@ column updated as they go in.
 
 ---
 
-## The list (10 entries)
+## The list (12 entries)
 
 | # | Schedule | Command | Status | Why it matters |
 |---|---|---|---|---|
@@ -40,6 +40,8 @@ column updated as they go in.
 | 8 | **Daily** (03:30) | `stylebite:prune-user-activity` | ⬜ Not added | Trims DAU/MAU history past 90 days. MAU only looks back 30 days, so older rows are dead weight. `--days=` to change retention (minimum 31). |
 | 9 | **Weekly** (Sun 04:00) | `stylebite:prune-activity-logs` | ⬜ Not added | Trims the admin audit trail past the retention window (365 days default, `AUDIT_RETENTION_DAYS` in `.env` — currently unset, so 365 applies). Every admin action writes a row, so this table grows steadily. Refuses any window under 30 days. |
 | 10 | **Weekly** (Sun 04:30) | `queue:prune-failed --hours=336` | ⬜ Not added | Framework command. Trims `failed_jobs`, which nothing else clears — a run of failures otherwise accumulates permanently. Recommended, not critical. |
+| 11 | **Hourly** (:20) | `stylebite:send-streak-reminders` | ⬜ Not added | Warns users whose streak lapses tonight (last qualifying day was yesterday, nothing today). One reminder per user per day — safe to run hourly. Toggle in Admin → Settings → Streaks. `--limit=` caps a run and it says so when capped. |
+| 12 | **Hourly** (:50) | `stylebite:send-contest-ending-reminders` | ⬜ Not added | Tells participants of active contests that entries close within the configured window (Admin → Settings → Contests, default 24h). One reminder per user per contest — safe to run hourly. |
 
 ### Copy-paste ready
 
@@ -54,6 +56,8 @@ column updated as they go in.
 30 3 * * * /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-activity
 0 4 * * 0 /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-activity-logs
 30 4 * * 0 /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan queue:prune-failed --hours=336
+20 * * * * /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:send-streak-reminders
+50 * * * * /usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:send-contest-ending-reminders
 ```
 
 The three hourly jobs are staggered (`:00`, `:15`, `:45`) so they never compete for the

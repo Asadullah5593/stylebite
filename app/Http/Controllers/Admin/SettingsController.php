@@ -584,6 +584,8 @@ class SettingsController extends Controller
                 'fields' => [
                     'contests.min_participants' => ['label' => 'Minimum Participants Allowed', 'type' => 'number', 'placeholder' => '2'],
                     'contests.max_participants' => ['label' => 'Maximum Participants Allowed', 'type' => 'number', 'placeholder' => '100000'],
+                    'contests.ending_soon_enabled' => ['label' => 'Send "Contest Ending Soon" Reminders', 'type' => 'boolean', 'placeholder' => 'true'],
+                    'contests.ending_soon_hours' => ['label' => 'Hours Before Close To Remind Participants', 'type' => 'number', 'placeholder' => '24'],
                 ],
             ],
             'streaks' => [
@@ -592,6 +594,7 @@ class SettingsController extends Controller
                     'streaks.mode' => ['label' => 'What Keeps a Streak Alive (outfit / any_post / login)', 'type' => 'string', 'placeholder' => 'outfit'],
                     'streaks.max_restores' => ['label' => 'Streak Restores Allowed Per User (lifetime)', 'type' => 'number', 'placeholder' => '5'],
                     'streaks.max_restore_gap_days' => ['label' => 'Longest Break a Single Restore May Bridge (days)', 'type' => 'number', 'placeholder' => '7'],
+                    'streaks.reminder_enabled' => ['label' => 'Send "Streak Ending Tonight" Reminders', 'type' => 'boolean', 'placeholder' => 'true'],
                 ],
             ],
             'earnings' => [

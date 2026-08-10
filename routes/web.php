@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\ContestController;
 use App\Http\Controllers\Admin\ActivityController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\EarningsController;
+use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\EngagementController;
 use App\Http\Controllers\Admin\MemoryController;
 use App\Http\Controllers\Admin\MediaController;
@@ -179,6 +180,15 @@ Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->gr
         Route::get('/push-logs', [NotificationController::class, 'pushLogs'])->name('push_logs')->middleware('permission:notifications.view');
         Route::post('/push-logs/{pushLog}/retry', [NotificationController::class, 'retryPushLog'])->name('push_logs.retry')->middleware('permission:notifications.send');
         Route::get('/saved-searches', [NotificationController::class, 'savedSearches'])->name('saved_searches')->middleware('permission:notifications.view');
+    });
+
+    // Email templates
+    Route::prefix('email-templates')->name('email_templates.')->group(function () {
+        Route::get('/', [EmailTemplateController::class, 'index'])->name('index')->middleware('permission:email_templates.view');
+        Route::get('/{emailTemplate}/edit', [EmailTemplateController::class, 'edit'])->name('edit')->middleware('permission:email_templates.manage');
+        Route::put('/{emailTemplate}', [EmailTemplateController::class, 'update'])->name('update')->middleware('permission:email_templates.manage');
+        Route::patch('/{emailTemplate}/reset', [EmailTemplateController::class, 'reset'])->name('reset')->middleware('permission:email_templates.manage');
+        Route::post('/{emailTemplate}/test-send', [EmailTemplateController::class, 'testSend'])->name('test_send')->middleware('permission:email_templates.manage');
     });
 
     // Moderation and Activity

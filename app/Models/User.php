@@ -292,6 +292,11 @@ class User extends Authenticatable
         return $this->hasMany(ActivityLog::class);
     }
 
+    public function automatedNotificationSends(): HasMany
+    {
+        return $this->hasMany(AutomatedNotificationSend::class);
+    }
+
     public function createdConversations(): HasMany
     {
         return $this->hasMany(Conversation::class, 'created_by_user_id');

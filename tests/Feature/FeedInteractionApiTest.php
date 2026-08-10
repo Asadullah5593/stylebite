@@ -72,9 +72,24 @@ class FeedInteractionApiTest extends TestCase
 
         $this->assertTrue($feedIds->contains($visiblePublic->id));
         $this->assertTrue($feedIds->contains($visibleFollowers->id));
-        $this->assertTrue($feedIds->contains($ownPrivate->id));
         $this->assertFalse($feedIds->contains($hiddenFollowers->id));
         $this->assertFalse($feedIds->contains($hiddenPrivate->id));
+
+        // The home feed excludes the viewer's own posts by design — you don't
+        // scroll past your own outfits. Own-private visibility is still enforced
+        // (and exercised) on the detail endpoint, which is where the author can
+        // legitimately reach their own private post.
+        $this->assertFalse($feedIds->contains($ownPrivate->id));
+
+        $this->withHeaders($this->headers($token))
+            ->getJson('/api/feed/posts/'.$ownPrivate->id)
+            ->assertOk()
+            ->assertJsonPath('post.id', $ownPrivate->id);
+
+        // ...while someone else's private post stays unreachable there too.
+        $this->withHeaders($this->headers($token))
+            ->getJson('/api/feed/posts/'.$hiddenPrivate->id)
+            ->assertStatus(404);
     }
 
     public function test_feed_detail_returns_paginated_comments_with_nested_replies(): void

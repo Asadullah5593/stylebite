@@ -148,8 +148,18 @@ class HomeFeedApiTest extends TestCase
             ->assertJsonPath('feed.0.engagement.rating_avg', 4.8)
             ->assertJsonPath('feed.0.viewer_state.is_liked', true)
             ->assertJsonPath('feed.0.viewer_state.is_saved', true)
-            ->assertJsonPath('feed.0.viewer_state.viewer_rating', 5)
-            ->assertJsonPath('feed.0.tags.0.name', 'Winter');
+            ->assertJsonPath('feed.0.viewer_state.viewer_rating', 5);
+
+        // The feed list is deliberately slim — it loads only the author and
+        // media a card needs, so tags are NOT part of a list row. They belong to
+        // the detail payload. Asserting both directions here keeps that contract
+        // explicit instead of letting a future eager-load creep back in.
+        $response->assertJsonMissingPath('feed.0.tags');
+
+        $this->withHeaders($this->headers($token))
+            ->getJson('/api/feed/posts/'.$post->id)
+            ->assertOk()
+            ->assertJsonPath('post.tags.0.name', 'Winter');
     }
 
     public function test_home_feed_uses_fixed_page_size_of_ten(): void

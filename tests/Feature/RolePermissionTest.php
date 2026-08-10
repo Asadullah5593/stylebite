@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -163,7 +164,12 @@ class RolePermissionTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->assertSame(36, $adminRole->fresh()->permissions()->count());
+        // Derived, not hardcoded: locked roles must hold *every* permission, so
+        // this stays correct as new permissions are added by later migrations.
+        $this->assertSame(
+            Permission::where('guard_name', 'web')->count(),
+            $adminRole->fresh()->permissions()->count()
+        );
 
         $this->actingAs($admin)
             ->delete(route('admin.roles.destroy', $moderatorRole))
@@ -371,7 +377,10 @@ class RolePermissionTest extends TestCase
             ])
             ->assertRedirect();
 
-        $this->assertSame(36, $superAdminRole->fresh()->permissions()->count());
+        $this->assertSame(
+            Permission::where('guard_name', 'web')->count(),
+            $superAdminRole->fresh()->permissions()->count()
+        );
 
         $this->actingAs($admin)
             ->delete(route('admin.roles.destroy', $superAdminRole))

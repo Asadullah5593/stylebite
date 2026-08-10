@@ -120,6 +120,58 @@ Notes worth knowing:
 
 ---
 
+## 2026-08-09 — Editable email templates + automatic reminders ✉️⏰
+
+Completes section 3.8. **Run the migration on deploy, and add the two new cron
+entries** (streak reminders, contest ending reminders) from
+[CRON_JOBS.md](CRON_JOBS.md) — the reminders do nothing without them.
+
+### Email templates (Notifications → Email Templates)
+
+Every email Stylebite sends is now editable in the panel: subject, heading,
+body, and an optional button. Six templates ship seeded —
+verification code, login code, password reset, contest announcement, contest
+ending soon, contest winner.
+
+- **Placeholders**: `{{name}}`, `{{username}}`, `{{email}}`, `{{app_name}}`,
+  `{{expiry_minutes}}`, plus `{{contest_title}}` and `{{contest_ends_at}}` on
+  contest templates. Anything unrecognised is stripped before sending, so a typo
+  never ships literal `{{braces}}` to a user.
+- **Send test to me** delivers the template to your own admin email with sample
+  data, so copy can be checked in a real inbox first.
+- **Restore built-in wording** undoes an edit you regret.
+- **You cannot break login mail.** Every template keeps its original wording in
+  code as a safety net. Deactivate a template, blank it out, even delete the row
+  — Stylebite falls back to the built-in copy and the email still goes out. This
+  is deliberate: the login code template is now on the critical path for *every*
+  sign-in.
+- The 6-digit code is still rendered in its own highlighted box automatically —
+  don't write it into the body.
+- Requires the new `email_templates.view` / `email_templates.manage`
+  permissions, granted to **admin** and **super_admin** only. The job-shaped
+  staff roles deliberately do not get to rewrite user-facing email.
+
+Note: transactional email stays **synchronous** on purpose. Queuing it would put
+login codes behind the once-a-minute queue cron, which would make signing in feel
+broken.
+
+### Automatic reminders
+
+Two new commands, both driven by admin settings and both safe to run hourly:
+
+| Reminder | Who gets it | Setting |
+|---|---|---|
+| **Streak ending tonight** | Users with a live streak whose last qualifying day was yesterday and who haven't posted today — i.e. the streak breaks at midnight unless they act | Settings → Streaks → *Send "Streak Ending Tonight" Reminders* |
+| **Contest ending soon** | Participants (joined/approved) of active contests closing inside the window | Settings → Contests → *Send "Contest Ending Soon" Reminders* + *Hours Before Close* (default 24) |
+
+Both are **idempotent**: a new `automated_notification_sends` ledger keys one
+reminder per user per day (streaks) or per user per contest (contests), so an
+hourly cron cannot spam anyone. Banned and suspended users are never reminded.
+Each run is capped (default 500) and **says so when it hits the cap**, so a
+backlog is visible rather than silently dropped — the next run continues.
+
+---
+
 ## 2026-08-09 — Push notification sender: audiences, campaigns, real delivery 📣
 
 The announcement box became a proper campaign sender. **Run the migration on

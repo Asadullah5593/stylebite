@@ -335,6 +335,7 @@ class NotificationController extends Controller
         return [
             'notifications' => Notification::count(),
             'campaigns' => NotificationCampaign::count(),
+            'email_templates' => EmailTemplateController::tabCount(),
             'push_logs' => PushNotificationLog::count(),
             'saved_searches' => SavedSearch::count(),
         ];

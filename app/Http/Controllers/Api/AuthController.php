@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSession;
 use App\Models\UserSetting;
+use App\Services\EmailTemplates;
 use App\Services\MediaOptimizer;
 use App\Services\UserModerationService;
 use Carbon\Carbon;
@@ -138,12 +139,14 @@ class AuthController extends Controller
                 'created_at' => now(),
             ]);
 
-            stylebite_send_email(
+            app(EmailTemplates::class)->send(
+                'auth.password_reset',
                 $user->email,
                 $user->full_name ?? $user->username,
-                'Your Stylebite password reset code',
-                'Password reset request',
-                "We received a request to reset your Stylebite password.\n\nEnter this 6-digit code to reset your password. It expires in 15 minutes.\n\nIf you didn't request this, you can safely ignore this email.",
+                [
+                    'username' => $user->username,
+                    'expiry_minutes' => 15,
+                ],
                 highlightCode: $code
             );
         }
@@ -855,12 +858,14 @@ class AuthController extends Controller
             'created_at' => now(),
         ]);
 
-        stylebite_send_email(
+        app(EmailTemplates::class)->send(
+            'auth.verify_email',
             $user->email,
             $user->full_name ?? $user->username,
-            'Your Stylebite verification code',
-            'Verify your email',
-            "Thanks for registering with Stylebite.\n\nEnter this 6-digit code to verify your email. It expires in ".self::OTP_EXPIRY_MINUTES." minutes.\n\nIf you didn't create this account, you can safely ignore this email.",
+            [
+                'username' => $user->username,
+                'expiry_minutes' => self::OTP_EXPIRY_MINUTES,
+            ],
             highlightCode: $code
         );
     }
@@ -942,12 +947,14 @@ class AuthController extends Controller
             'created_at' => now(),
         ]);
 
-        stylebite_send_email(
+        app(EmailTemplates::class)->send(
+            'auth.login_code',
             $user->email,
             $user->full_name ?? $user->username,
-            'Your Stylebite login code',
-            'Confirm your login',
-            "Someone just signed in to your Stylebite account with your password.\n\nEnter this 6-digit code to finish logging in. It expires in ".self::LOGIN_OTP_EXPIRY_MINUTES." minutes.\n\nIf this wasn't you, reset your password right away.",
+            [
+                'username' => $user->username,
+                'expiry_minutes' => self::LOGIN_OTP_EXPIRY_MINUTES,
+            ],
             highlightCode: $code
         );
 
