@@ -40,8 +40,64 @@ class AutomatedNotificationTest extends TestCase
         return now(stylebite_reporting_timezone())->toDateString();
     }
 
+    /**
+     * The reminder window is evaluated in the app's reporting timezone, so tests
+     * pin the clock to a known local hour rather than depending on when they run.
+     */
+    private function travelToLocalHour(int $hour): void
+    {
+        $this->travelTo(
+            now(stylebite_reporting_timezone())->startOfDay()->addHours($hour)->utc()
+        );
+    }
+
+    public function test_streak_reminder_is_silent_outside_the_allowed_hours(): void
+    {
+        $this->travelToLocalHour(3); // 03:00 local — nobody wants this push
+        $this->userWithStreak(11, $this->yesterday());
+
+        $this->artisan('stylebite:send-streak-reminders')
+            ->expectsOutputToContain('Outside the reminder window')
+            ->assertSuccessful();
+
+        $this->assertSame(0, Notification::count());
+
+        // --force exists for manual runs and support work.
+        $this->artisan('stylebite:send-streak-reminders --force')
+            ->expectsOutputToContain('Sent 1 streak reminder')
+            ->assertSuccessful();
+
+        $this->assertSame(1, Notification::count());
+    }
+
+    public function test_streak_reminder_window_is_configurable(): void
+    {
+        AppConfig::create([
+            'config_key' => 'streaks.reminder_start_hour',
+            'config_value' => '2',
+            'value_type' => 'number',
+        ]);
+        AppConfig::create([
+            'config_key' => 'streaks.reminder_end_hour',
+            'config_value' => '5',
+            'value_type' => 'number',
+        ]);
+        Cache::forget('stylebite_app_configs');
+
+        $this->travelToLocalHour(3); // now inside the widened window
+        $this->userWithStreak(8, $this->yesterday());
+
+        $this->artisan('stylebite:send-streak-reminders')
+            ->expectsOutputToContain('Sent 1 streak reminder')
+            ->assertSuccessful();
+
+        $this->assertSame(1, Notification::count());
+    }
+
     public function test_streak_reminder_goes_only_to_users_whose_streak_lapses_tonight(): void
     {
+        $this->travelToLocalHour(10);
+
         $atRisk = $this->userWithStreak(12, $this->yesterday());
         $alreadyPostedToday = $this->userWithStreak(5, $this->today());
         $noStreak = $this->userWithStreak(0, $this->yesterday());
@@ -63,6 +119,7 @@ class AutomatedNotificationTest extends TestCase
 
     public function test_streak_reminder_is_not_repeated_when_the_command_runs_again_the_same_day(): void
     {
+        $this->travelToLocalHour(10);
         $this->userWithStreak(7, $this->yesterday());
 
         $this->artisan('stylebite:send-streak-reminders')->assertSuccessful();
@@ -77,6 +134,7 @@ class AutomatedNotificationTest extends TestCase
 
     public function test_streak_reminder_skips_banned_and_suspended_users(): void
     {
+        $this->travelToLocalHour(10);
         $this->userWithStreak(4, $this->yesterday(), ['status' => 'banned']);
         $this->userWithStreak(6, $this->yesterday(), ['status' => 'suspended']);
 
@@ -107,6 +165,8 @@ class AutomatedNotificationTest extends TestCase
 
     public function test_streak_reminder_reports_when_it_hits_the_limit_instead_of_truncating_silently(): void
     {
+        $this->travelToLocalHour(10);
+
         for ($i = 0; $i < 3; $i++) {
             $this->userWithStreak(5, $this->yesterday());
         }

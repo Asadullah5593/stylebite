@@ -595,6 +595,8 @@ class SettingsController extends Controller
                     'streaks.max_restores' => ['label' => 'Streak Restores Allowed Per User (lifetime)', 'type' => 'number', 'placeholder' => '5'],
                     'streaks.max_restore_gap_days' => ['label' => 'Longest Break a Single Restore May Bridge (days)', 'type' => 'number', 'placeholder' => '7'],
                     'streaks.reminder_enabled' => ['label' => 'Send "Streak Ending Tonight" Reminders', 'type' => 'boolean', 'placeholder' => 'true'],
+                    'streaks.reminder_start_hour' => ['label' => 'Earliest Hour To Send Reminders (0-23, app timezone)', 'type' => 'number', 'placeholder' => '9'],
+                    'streaks.reminder_end_hour' => ['label' => 'Latest Hour To Send Reminders (0-23, app timezone)', 'type' => 'number', 'placeholder' => '21'],
                 ],
             ],
             'earnings' => [

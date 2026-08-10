@@ -23,7 +23,9 @@ use Illuminate\Console\Command;
  */
 class SendStreakRemindersCommand extends Command
 {
-    protected $signature = 'stylebite:send-streak-reminders {--limit=500 : Maximum reminders to send in one run}';
+    protected $signature = 'stylebite:send-streak-reminders
+        {--limit=500 : Maximum reminders to send in one run}
+        {--force : Send even outside the allowed hours}';
 
     protected $description = 'Notify users whose daily streak will break tonight unless they post.';
 
@@ -37,7 +39,27 @@ class SendStreakRemindersCommand extends Command
 
         $limit = max(1, (int) $this->option('limit'));
         $timezone = stylebite_reporting_timezone();
-        $today = CarbonImmutable::now($timezone)->startOfDay();
+        $now = CarbonImmutable::now($timezone);
+
+        // The quiet-hours window lives here rather than in the crontab. Cron
+        // runs in UTC while a "day" here is Asia/Karachi, so an hour range in
+        // the schedule would silently drift five hours — and the first run of
+        // the local day is the one that claims the send, which would land at
+        // 00:20 local. Deciding in the reporting timezone keeps it honest, and
+        // means the cron entry is a plain hourly one.
+        if (! $this->option('force') && ! $this->withinAllowedHours($now)) {
+            $this->info(sprintf(
+                'Outside the reminder window (%02d:00-%02d:59 %s, now %s). Nothing sent.',
+                $this->startHour(),
+                $this->endHour(),
+                $timezone,
+                $now->format('H:i')
+            ));
+
+            return self::SUCCESS;
+        }
+
+        $today = $now->startOfDay();
         $yesterday = $today->subDay();
         $scopeKey = $today->toDateString();
 
@@ -110,5 +132,33 @@ class SendStreakRemindersCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function withinAllowedHours(CarbonImmutable $now): bool
+    {
+        return $now->hour >= $this->startHour() && $now->hour <= $this->endHour();
+    }
+
+    private function startHour(): int
+    {
+        return $this->clampHour(stylebite_app_config('streaks.reminder_start_hour', 9), 9);
+    }
+
+    private function endHour(): int
+    {
+        $end = $this->clampHour(stylebite_app_config('streaks.reminder_end_hour', 21), 21);
+
+        // A window that ends before it starts would never fire; fall back to
+        // "until the end of the day" rather than going silent.
+        return $end < $this->startHour() ? 23 : $end;
+    }
+
+    private function clampHour(mixed $value, int $fallback): int
+    {
+        if (! is_numeric($value)) {
+            return $fallback;
+        }
+
+        return max(0, min(23, (int) $value));
     }
 }
