@@ -107,7 +107,7 @@
                 <p class="text-muted extra-small">Use these anywhere in the subject, heading or body. Anything unrecognised is removed before sending.</p>
                 <div class="d-flex flex-wrap gap-2">
                     @foreach ($placeholders as $placeholder)
-                        <code class="badge bg-dark-soft text-info rounded-pill px-3 py-2">{{ '{{'.$placeholder.'}}' }}</code>
+                        <code class="badge bg-dark-soft text-info rounded-pill px-3 py-2">{{ $placeholder }}</code>
                     @endforeach
                 </div>
             </div>

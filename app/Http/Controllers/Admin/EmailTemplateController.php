@@ -41,7 +41,12 @@ class EmailTemplateController extends Controller
     {
         return view('admin.notifications.EmailTemplateFormPage', [
             'template' => $emailTemplate,
-            'placeholders' => $this->templates->availablePlaceholders($emailTemplate->category),
+            // Built here, not in Blade: an inline '{{'.$x.'}}' expression makes
+            // Blade's echo parser stop at the first }} and emit broken PHP.
+            'placeholders' => array_map(
+                fn (string $name) => '{{'.$name.'}}',
+                $this->templates->availablePlaceholders($emailTemplate->category)
+            ),
             'defaultCopy' => EmailTemplates::DEFAULTS[$emailTemplate->key] ?? null,
             'preview' => $this->templates->render($emailTemplate->key, $this->sampleVariables()),
         ]);
