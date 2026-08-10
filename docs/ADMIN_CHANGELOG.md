@@ -19,9 +19,60 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 | **Daily** (e.g. 00:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:refresh-streaks` | **Required** — breaks streaks that lapsed. Without it a streak never ends |
 | **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:lift-expired-suspensions` | Reactivates users whose suspension window ended (auth paths also lift lazily; this keeps counts honest for users who never return) |
 | **Weekly** (e.g. Sun 04:00) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-activity-logs` | Trims the audit trail past the retention window (default 365 days, `AUDIT_RETENTION_DAYS`) |
-| **Daily** (e.g. 02:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-sessions` | Deletes sessions dead for 30+ days — required now that 24-hour sessions add ≥1 row per user per day |
+| **Daily** (e.g. 02:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:prune-user-sessions` | Deletes sessions dead for 30+ days |
+| **Hourly** (09:20–21:20 PKT → `20 4-16 * * *`) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:send-streak-reminders` | Warns users whose streak lapses tonight. Hour-limited on purpose — cron is UTC, so this avoids 3am pushes |
+| **Hourly** | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan stylebite:send-contest-ending-reminders` | Tells participants a contest closes soon |
+| **Weekly** (e.g. Sun 04:30) | `/usr/bin/php /home/u353708470/domains/stylebiteapp.com/public_html/artisan queue:prune-failed --hours=336` | Trims `failed_jobs`, which nothing else clears |
 
-Both are required. Without the daily rate sync, **admin crediting is blocked** (by design — the system never credits an unconverted amount).
+**[docs/CRON_JOBS.md](CRON_JOBS.md) is the source of truth** — it has copy-paste
+crontab lines, a status column, verification commands, the silent-failure
+gotchas, and the three commands that must never be scheduled.
+
+Two that matter most: without `queue:work` **no push campaign is ever delivered**,
+and without the daily rate sync **creator crediting is blocked by design** (the
+system never credits an unconverted amount).
+
+---
+
+## 2026-08-10 — Admin panel 2FA + 24-hour dashboard sessions 🔐
+
+Two-factor and the session cap now apply to the **admin panel**, which is where
+they were always meant to be. The mobile app equivalents are switched off (see
+the mobile changelog).
+
+### Signing in
+
+`/admin/login` is now two steps: password, then a **6-digit code emailed to the
+staff member**. The session stays unauthenticated until the code is confirmed —
+a correct password alone reaches nothing. Codes expire in **10 minutes**, allow
+**5 attempts**, are single-use, and can be re-sent after a 60-second cooldown.
+
+The copy lives in **Notifications → Email Templates → "Admin panel login code"**,
+so you can reword it like any other email, and the built-in wording remains as a
+fallback if the template is deactivated.
+
+Everything is audited: `admin_login_2fa_challenged`, `admin_login_2fa_failed`,
+`admin_login_2fa_locked`, and `admin_signed_in` (which now records whether 2FA
+was used). An account banned or stripped of access *between* the two steps
+cannot complete the sign-in.
+
+### 24-hour dashboard sessions
+
+An admin session now ends **24 hours after sign-in, absolutely**. This is
+deliberately not Laravel's own session lifetime, which is idle-based and renews
+on every request — a dashboard left open in a tab would otherwise stay signed in
+forever. Staying active does not extend it; at the cap you are returned to the
+login screen with an explanation.
+
+Sessions that were already open when this deployed are stamped on their next
+request rather than being cut off, so nobody was kicked out by the upgrade.
+
+### Switches
+
+| Env var | Default | Effect |
+|---|---|---|
+| `ADMIN_TWO_FACTOR` | `true` | Set `false` to skip the emailed code (e.g. if staff email is down) |
+| `ADMIN_SESSION_HOURS` | `24` | Absolute dashboard session length |
 
 ---
 

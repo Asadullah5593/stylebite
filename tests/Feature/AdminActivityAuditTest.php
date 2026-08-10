@@ -180,6 +180,10 @@ class AdminActivityAuditTest extends TestCase
 
     public function test_successful_and_failed_admin_sign_ins_are_audited(): void
     {
+        // The audit trail is the subject; the second factor is covered
+        // separately in AdminTwoFactorTest.
+        config(['auth.admin_two_factor' => false]);
+
         $admin = User::factory()->create([
             'email' => 'boss@example.com',
             'password_hash' => Hash::make('secret-password'),

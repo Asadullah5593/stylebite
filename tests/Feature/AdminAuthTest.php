@@ -26,6 +26,10 @@ class AdminAuthTest extends TestCase
 
     public function test_active_admin_can_login_to_dashboard(): void
     {
+        // This test is about credentials and panel access, not the second
+        // factor — that has its own suite in AdminTwoFactorTest.
+        config(['auth.admin_two_factor' => false]);
+
         $admin = User::factory()->create([
             'email' => 'admin@example.com',
             'password_hash' => Hash::make('secret-password'),

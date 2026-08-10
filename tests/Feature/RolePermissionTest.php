@@ -97,6 +97,10 @@ class RolePermissionTest extends TestCase
 
     public function test_moderator_can_log_in_to_panel(): void
     {
+        // Permission gating is the subject here; the emailed second factor is
+        // covered by AdminTwoFactorTest.
+        config(['auth.admin_two_factor' => false]);
+
         User::factory()->create([
             'email' => 'mod@example.com',
             'password_hash' => bcrypt('secret-password'),

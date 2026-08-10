@@ -52,6 +52,16 @@ class EmailTemplates
             'action_text' => null,
             'action_url' => null,
         ],
+        'auth.admin_login_code' => [
+            'name' => 'Admin panel login code',
+            'category' => self::CATEGORY_TRANSACTIONAL,
+            'description' => 'Sent on every admin-panel sign-in. Staff cannot reach the dashboard without it.',
+            'subject' => 'Your Stylebite admin login code',
+            'heading' => 'Confirm your admin sign-in',
+            'body' => "Someone just signed in to the Stylebite admin panel with your password.\n\nEnter this 6-digit code to reach the dashboard. It expires in {{expiry_minutes}} minutes.\n\nIf this wasn't you, change your password immediately — this account has staff access.",
+            'action_text' => null,
+            'action_url' => null,
+        ],
         'auth.password_reset' => [
             'name' => 'Password reset code',
             'category' => self::CATEGORY_TRANSACTIONAL,

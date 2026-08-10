@@ -52,7 +52,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
     })->name('home');
 
     Route::get('/login', [AdminAuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AdminAuthController::class, 'login'])->name('login.store');
+    Route::post('/login', [AdminAuthController::class, 'login'])->name('login.store')->middleware('throttle:10,1');
+    Route::get('/login/otp', [AdminAuthController::class, 'showOtp'])->name('login.otp');
+    Route::post('/login/otp', [AdminAuthController::class, 'verifyOtp'])->name('login.otp.verify')->middleware('throttle:10,1');
+    Route::post('/login/otp/resend', [AdminAuthController::class, 'resendOtp'])->name('login.otp.resend')->middleware('throttle:6,1');
     Route::post('/logout', [AdminAuthController::class, 'logout'])->name('logout');
 });
 

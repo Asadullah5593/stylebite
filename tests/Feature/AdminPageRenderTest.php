@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\EmailTemplate;
 use App\Models\User;
+use App\Services\EmailTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
@@ -31,8 +32,13 @@ class AdminPageRenderTest extends TestCase
     {
         $admin = $this->admin();
 
+        // Derived from the built-in set so adding a template doesn't break this.
         $templates = EmailTemplate::all();
-        $this->assertCount(6, $templates, 'All seeded templates should be present.');
+        $this->assertCount(
+            count(EmailTemplates::DEFAULTS),
+            $templates,
+            'Every built-in template should be seeded.'
+        );
 
         foreach ($templates as $template) {
             $this->actingAs($admin)

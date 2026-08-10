@@ -8,6 +8,27 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-10 — Login 2FA and 24-hour sessions are OFF for the app ✅ REVERSAL
+
+**This reverses the breaking change from 2026-08-08.** Two-factor login and the
+24-hour session cap were only ever meant for the **admin dashboard**, not the
+mobile app. They are now switched off on the API:
+
+- `POST /auth/login` returns `access_token` directly again, exactly as it did
+  before. It no longer returns `requires_two_factor`.
+- Sessions are back to **30 days**, not 24 hours.
+- `POST /auth/login/verify-otp` and `/auth/login/resend-otp` still exist and
+  still work, but you do not need them. **No app change is required.**
+
+One after-effect to expect: the earlier deploy capped existing sessions at 24
+hours, so users are logged out **once**, then get 30-day sessions again.
+
+Everything else from 2026-08-08 stands and still needs handling: the
+banned/suspended `403` payloads with `code`, `reason` and `suspended_until` on
+login and on any authenticated endpoint. That part was never about 2FA.
+
+---
+
 ## 2026-08-09 — Admin audit trail (no app impact) ℹ️
 
 Admin-side only: every action taken in the admin panel is now recorded in the

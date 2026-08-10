@@ -146,6 +146,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Admin Panel Two-Factor
+    |--------------------------------------------------------------------------
+    |
+    | When true, an admin-panel sign-in requires a 6-digit code emailed to the
+    | staff member. Separate from the mobile API's login_two_factor: the panel
+    | is the higher-value target and has no app release to coordinate with.
+    |
+    */
+
+    'admin_two_factor' => filter_var(env('ADMIN_TWO_FACTOR', true), FILTER_VALIDATE_BOOLEAN),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Admin Session Lifetime
+    |--------------------------------------------------------------------------
+    |
+    | Hard lifetime, in hours, of an admin-panel session counted from sign-in.
+    | This is absolute, not idle-based: staying active does not extend it, so a
+    | forgotten open dashboard cannot stay authenticated indefinitely.
+    |
+    */
+
+    'admin_session_hours' => (int) env('ADMIN_SESSION_HOURS', 24),
+
+    /*
+    |--------------------------------------------------------------------------
     | Super Admins
     |--------------------------------------------------------------------------
     |
