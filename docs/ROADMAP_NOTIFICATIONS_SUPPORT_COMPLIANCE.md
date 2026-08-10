@@ -126,12 +126,18 @@ add UTF-8 BOM and CSV-injection escaping; audit every export.
 
 ## Highest-risk findings
 
-1. **The push sender cannot scale and may never have worked.** 11 notifications are
-   marked `delivery_status='sent'` but `push_notification_logs` is **empty**, while the
-   helper writes a log row for every attempted token — so those rows almost certainly
-   came from a seeder and **FCM has probably never fired against real Firebase here**.
-   Confirm with one real-device smoke test before building a mass sender on top.
-   (Consistent with the earlier finding that prod `.env` has no `FIREBASE_*` vars.)
+1. **Push may never have actually fired, and the credential does not deploy itself.**
+   11 notifications are marked `delivery_status='sent'` but `push_notification_logs` is
+   **empty**, while the helper writes a log row for every attempted token — so those rows
+   almost certainly came from a seeder and FCM has probably never reached real Firebase
+   here. Verified 2026-08-09: `public/service_file.json` exists locally and is a valid
+   service account (project `stylebite-f28fa`), **but it is gitignored and untracked
+   (`.gitignore:29`), so `git pull` does not deploy it.** If that file is absent on the
+   server, `stylebite_firebase_service_account()` throws and *every* push fails — which
+   now means every campaign reports 100% failed. Note the missing `FIREBASE_PROJECT_ID`
+   env var is *not* a problem: the code prefers the `project_id` inside the file. The file
+   is the single point of failure. Confirm it is present on live, then do one real-device
+   smoke test.
 2. **The moderation queue has no inbound source.** Filters, assignment, status
    transitions, ban-from-report, dashboard tiles and a header alert — over a table only
    test files write to.
