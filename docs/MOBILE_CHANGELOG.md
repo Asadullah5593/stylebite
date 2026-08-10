@@ -8,10 +8,21 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
-## 2026-08-10 — Privacy Policy & Terms come from the API now 🆕 NEW ENDPOINTS
+## 2026-08-10 — Legal documents available over the API 🆕 NEW ENDPOINTS
 
-Stop hardcoding or WebView-ing the legal text. It's editable from the admin panel,
-it's versioned, and we now have to record who accepted which version.
+**Nothing breaks and nothing is required of the app.** Privacy Policy and Terms are
+now editable from the admin panel and versioned. The existing
+`https://stylebiteapp.com/privacy-policy` page is unchanged as a URL — it just
+serves the edited text now, so a WebView keeps working and picks up changes on its
+own. `/terms` exists at the same style of URL if you want to link it.
+
+These endpoints are here for whenever the app wants them:
+
+- **Native legal screens** instead of a WebView — optional polish
+- **Consent records** — who agreed to which version. This one *only* works if the
+  app calls `POST /legal/{key}/accept`; until then the acceptance table stays empty
+  and the admin-side acceptance export returns nothing. Worth doing if the policy
+  is ever going to change materially, since re-consent is otherwise unprovable
 
 ### 1. Fetch a document — no login needed
 
@@ -75,12 +86,15 @@ and gate on that.
 the app behind a consent screen for `true`, and use a dismissible banner for
 `false`.
 
-### What we need from you
+### If and when you pick this up
 
 1. Legal screens read from these endpoints instead of hardcoded/WebView text
 2. Registration links to `GET /legal/terms` and `GET /legal/privacy_policy`
 3. After login: `GET /legal/pending/all` → consent screen if `has_pending`
 4. `POST /legal/{key}/accept` on agree, and handle `409` by re-fetching
+
+Steps 3 and 4 are the consent-record half; 1 and 2 are cosmetic. Doing none of it
+leaves the app exactly as it is today.
 
 ---
 
