@@ -119,9 +119,17 @@
         @endcanany
 
         <!-- Trust & Safety -->
-        @canany(['moderation.view', 'activity.view'])
+        @canany(['moderation.view', 'tickets.view', 'activity.view'])
         <div class="mb-4">
             <div class="sidebar-section-title">Trust & Safety</div>
+            @can('tickets.view')
+            <a href="{{ route('admin.support.index') }}" class="nav-link {{ request()->routeIs('admin.support*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+                <i class="bi bi-life-preserver"></i> <span>Support Tickets</span>
+                @if (($supportNeedsReply ?? 0) > 0)
+                    <span class="nav-count ms-auto text-danger fw-bold">{{ $supportNeedsReply }}</span>
+                @endif
+            </a>
+            @endcan
             @can('moderation.view')
             <a href="{{ route('admin.moderation.reports') }}" class="nav-link {{ request()->routeIs('admin.moderation*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-shield"></i> <span>Moderation</span>

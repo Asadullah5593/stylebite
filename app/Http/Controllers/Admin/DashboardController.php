@@ -170,6 +170,18 @@ class DashboardController extends Controller
             'route' => route('admin.users.all_users', ['status' => 'banned']),
         ];
 
+        $supportTicketsTile = [
+            'label' => 'Tickets Awaiting Reply',
+            'value' => number_format(\App\Models\SupportTicket::query()
+                ->where('last_reply_by', 'user')
+                ->whereNotIn('status', \App\Models\SupportTicket::FINISHED_STATUSES)
+                ->count()),
+            'sub' => 'Users waiting on a support answer',
+            'delta' => null,
+            'deltaLabel' => '',
+            'route' => route('admin.support.index', ['needs_reply' => 1]),
+        ];
+
         $suspendedUsersTile = [
             'label' => 'Suspended Users',
             'value' => number_format($suspendedUsers),
@@ -229,6 +241,7 @@ class DashboardController extends Controller
             'trust' => [
                 $underReviewTile,
                 $tile('Open Reports', route('admin.moderation.reports')),
+                $supportTicketsTile,
                 $bannedUsersTile,
                 $suspendedUsersTile,
                 $failedPushesTile,

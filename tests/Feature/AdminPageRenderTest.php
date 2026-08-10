@@ -74,6 +74,7 @@ class AdminPageRenderTest extends TestCase
             'campaigns' => ['admin.notifications.campaigns'],
             'email templates' => ['admin.email_templates.index'],
             'push logs' => ['admin.notifications.push_logs'],
+            'support tickets' => ['admin.support.index'],
             'moderation reports' => ['admin.moderation.reports'],
             'moderation actions' => ['admin.moderation.actions'],
             'activity logs' => ['admin.activity.activity_logs'],

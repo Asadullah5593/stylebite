@@ -42,8 +42,8 @@ notification copy, export column sets) that can be settled as each piece is buil
 | 3.8b | Email / Templates | 🔴 **Missing** | No template storage of any kind. Three hardcoded transactional emails (all auth OTP). Every subject and sentence is a PHP literal. `GlobalAppMail` is *not* queued. |
 | 3.8c | Contest Announcement Templates | 🔴 **Missing** | Nothing contest-specific exists in the mail or announcement paths. |
 | 3.8d | Automated Notifications (streak reminder, contest ending soon) | 🔴 **Missing** | No scheduled-notification infrastructure at all. All five notification write points fire synchronously from a user action. Nothing warns about a lapsing streak or a closing contest. |
-| 3.9a | User Reports (Content, Users, **Bugs**) | 🟠 **Half-built — admin side only** | Full moderation queue exists and is good. **No mobile endpoint lets a user file a report**, so the queue has no inbound source. Bug reports are not representable: `reports.reason` enum has no `bug`, `target_id` is NOT NULL, and there is nowhere for device/app-version/screenshot. |
-| 3.9b | Support Ticket System | 🔴 **Missing** | No ticket concept anywhere. *But* `conversations.type` already contains an unused `'support'` value and the messaging schema is ticket-shaped (member roles, system messages, attachments, read receipts). |
+| 3.9a | User Reports (Content, Users, **Bugs**) | 🟢 **Done 2026-08-10** | `POST /api/reports` feeds the existing queue for user/post/comment/reply/message/contest, with duplicate, self-report, message-membership and rate-limit guards. Bugs went to tickets instead, as decided. |
+| 3.9b | Support Ticket System | 🟢 **Done 2026-08-10** | Own schema (`support_tickets`, `support_ticket_messages`, `support_ticket_attachments`); 5 categories, 5 statuses, 4 priorities, quotable reference, screenshots, device metadata, internal notes, assignment; mobile API + admin queue; `tickets.*` permissions. Chat tables untouched. |
 | X1 | Admin panel responsive (Desktop + Tablet) | 🟠 **Desktop yes, tablet no** | Desktop ≥1200px is genuinely well built (all 55 tables wrapped, filter bars wrap). The **768–1199px tablet band renders as a squeezed single-column mobile layout**, and **below 768px there is no navigation at all** — the sidebar is `d-none d-md-flex` with no off-canvas replacement. |
 | X2 | Destructive actions: confirm + reason | 🟠 **1 of 33** | Only the ban/suspend/bulk-lifecycle path does both. 33 destructive actions enumerated: 2 compliant, ~10 confirm-without-reason, the rest neither. **`reverseTransaction` moves money with no dialog, no reason, and a hardcoded `'reason' => 'Admin reversal'`.** |
 | X3 | Every admin action logged (timestamp, admin ID, IP) | 🟢 **Done** | `LogAdminActivity` middleware audits every mutating admin request plus sensitive reads — actor, role held at the time, IP, user agent, route, payload, and outcome (applied/blocked/rejected/failed). All 58 mutating routes covered. |
@@ -107,13 +107,13 @@ the audience resolver.
 
 ### Phase B — Reports, support, compliance
 
-**B1. Mobile reporting API.** ~5 days: the admin consumer is already built and good, so
+**B1. Mobile reporting API.** ✅ **DONE 2026-08-10.** ~5 days: the admin consumer is already built and good, so
 this is endpoints + rate limiting + abuse guards + a `bug` path. **Do this before any
 support work** — the moderation queue is currently a well-built UI over a table no
 production code can write to, and there is no way for a user to report abuse (an App
 Store / Play Store exposure for a UGC app).
 
-**B2. Support tickets — own schema** (client decision, 2026-08-09). Dedicated tables for
+**B2. Support tickets — own schema** ✅ **DONE 2026-08-10.** (client decision, 2026-08-09). Dedicated tables for
 ticket state *and* the reply thread; the chat tables are not involved. Gate with a new
 permission; the `support_agent` role already exists with the right read grants and
 deliberately no ban/money powers.
@@ -210,3 +210,36 @@ add UTF-8 BOM and CSV-injection escaping; audit every export.
 - `dashboard.blade.php` tab strip + KPI grid — the only component with a real tablet band.
 - **Do not** reuse `stylebite_app_config()` for legal documents: `config_value` is `text`
   (~64KB) with no length validation, so an oversized policy truncates silently.
+
+
+---
+
+## Section 3.9 delivered — 2026-08-10
+
+Both requirements are live. Notes for whoever picks this up next:
+
+- **Reporting deliberately excludes `memory` targets.** `reports.target_type` has
+  no `memory` value and the admin queue cannot resolve or action one, so allowing
+  it would create reports nobody could work. `memory_comments` carries an
+  `is_reported` column with no matching report path — a pre-existing gap, left
+  alone rather than half-built.
+- **Bug reports are a ticket category, not a report reason** (client decision).
+  The reports table has nowhere to put a screenshot, device model or app version,
+  and a bug needs a conversation.
+- **Staff identity is generic to users.** The API returns `author_type: "staff"`
+  and never the individual agent's name.
+- **Found while building:** every `findOrFail`/`firstOrFail` in the API was
+  answering 500 instead of 404, because Laravel converts `ModelNotFoundException`
+  to `NotFoundHttpException` before render callbacks run — so the app's
+  `ModelNotFoundException` handler was dead code. Fixed with an
+  `HttpExceptionInterface` handler; rate limiting now returns 429 rather than 500
+  too. `ApiErrorResponseTest` pins this.
+
+### Still open on this roadmap
+
+**B3** destructive-action sweep (31 of 33 actions lack confirm + reason; worst is
+`reverseTransaction`, which moves money on one click with no dialog and a
+hardcoded reason) · **B4** tablet responsiveness (768–1199px renders as squeezed
+mobile; below 768px there is no navigation at all) · **B5** legal pages and
+compliance exports (no Terms document exists; the users-list "Export" is still
+client-side DOM scraping).

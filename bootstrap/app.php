@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 if (! function_exists('api_database_error_message')) {
     function api_database_error_message(QueryException $exception): string
@@ -163,6 +164,34 @@ return Application::configure(basePath: dirname(__DIR__))
                 'status_code' => 0,
                 'message' => api_database_error_message($exception),
             ], api_database_error_status($exception));
+        });
+
+        // Anything that already carries an HTTP status must keep it. Laravel
+        // converts ModelNotFoundException into a NotFoundHttpException *before*
+        // render callbacks run, so the ModelNotFoundException handler above can
+        // never fire — without this, every findOrFail/firstOrFail in the API
+        // answered 500 instead of 404, and middleware throttling answered 500
+        // instead of 429.
+        $exceptions->render(function (HttpExceptionInterface $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            $status = $exception->getStatusCode();
+
+            return response()->json([
+                'status_code' => 0,
+                'message' => match ($status) {
+                    Response::HTTP_NOT_FOUND => 'Requested resource was not found.',
+                    Response::HTTP_METHOD_NOT_ALLOWED => 'This action is not allowed on this endpoint.',
+                    Response::HTTP_TOO_MANY_REQUESTS => 'Too many requests. Please slow down and try again.',
+                    Response::HTTP_FORBIDDEN => 'You do not have permission to do this.',
+                    Response::HTTP_UNAUTHORIZED => 'Unauthenticated.',
+                    default => filled($exception->getMessage())
+                        ? $exception->getMessage()
+                        : 'Request could not be completed.',
+                },
+            ], $status);
         });
 
         $exceptions->render(function (Throwable $exception, Request $request) {

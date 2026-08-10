@@ -297,6 +297,16 @@ class User extends Authenticatable
         return $this->hasMany(AutomatedNotificationSend::class);
     }
 
+    public function supportTickets(): HasMany
+    {
+        return $this->hasMany(SupportTicket::class);
+    }
+
+    public function assignedSupportTickets(): HasMany
+    {
+        return $this->hasMany(SupportTicket::class, 'assigned_to_user_id');
+    }
+
     public function createdConversations(): HasMany
     {
         return $this->hasMany(Conversation::class, 'created_by_user_id');

@@ -8,6 +8,57 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-10 — Reporting and support tickets are live 🆕 NEW ENDPOINTS
+
+Two new features for the app to build, plus one bug fix you'll notice.
+
+### 1. Users can report content and accounts
+
+- `GET /reports/meta` — target types and reasons, so nothing is hardcoded
+- `POST /reports` — `{ target_type, target_id, reason, description? }`
+  - `target_type`: `user`, `post`, `comment`, `reply`, `message`, `contest`
+  - `reason`: `spam`, `harassment`, `hate`, `nudity`, `violence`, `copyright`, `fake`, `other`
+  - `201` on success. A repeat report of the same thing returns `200` with
+    `already_reported: true` — show "already reported", not an error.
+  - `422` for your own content, `404` if it no longer exists, `429` if rate limited
+- `GET /reports/mine` — the user's own report history with status, so reporting
+  doesn't feel like shouting into a void
+
+### 2. Support tickets — this is where bug reports go
+
+- `GET /support/meta` — categories, statuses, limits
+- `POST /support/tickets` — multipart. `category` (`bug`, `payment`, `account`,
+  `content_appeal`, `other`), `subject`, `body`, up to 5 `attachments[]` (jpg,
+  png, webp, 5MB each), plus **`app_version`, `platform`, `device_model`,
+  `os_version`** — please send these automatically, they are what makes a bug
+  report actionable
+- `GET /support/tickets` — list with `status`, `unread_count`, `last_reply_by`
+- `GET /support/tickets/{id}` — full thread; opening it marks replies read
+- `POST /support/tickets/{id}/messages` — reply, multipart, attachments allowed
+- `PATCH /support/tickets/{id}/close` — user closes their own ticket
+
+Rules to reflect in the UI: a `429` means the user has 5 open tickets already; a
+closed ticket returns `422` on reply (offer "open a new ticket"); replying to a
+**resolved** ticket reopens it automatically. Staff internal notes exist but are
+never returned to the app.
+
+### 3. Ticket notifications use two new enum values
+
+`GET /notifications` can now return `type: "support"` with
+`entity_type: "support_ticket"` and `entity_id` = the ticket id. Route those to
+the ticket thread. **Treat unknown `type`/`entity_type` values defensively** —
+show the title and body and fall back to no deep link, rather than crashing.
+
+### 4. Fixed: missing records were returning 500 instead of 404
+
+A real backend bug we found and fixed. `GET /profiles/{unknown-username}`,
+missing posts, missing conversations and similar were answering **500**; they now
+answer **404** with the normal `{ status_code: 0, message }` shape. Rate limiting
+now answers **429** instead of 500, unknown endpoints **404**, and wrong HTTP
+methods **405**. If you had special-casing for 500s here, it can go.
+
+---
+
 ## 2026-08-10 — Login 2FA and 24-hour sessions are OFF for the app ✅ REVERSAL
 
 **This reverses the breaking change from 2026-08-08.** Two-factor login and the

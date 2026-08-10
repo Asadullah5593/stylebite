@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\MemoryController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\SupportTicketController;
 use App\Http\Controllers\Api\UserBlockController;
 use App\Http\Controllers\Api\UserSearchController;
 use App\Http\Controllers\Api\ViewController;
@@ -108,6 +110,19 @@ Route::middleware('session.auth')->group(function (): void {
     Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'read']);
     Route::delete('/notifications/{notificationId}', [NotificationController::class, 'destroy']);
     Route::delete('/notifications/clear', [NotificationController::class, 'clear']);
+
+    // Reports — the inbound source for the admin moderation queue.
+    Route::get('/reports/meta', [ReportController::class, 'meta']);
+    Route::get('/reports/mine', [ReportController::class, 'mine']);
+    Route::post('/reports', [ReportController::class, 'store'])->middleware('throttle:20,60');
+
+    // Support tickets (bug reports live here, not in /reports).
+    Route::get('/support/meta', [SupportTicketController::class, 'meta']);
+    Route::get('/support/tickets', [SupportTicketController::class, 'index']);
+    Route::post('/support/tickets', [SupportTicketController::class, 'store'])->middleware('throttle:10,60');
+    Route::get('/support/tickets/{ticketId}', [SupportTicketController::class, 'show']);
+    Route::post('/support/tickets/{ticketId}/messages', [SupportTicketController::class, 'reply'])->middleware('throttle:30,60');
+    Route::patch('/support/tickets/{ticketId}/close', [SupportTicketController::class, 'close']);
 
     Route::get('/contests/home', [ContestController::class, 'home']);
     Route::get('/contests/admin', [ContestController::class, 'adminContests']);

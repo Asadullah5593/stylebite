@@ -114,6 +114,23 @@ class AppServiceProvider extends ServiceProvider
             $view->with('settingsTabCounts', SettingsController::tabCounts());
         });
 
+        // Tickets waiting on staff, shown as a badge in the sidebar. Gated on
+        // the permission so the query never runs for staff who cannot see
+        // tickets, and it is one indexed COUNT on the (status, last_reply_at)
+        // index rather than a scan.
+        View::composer('admin.partials.sidebar', function ($view) {
+            $needsReply = 0;
+
+            if (auth()->check() && auth()->user()->can('tickets.view')) {
+                $needsReply = \App\Models\SupportTicket::query()
+                    ->where('last_reply_by', 'user')
+                    ->whereNotIn('status', \App\Models\SupportTicket::FINISHED_STATUSES)
+                    ->count();
+            }
+
+            $view->with('supportNeedsReply', $needsReply);
+        });
+
         View::composer('admin.partials.header', function ($view) {
             $adminUser = auth()->user();
 

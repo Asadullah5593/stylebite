@@ -34,6 +34,76 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-10 — Section 3.9: user reports and support tickets 🎟️
+
+Completes 3.9. **Run the migration on deploy** — it adds the ticket tables, three
+new permissions, and two notification enum values. No new cron entries.
+
+### Users can finally report things
+
+The moderation queue had no inbound source: a full review UI over a table only
+test files ever wrote to, and no way at all for a user to report abuse — an app
+store exposure for a user-generated-content app. The app can now file reports on
+**users, posts, comments, replies, messages and contests**, and they land in
+**Moderation → Reports** exactly as the existing queue expects, with the target
+flagged as reported in the content lists.
+
+Abuse guards, because a report endpoint is a spam vector: one open report per
+person per target (a repeat returns the original rather than piling up), you
+cannot report your own content or yourself, a message can only be reported by
+someone actually in that conversation, and the endpoint is rate limited.
+
+**Bug reports deliberately do not come here** — they are a ticket category, since
+a bug needs a conversation and device details that the reports table cannot hold.
+
+### Support Tickets (new sidebar item, Trust & Safety)
+
+Its own schema end to end — the chat tables are untouched, as agreed.
+
+- **Categories:** Bug · Payment/Payout · Account & Login · Content appeal · Other
+- **Statuses:** Open → In progress → Waiting on user → Resolved → Closed
+- **Priorities:** Low / Normal / High / Urgent, and the queue sorts urgent first
+- **Reference** like `TK-000042` that a user can quote
+- **Screenshots** — up to 5 images per message
+- **Device details** (app version, platform, model, OS) captured automatically,
+  which is what makes a bug report actionable
+
+Four tiles at the top double as filters: **Waiting on us**, Unassigned, Urgent,
+Open total. The sidebar shows a red count of tickets waiting on staff, so the
+queue is visible without opening it.
+
+**Internal notes** are staff-only: they never reach the app, never notify the
+user, and never move the ticket's state. The switch sits next to the reply box.
+
+Behaviour worth knowing: a staff reply moves the ticket to *Waiting on user* and
+sends them a push. A user reply to a **resolved** ticket reopens it — evidently
+it was not solved. A **closed** ticket cannot be replied to. Status changes leave
+a system note in the thread, so it explains itself. Users are capped at 5 open
+tickets.
+
+### Who can do what
+
+| Permission | Roles |
+|---|---|
+| `tickets.view` | Admin, Super Admin, Support Agent, Content Moderator |
+| `tickets.reply` | Admin, Super Admin, Support Agent |
+| `tickets.manage` (status, priority, assignment) | Admin, Super Admin, Support Agent |
+
+Content Moderator gets read-only access so an appeal can be seen in context
+without being answered by the wrong person.
+
+### Also fixed: API 404s were returning 500
+
+Found while building this. Laravel converts `ModelNotFoundException` into a
+`NotFoundHttpException` **before** render callbacks run, so this app's
+`ModelNotFoundException` handler could never fire. Every `findOrFail` /
+`firstOrFail` across the API — profiles, follows, chat, posts, feed — answered
+**500 instead of 404**, and middleware rate limiting answered **500 instead of
+429**. Both are now correct, along with unknown routes (404) and wrong methods
+(405).
+
+---
+
 ## 2026-08-10 — Admin panel 2FA + 24-hour dashboard sessions 🔐
 
 Two-factor and the session cap now apply to the **admin panel**, which is where

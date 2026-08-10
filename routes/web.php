@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SocialController;
 use App\Http\Controllers\Admin\SearchController;
+use App\Http\Controllers\Admin\SupportTicketController;
 use App\Http\Controllers\Admin\UserController;
 use App\Mail\GlobalAppMail;
 use Illuminate\Support\Facades\Mail;
@@ -202,6 +203,15 @@ Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->gr
         Route::patch('/reports/{report}', [ModerationController::class, 'updateReport'])->name('reports.update')->middleware('permission:moderation.manage');
         Route::patch('/reports/{report}/target', [ModerationController::class, 'updateTarget'])->name('reports.target.update')->middleware('permission:moderation.manage');
         Route::patch('/actions/{moderationAction}/expiry', [ModerationController::class, 'updateActionExpiry'])->name('actions.expiry')->middleware('permission:moderation.manage');
+    });
+
+     // Support tickets
+     Route::prefix('support')->name('support.')->group(function () {
+        Route::get('/', [SupportTicketController::class, 'index'])->name('index')->middleware('permission:tickets.view');
+        Route::get('/{ticket}', [SupportTicketController::class, 'show'])->name('show')->middleware('permission:tickets.view');
+        Route::post('/{ticket}/reply', [SupportTicketController::class, 'reply'])->name('reply')->middleware('permission:tickets.reply');
+        Route::patch('/{ticket}', [SupportTicketController::class, 'update'])->name('update')->middleware('permission:tickets.manage');
+        Route::patch('/{ticket}/claim', [SupportTicketController::class, 'claim'])->name('claim')->middleware('permission:tickets.manage');
     });
 
      Route::prefix('activity')->name('activity.')->middleware('permission:activity.view')->group(function () {
