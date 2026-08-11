@@ -294,7 +294,11 @@ class FeedInteractionApiTest extends TestCase
             'status' => 'sent',
         ]);
 
-        Http::assertSentCount(2);
+        // Assert the send itself, not the total request count: the OAuth token is
+        // cached in a function static for its full lifetime, so whether a token
+        // request happens here depends on what ran earlier in the process. Counting
+        // all requests made this test pass only by alphabetical luck.
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'messages:send'));
         $this->assertSame(1, PushNotificationLog::query()->count());
     }
 

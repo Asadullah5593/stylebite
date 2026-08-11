@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastAuthController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\ContestController;
+use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\EarningsController;
 use App\Http\Controllers\Api\FeedController;
 use App\Http\Controllers\Api\FollowController;
@@ -41,6 +42,11 @@ Route::get('/legal/{key}', [LegalDocumentController::class, 'show']);
 Route::middleware('session.auth')->group(function (): void {
     // Needs a valid token: logout revokes the session it was called with.
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Push tokens rotate while a user stays signed in, so registration cannot
+    // live only in the login flow.
+    Route::post('/devices/push-token', [DeviceTokenController::class, 'store']);
+    Route::delete('/devices/push-token', [DeviceTokenController::class, 'destroy']);
 
     Route::get('/legal/pending/all', [LegalDocumentController::class, 'pending']);
     Route::post('/legal/{key}/accept', [LegalDocumentController::class, 'accept']);

@@ -34,6 +34,54 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-11 — Fixed: dashboard push notifications were not arriving 🔔
+
+**Symptom:** campaigns sent from Notifications → Push Sender showed as `completed`
+with a real recipient count, but nothing reached the handsets. Chat notifications
+worked, which made it look like an app-side problem.
+
+**It was not the queue, the credentials, or the payload.** The cron worker was
+running, campaigns completed, and FCM was being reached successfully — some pushes
+in the same batch returned real message IDs. The live push log had the answer:
+
+```
+"The registration token is not a valid FCM registration token"
+INVALID_ARGUMENT — field: message.token
+```
+
+**Root cause:** a device's push token was only ever written during login. FCM
+rotates tokens by itself (app reinstall, cleared storage, restore onto a new phone,
+periodic refresh), and a user who stays signed in never returns to the login path.
+The database kept the dead string indefinitely, so every notification to that
+device failed. Chat appeared to work because those particular recipients happened
+to have recently-issued tokens.
+
+**Two fixes:**
+
+1. **A push token can now be refreshed without logging in again**
+   (`POST /api/devices/push-token`). The mobile app has to call this on launch and
+   whenever Firebase hands it a new token — that part needs an app release.
+2. **Dead tokens are deleted automatically.** When FCM says `UNREGISTERED` or
+   rejects the token specifically, the device row is removed instead of being
+   retried forever. Users → Devices will therefore shrink as stale rows clear out;
+   that is the fix working, not data loss. The push log survives the deletion, so
+   the history stays auditable.
+
+The deletion is deliberately narrow: FCM also answers `INVALID_ARGUMENT` for a
+malformed **image URL**, and treating that as a dead token would unregister a
+perfectly good handset because someone typed a bad URL into the campaign form. Only
+a violation naming `message.token` counts.
+
+> **Until the app ships the refresh call**, expect some `failed` rows on new
+> campaigns — those are devices whose tokens rotated. They clear themselves now,
+> and each affected user re-registers on their next login.
+
+**Diagnosing this in future:** Notifications → Push Logs shows FCM's raw response
+per device. A campaign that reports `sent_count: 0, failed_count: N` with token
+errors there means stale tokens, not a broken sender.
+
+---
+
 ## 2026-08-11 — Logout API (affects Users → Sessions / Devices) 🔑
 
 The mobile app had no logout endpoint, so signing out only cleared the app's local

@@ -555,6 +555,16 @@ if (! function_exists('stylebite_notify_user')) {
                     $sentAt = $pushResult['sent_at'];
                 } else {
                     $hasFailedPush = true;
+
+                    // FCM has told us this token will never address anything
+                    // again. Keeping the row meant every future notification
+                    // retried a dead token forever and reported a failure, which
+                    // is what made a campaign look sent-but-undelivered. The push
+                    // log survives the delete (device_token_id is nullOnDelete),
+                    // so the evidence is not lost.
+                    if (stylebite_push_token_is_dead($pushResult['provider_response'])) {
+                        $deviceToken->delete();
+                    }
                 }
             }
         } catch (\Throwable $exception) {
@@ -895,5 +905,62 @@ if (! function_exists('stylebite_broadcast')) {
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+}
+
+if (! function_exists('stylebite_push_token_is_dead')) {
+    /**
+     * Does this FCM error mean the token itself is finished?
+     *
+     * Only two responses justify deleting a device row. UNREGISTERED means the app
+     * was uninstalled or the token was replaced; a token-scoped INVALID_ARGUMENT
+     * means the string is not an FCM token at all.
+     *
+     * INVALID_ARGUMENT on its own is NOT enough — FCM returns it for a malformed
+     * image URL or payload too, and treating that as a dead token would
+     * unregister a perfectly good handset because an admin typed a bad image URL.
+     * Hence the check that the violation is specifically about message.token.
+     */
+    function stylebite_push_token_is_dead(?string $providerResponse): bool
+    {
+        if ($providerResponse === null || trim($providerResponse) === '') {
+            return false;
+        }
+
+        $decoded = json_decode($providerResponse, true);
+
+        if (! is_array($decoded)) {
+            return false;
+        }
+
+        $error = $decoded['error'] ?? [];
+        $status = (string) ($error['status'] ?? '');
+        $details = $error['details'] ?? [];
+
+        $errorCodes = [];
+        $violationFields = [];
+
+        foreach (is_array($details) ? $details : [] as $detail) {
+            if (! is_array($detail)) {
+                continue;
+            }
+
+            if (isset($detail['errorCode'])) {
+                $errorCodes[] = (string) $detail['errorCode'];
+            }
+
+            foreach ($detail['fieldViolations'] ?? [] as $violation) {
+                if (is_array($violation) && isset($violation['field'])) {
+                    $violationFields[] = (string) $violation['field'];
+                }
+            }
+        }
+
+        if (in_array('UNREGISTERED', $errorCodes, true) || $status === 'UNREGISTERED') {
+            return true;
+        }
+
+        return ($status === 'INVALID_ARGUMENT' || in_array('INVALID_ARGUMENT', $errorCodes, true))
+            && in_array('message.token', $violationFields, true);
     }
 }

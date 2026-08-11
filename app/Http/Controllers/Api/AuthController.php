@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSession;
 use App\Models\UserSetting;
+use App\Services\DeviceTokenRegistrar;
 use App\Services\EmailTemplates;
 use App\Services\MediaOptimizer;
 use App\Services\UserModerationService;
@@ -852,43 +853,13 @@ class AuthController extends Controller
             ]);
         }
 
-        if (! in_array($platform, ['ios', 'android', 'web'], true)) {
-            throw ValidationException::withMessages([
-                'platform' => ['Push token storage only supports ios, android, or web platforms.'],
-            ]);
-        }
-
-        DB::transaction(function () use ($user, $deviceId, $platform, $pushToken, $request): void {
-            $existingForDevice = DeviceToken::query()
-                ->where('user_id', $user->id)
-                ->where('device_id', $deviceId)
-                ->first();
-
-            $existingForPushToken = DeviceToken::query()
-                ->where('platform', $platform)
-                ->where('push_token', $pushToken)
-                ->first();
-
-            if (
-                $existingForDevice
-                && $existingForPushToken
-                && $existingForDevice->id !== $existingForPushToken->id
-            ) {
-                $existingForDevice->delete();
-            }
-
-            $deviceToken = $existingForPushToken ?? $existingForDevice ?? new DeviceToken;
-
-            $deviceToken->forceFill([
-                'user_id' => $user->id,
-                'device_id' => $deviceId,
-                'platform' => $platform,
-                'push_token' => $pushToken,
-                'app_version' => $request->input('app_version'),
-                'is_active' => true,
-                'last_used_at' => now(),
-            ])->save();
-        });
+        app(DeviceTokenRegistrar::class)->register(
+            $user,
+            $deviceId,
+            $platform,
+            $pushToken,
+            $request->input('app_version'),
+        );
     }
 
     private function generateUniqueUsername(string $name, string $email): string

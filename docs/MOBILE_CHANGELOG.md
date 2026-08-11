@@ -8,6 +8,64 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-11 — Push token refresh 🆕 NEW ENDPOINT · 🔴 REQUIRED
+
+**This is why admin-dashboard notifications were not arriving.** Diagnosed from live
+logs: FCM was rejecting our sends with
+
+```
+"The registration token is not a valid FCM registration token"  (INVALID_ARGUMENT, field: message.token)
+```
+
+Root cause is a backend gap plus an app gap. **A push token was only ever saved
+during login.** FCM rotates tokens on its own — app reinstall, cleared storage,
+restore onto a new handset, or Firebase's periodic refresh — and a user who stays
+signed in for weeks never hits the login path again. So the database kept the old
+string forever and every notification to that device failed. Chat looked fine
+because the accounts being chatted with happened to have fresh tokens.
+
+### The endpoint
+
+```
+POST /devices/push-token        (Authorization: Bearer <token>)
+
+{ "device_id": "A1B2C3D4-E5F6", "platform": "android", "push_token": "<fcm token>", "app_version": "1.5.0" }
+```
+
+`platform` must be `ios`, `android` or `web`. Response is `status_code: 1`.
+
+### What you need to do — please treat this as required
+
+1. **Call it on every app launch**, after the session is restored.
+2. **Call it from your FCM `onTokenRefresh` / `onNewToken` handler.** This is the
+   one that actually matters — that callback is the only warning we get that the
+   old token just died.
+3. Keep sending `device_id` + `push_token` on login as you already do. Same
+   `device_id` as always, so the row is updated rather than duplicated.
+
+Without step 2, a user's notifications silently stop working the next time
+Firebase rotates their token, and nothing surfaces it until someone reads the push
+logs.
+
+### Also available
+
+```
+DELETE /devices/push-token      { "device_id": "..." }
+```
+
+Unregisters this device **without ending the session** — for a "turn off
+notifications" toggle in settings. To log out, use `POST /auth/logout` (below),
+which does both.
+
+### Backend side, for information
+
+Dead tokens are now deleted automatically when FCM reports `UNREGISTERED` or a
+token-scoped `INVALID_ARGUMENT`, instead of being retried forever. So a rotated
+token stops producing failures — but it also means the device receives nothing at
+all until the app registers the new one. Hence step 2.
+
+---
+
 ## 2026-08-11 — Logout endpoint 🆕 NEW ENDPOINT · ⚠️ PLEASE ADOPT
 
 There was no logout API at all. On logout the app could only drop its local token,
