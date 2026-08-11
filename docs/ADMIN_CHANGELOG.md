@@ -34,6 +34,27 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-11 — Logout API (affects Users → Sessions / Devices) 🔑
+
+The mobile app had no logout endpoint, so signing out only cleared the app's local
+token. Two visible consequences in the panel:
+
+- **Users → Sessions** kept showing signed-out sessions as live until they aged out
+  at the 24-hour cap, so the session list overstated who was actually online
+- **Users → Devices** kept the device's FCM token registered, so a push campaign
+  still targeted handsets nobody was signed in on — the recipient count was real
+  but some of those deliveries went nowhere useful
+
+`POST /api/auth/logout` now revokes that session immediately and deletes that
+device's token row. It is **per device**: logging out on a phone leaves the same
+user's tablet session live and still pushable, which is why the sessions list can
+legitimately show more than one row per user.
+
+Nothing to configure. Once the app adopts it, session and device counts start
+reflecting reality rather than the 24-hour ceiling.
+
+---
+
 ## 2026-08-10 — Editable legal pages + compliance exports 📄
 
 The last of the cross-cutting requirements: Privacy Policy and Terms are editable

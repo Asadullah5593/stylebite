@@ -39,6 +39,9 @@ Route::prefix('auth')->group(function (): void {
 Route::get('/legal/{key}', [LegalDocumentController::class, 'show']);
 
 Route::middleware('session.auth')->group(function (): void {
+    // Needs a valid token: logout revokes the session it was called with.
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+
     Route::get('/legal/pending/all', [LegalDocumentController::class, 'pending']);
     Route::post('/legal/{key}/accept', [LegalDocumentController::class, 'accept']);
 

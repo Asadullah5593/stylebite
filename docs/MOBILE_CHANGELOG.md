@@ -8,6 +8,57 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-11 — Logout endpoint 🆕 NEW ENDPOINT · ⚠️ PLEASE ADOPT
+
+There was no logout API at all. On logout the app could only drop its local token,
+which left the session valid server-side for the rest of its 24 hours and left the
+FCM token registered — so a signed-out handset kept receiving push.
+
+```
+POST /auth/logout        (Authorization: Bearer <token>)
+```
+
+Body is optional. Response:
+
+```json
+{ "status_code": 1, "message": "Logged out successfully.", "push_token_removed": true }
+```
+
+**What it does:** revokes the session the call was made with (the token is dead
+immediately) and **deletes that device's FCM token row**.
+
+### This is per-device, and it works out of the box
+
+The server identifies the device from the **session**, not from what you post — the
+`device_id` you sent at login is on the session row. So a plain
+`POST /auth/logout` with no body is correct and sufficient.
+
+Logging out on a phone leaves a tablet signed in and still receiving notifications.
+
+Only send `push_token` (or `device_id`) in the body as a **fallback for sessions
+created without a `device_id`** — i.e. if your login call omitted it. If nothing
+identifies the device, the session is still revoked but no token is deleted, and
+you get `push_token_removed: false`; it deliberately does not guess, because
+guessing could kill push on the user's other handset.
+
+### Handling the response
+
+- `200` — done. Clear local state.
+- **`401` — treat as success.** The token was already invalid (expired, or logout
+  called twice). Clear local state and move on; do not show an error or block the
+  user on the logout screen.
+- Don't block logout on the network either: clear local state regardless, and fire
+  this call so the server side is cleaned up too.
+
+### After logout, push stops
+
+The token row is deleted, so notifications for that user are recorded and marked
+`skipped` rather than delivered. Next login re-registers the token normally (keep
+sending `device_id` + `push_token` on login as you do today) — deleting does not
+lock the device out of notifications.
+
+---
+
 ## 2026-08-10 — Legal documents available over the API 🆕 NEW ENDPOINTS
 
 **Nothing breaks and nothing is required of the app.** Privacy Policy and Terms are

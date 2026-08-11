@@ -374,6 +374,66 @@ class AuthController extends Controller
         return $this->providerLogin($request, 'apple');
     }
 
+    /**
+     * Log the current device out.
+     *
+     * Two things have to happen together, and neither is enough alone. The
+     * session is revoked so the bearer token stops working immediately — without
+     * that, "logged out" still holds a token valid for the rest of its 24 hours.
+     * And this device's push token is deleted, so notifications stop going to a
+     * handset nobody is signed in on.
+     *
+     * Scoped to **one device**. The device is identified from the session row
+     * server-side, not from whatever the client sends, and every lookup is
+     * constrained to the authenticated user — otherwise posting somebody else's
+     * push token would unregister their phone. Logging out on a phone leaves a
+     * tablet's session and notifications untouched.
+     */
+    #[BodyParameter('push_token', description: 'Optional. Only needed as a fallback when the session was created without a device_id.', type: 'string', example: 'fcm_token_abc123')]
+    #[BodyParameter('device_id', description: 'Optional fallback, same as push_token.', type: 'string', example: 'A1B2C3D4-E5F6')]
+    public function logout(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'push_token' => ['nullable', 'string', 'max:512'],
+            'device_id' => ['nullable', 'string', 'max:191'],
+        ]);
+
+        $user = $request->user();
+        $session = $request->attributes->get('auth_session');
+
+        // The session's own device_id is the trustworthy answer; the request body
+        // is only a fallback for sessions issued without one.
+        $deviceId = $session?->device_id
+            ?: ($validated['device_id'] ?? null);
+
+        $removedTokens = DB::transaction(function () use ($user, $session, $deviceId, $validated): int {
+            $session?->forceFill([
+                'revoked_at' => now(),
+                'expires_at' => now(),
+            ])->save();
+
+            $tokens = DeviceToken::query()->where('user_id', $user->id);
+
+            if ($deviceId !== null) {
+                $tokens->where('device_id', $deviceId);
+            } elseif (($validated['push_token'] ?? null) !== null) {
+                $tokens->where('push_token', $validated['push_token']);
+            } else {
+                // Nothing identifies the device, so deleting anything would be a
+                // guess that could silently kill push on the user's other phone.
+                return 0;
+            }
+
+            return $tokens->delete();
+        });
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Logged out successfully.',
+            'push_token_removed' => $removedTokens > 0,
+        ]);
+    }
+
     public function resetPassword(Request $request): JsonResponse
     {
         $validated = $request->validate([
