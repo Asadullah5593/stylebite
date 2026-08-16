@@ -233,6 +233,12 @@
     
     @media (min-width: 992px) {
         .admin-sidebar {
+            /* Bootstrap gives .offcanvas-lg display:flex only BELOW lg, and the
+               .flex-column utility sets flex-direction alone. So above lg this
+               was a plain block: flex-grow-1 and overflow-auto on the nav did
+               nothing and the menu was simply clipped. */
+            display: flex;
+            flex-direction: column;
             position: fixed;
             top: 0;
             left: 0;
