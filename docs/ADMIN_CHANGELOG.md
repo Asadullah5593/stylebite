@@ -34,6 +34,23 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-11 — Fixed: the sidebar could not be scrolled 🧭
+
+With every module enabled the navigation is taller than a laptop viewport, and the
+bottom entries (System → Legal Documents, Settings) were simply unreachable —
+nothing scrolled.
+
+The nav already had `overflow-auto`, but its parent used `min-height: 100vh`, which
+does not bound anything: the column grew to fit its content and `overflow: hidden`
+clipped the rest off. The scrollable child also needed `min-height: 0`, since a flex
+item's automatic minimum size is its content and it will refuse to shrink without
+it. Both fixed, plus `100dvh` so mobile browser chrome does not eat the last item.
+
+The scrollbar is now a thin dim line instead of hidden entirely — with a menu this
+tall there has to be some hint that more exists below.
+
+---
+
 ## 2026-08-11 — Fixed: dashboard push notifications were not arriving 🔔
 
 **Symptom:** campaigns sent from Notifications → Push Sender showed as `completed`

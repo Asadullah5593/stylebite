@@ -188,11 +188,47 @@
 <style>
     .admin-sidebar {
         width: min(84vw, 300px);
-        min-height: 100vh;
+        /* A fixed height, not min-height: the nav inside only scrolls if its
+           flex parent is actually bounded. With min-height the column just grew
+           past the viewport and overflow:hidden clipped the last items off. */
+        height: 100vh;
+        height: 100dvh;
         background: var(--sb-sidebar-bg);
         border-right: 1px solid var(--sb-sidebar-border);
         box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
         overflow: hidden;
+    }
+
+    /* A flex item's automatic minimum size is its content, so without this the
+       nav refuses to shrink and overflow-auto never engages. */
+    .admin-sidebar > nav {
+        min-height: 0;
+        overscroll-behavior: contain;
+    }
+
+    /* Thin, dim scrollbar rather than none: the menu is taller than a laptop
+       viewport, so there has to be some hint that it scrolls. */
+    .admin-sidebar > nav.scrollbar-hidden {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+    }
+
+    .admin-sidebar > nav.scrollbar-hidden::-webkit-scrollbar {
+        display: block;
+        width: 6px;
+    }
+
+    .admin-sidebar > nav.scrollbar-hidden::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 3px;
+    }
+
+    .admin-sidebar > nav.scrollbar-hidden::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.32);
+    }
+
+    .admin-sidebar > nav.scrollbar-hidden::-webkit-scrollbar-track {
+        background: transparent;
     }
     
     @media (min-width: 992px) {
@@ -205,6 +241,7 @@
             max-width: var(--admin-sidebar-width);
             flex: 0 0 var(--admin-sidebar-width);
             height: 100vh;
+            height: 100dvh;
             z-index: 40;
         }
     }
