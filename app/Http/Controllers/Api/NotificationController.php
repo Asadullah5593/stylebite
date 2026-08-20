@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -13,14 +14,21 @@ class NotificationController extends Controller
 {
     private const PER_PAGE = 10;
 
+    /**
+     * Notification types the bell feed shows. 'message' rows keep being created
+     * on every chat message — they drive the FCM push and its delivery logs —
+     * but chat carries its own unread badge, so surfacing them here would count
+     * the same signal twice.
+     */
+    private const HIDDEN_TYPES = ['message'];
+
     public function index(Request $request): JsonResponse
     {
         $page = (int) $request->integer('page', 1);
         $user = $request->user();
 
-        $paginator = Notification::query()
+        $paginator = $this->visibleNotifications($user->id)
             ->with('actor.profile')
-            ->where('recipient_user_id', $user->id)
             ->latest('created_at')
             ->latest('id')
             ->paginate(self::PER_PAGE, ['*'], 'page', $page);
@@ -32,8 +40,7 @@ class NotificationController extends Controller
                 ->map(fn (Notification $notification) => $this->notificationPayload($notification))
                 ->values(),
             'pagination' => $this->paginationPayload($paginator),
-            'unread_count' => Notification::query()
-                ->where('recipient_user_id', $user->id)
+            'unread_count' => $this->visibleNotifications($user->id)
                 ->where('is_read', false)
                 ->count(),
         ]);
@@ -61,8 +68,7 @@ class NotificationController extends Controller
     {
         $userId = $request->user()->id;
 
-        $updatedCount = Notification::query()
-            ->where('recipient_user_id', $userId)
+        $updatedCount = $this->visibleNotifications($userId)
             ->where('is_read', false)
             ->update([
                 'is_read' => true,
@@ -93,15 +99,25 @@ class NotificationController extends Controller
     {
         $userId = $request->user()->id;
 
-        $deletedCount = Notification::query()
-            ->where('recipient_user_id', $userId)
-            ->delete();
+        // Scoped to visible types: clearing must not delete the hidden 'message'
+        // rows, which double as the push-delivery audit trail.
+        $deletedCount = $this->visibleNotifications($userId)->delete();
 
         return response()->json([
             'status_code' => 1,
             'message' => 'Notifications cleared successfully.',
             'deleted_count' => $deletedCount,
         ]);
+    }
+
+    /**
+     * @return Builder<Notification>
+     */
+    private function visibleNotifications(int $userId)
+    {
+        return Notification::query()
+            ->where('recipient_user_id', $userId)
+            ->whereNotIn('type', self::HIDDEN_TYPES);
     }
 
     private function findUserNotification(int $userId, int $notificationId): Notification

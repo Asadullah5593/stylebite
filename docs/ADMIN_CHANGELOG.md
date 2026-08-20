@@ -34,6 +34,23 @@ system never credits an unconverted amount).
 
 ---
 
+## 2026-08-20 — Chat-message rows removed from the user notification feed
+
+Requested by the mobile team. `type = 'message'` notification rows are still
+**created** on every chat message — they drive the FCM push and the push-log audit
+trail (Admin → Push Logs is unaffected) — but the mobile bell feed
+(`GET /api/notifications`) no longer lists or counts them, since chat carries its
+own unread badge. "Mark all read" and "Clear" on the user side now also skip these
+hidden rows, so clearing the bell no longer deletes push-delivery history.
+
+Also fixed while testing: the mobile `DELETE /notifications/clear` endpoint had
+never worked — route ordering let the `{notificationId}` wildcard swallow the word
+"clear" and the call 500'd. Fixed by registering `clear` before the wildcard.
+
+**No migrations, no config, no new dependencies** — a plain `bash ~/deploy.sh`.
+
+---
+
 ## 2026-08-11 — Fixed: the sidebar could not be scrolled 🧭
 
 With every module enabled the navigation is taller than a laptop viewport, and the

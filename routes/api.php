@@ -125,8 +125,9 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'readAll']);
     Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'read']);
-    Route::delete('/notifications/{notificationId}', [NotificationController::class, 'destroy']);
+    // 'clear' must be registered before the wildcard, or it is captured as an id.
     Route::delete('/notifications/clear', [NotificationController::class, 'clear']);
+    Route::delete('/notifications/{notificationId}', [NotificationController::class, 'destroy']);
 
     // Reports — the inbound source for the admin moderation queue.
     Route::get('/reports/meta', [ReportController::class, 'meta']);

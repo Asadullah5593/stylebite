@@ -8,6 +8,32 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-08-20 — `message` notifications removed from the bell feed
+
+As requested: chat has its own unread badge, so `type: "message"` rows no longer
+appear anywhere in `GET /notifications`. You can drop the client-side filter.
+
+- **List**: `type = "message"` is excluded from the query itself.
+- **`unread_count`**: excludes unread message notifications — the bell badge now
+  matches what the list can actually show.
+- **Pagination**: `total`, `last_page`, `has_more_pages` reflect the filtered
+  count, so "load more" never fetches a page that renders nothing new.
+- **`PATCH /notifications/read-all`**: `updated_count` counts only visible
+  notifications.
+- **`DELETE /notifications/clear`**: `deleted_count` likewise — hidden message
+  rows are not deleted (they double as the push-delivery audit trail).
+
+Push notifications for chat messages are unaffected — the device push still fires;
+only the bell feed stops listing them.
+
+### Fixed: `DELETE /notifications/clear` was broken 🐛
+Found while testing this: the `clear` route was registered after the
+`/notifications/{notificationId}` wildcard, so "clear" was being captured as an id
+and the call returned a `500`. It has never worked. Fixed — if you had worked
+around it (e.g. deleting one by one), the endpoint is now usable.
+
+---
+
 ## 2026-08-11 — Push token refresh 🆕 NEW ENDPOINT · 🔴 REQUIRED
 
 **This is why admin-dashboard notifications were not arriving.** Diagnosed from live
