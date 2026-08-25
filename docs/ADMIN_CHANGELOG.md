@@ -7,6 +7,40 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-08-26 — Fixed: sidebar counts were hardcoded placeholders 🔢
+
+The numbers beside each sidebar section (Users 7, Posts 4, Engagement 6 …) were
+**static placeholder values** left in the template — they never read the database.
+They are now real counts.
+
+Each badge equals the count on that section's **landing tab**, so the sidebar
+number is always the number you see after clicking through:
+
+| Section | Counts |
+|---|---|
+| Users | All users (incl. deleted) |
+| Social Graph | Follows |
+| Posts | All posts |
+| Comments | Comments |
+| Engagement | Post likes |
+| Media & Tags | Tags |
+| Memories | Memories |
+| Messaging | Messages |
+| Notifications | Notifications |
+| Moderation | Reports (all) |
+| Contests | Contests |
+| Earnings | Transactions |
+
+- **Refreshed once a minute**, shared across all admins — twelve `COUNT(*)`s on
+  every page load would add up as the tables grow. A record you just created may
+  take up to 60s to appear in the badge; the page you're on is always live.
+- Large numbers are shortened (`1.5k`, `2.3M`) so they fit the badge.
+- Support's "needs reply" badge is unchanged (it was already real and live).
+
+**No migrations, no config, no new dependencies** — a plain `bash ~/deploy.sh`.
+
+---
+
 ## ⏰ Required cron jobs (hPanel → Advanced → Cron Jobs)
 
 | Schedule | Command | Purpose |

@@ -1,22 +1,3 @@
-@php
-    $sidebarCounts = $sidebarCounts ?? [
-        'users' => 7,
-        'social' => 2,
-        'posts' => 4,
-        'comments' => 2,
-        'engagement' => 6,
-        'media' => 2,
-        'memories' => 3,
-        'messaging' => 5,
-        'notifications' => 3,
-        'moderation' => 2,
-        'activity' => 0,
-        'contests' => 8,
-        'earnings' => 3,
-        'settings' => 0,
-    ];
-@endphp
-
 <aside id="sidebar" tabindex="-1" aria-label="Admin navigation"
        class="admin-sidebar offcanvas-lg offcanvas-start text-white flex-column">
     <div class="sidebar-brand">
@@ -48,7 +29,7 @@
             @can('users.view')
             <a href="{{ route('admin.users.all_users') }}" class="nav-link {{ request()->routeIs('admin.users*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-people"></i> <span>Users</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['users'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['users'] ?? 0) }}</span>
             </a>
             @endcan
             @can('roles.view')
@@ -59,7 +40,7 @@
             @can('social.view')
             <a href="{{ route('admin.social.follows') }}" class="nav-link {{ request()->routeIs('admin.social*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-diagram-3"></i> <span>Social Graph</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['social'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['social'] ?? 0) }}</span>
             </a>
             @endcan
         </div>
@@ -72,31 +53,31 @@
             @can('posts.view')
             <a href="{{ route('admin.posts.all_posts') }}" class="nav-link {{ request()->routeIs('admin.posts*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-file-earmark-text"></i> <span>Posts</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['posts'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['posts'] ?? 0) }}</span>
             </a>
             @endcan
             @can('comments.view')
             <a href="{{ route('admin.comments.comments') }}" class="nav-link {{ request()->routeIs('admin.comments*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-chat-left"></i> <span>Comments</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['comments'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['comments'] ?? 0) }}</span>
             </a>
             @endcan
             @can('engagement.view')
             <a href="{{ route('admin.engagement.post_likes') }}" class="nav-link {{ request()->routeIs('admin.engagement*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-heart"></i> <span>Engagement</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['engagement'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['engagement'] ?? 0) }}</span>
             </a>
             @endcan
             @can('media.view')
             <a href="{{ route('admin.media.tags') }}" class="nav-link {{ request()->routeIs('admin.media*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-image"></i> <span>Media & Tags</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['media'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['media'] ?? 0) }}</span>
             </a>
             @endcan
             @can('memories.view')
             <a href="{{ route('admin.memories.memories') }}" class="nav-link {{ request()->routeIs('admin.memories*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-bookmark-heart"></i> <span>Memories</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['memories'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['memories'] ?? 0) }}</span>
             </a>
             @endcan
         </div>
@@ -109,13 +90,13 @@
             @can('messaging.view')
             <a href="{{ route('admin.messaging.messages') }}" class="nav-link {{ request()->routeIs('admin.messaging*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-send"></i> <span>Messaging</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['messaging'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['messaging'] ?? 0) }}</span>
             </a>
             @endcan
             @can('notifications.view')
             <a href="{{ route('admin.notifications.notifications') }}" class="nav-link {{ request()->routeIs('admin.notifications*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-bell"></i> <span>Notifications</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['notifications'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['notifications'] ?? 0) }}</span>
             </a>
             @endcan
         </div>
@@ -136,7 +117,7 @@
             @can('moderation.view')
             <a href="{{ route('admin.moderation.reports') }}" class="nav-link {{ request()->routeIs('admin.moderation*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-shield"></i> <span>Moderation</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['moderation'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['moderation'] ?? 0) }}</span>
             </a>
             @endcan
             @can('activity.view')
@@ -154,13 +135,13 @@
             @can('contests.view')
             <a href="{{ route('admin.contests.contests') }}" class="nav-link {{ request()->routeIs('admin.contests*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-trophy"></i> <span>Contests</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['contests'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['contests'] ?? 0) }}</span>
             </a>
             @endcan
             @can('earnings.view')
             <a href="{{ route('admin.earnings.transactions') }}" class="nav-link {{ request()->routeIs('admin.earnings*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-wallet2"></i> <span>Earnings</span>
-                <span class="nav-count ms-auto">{{ $sidebarCounts['earnings'] }}</span>
+                <span class="nav-count ms-auto">{{ stylebite_compact_number($sidebarCounts['earnings'] ?? 0) }}</span>
             </a>
             @endcan
         </div>

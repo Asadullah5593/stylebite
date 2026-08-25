@@ -19,6 +19,7 @@ use App\Models\Notification;
 use App\Models\PushNotificationLog;
 use App\Models\Report;
 use App\Models\WithdrawalRequest;
+use App\Support\AdminSidebarCounts;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
@@ -129,6 +130,7 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $view->with('supportNeedsReply', $needsReply);
+            $view->with('sidebarCounts', AdminSidebarCounts::all());
         });
 
         View::composer('admin.partials.header', function ($view) {

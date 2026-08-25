@@ -964,3 +964,25 @@ if (! function_exists('stylebite_push_token_is_dead')) {
             && in_array('message.token', $violationFields, true);
     }
 }
+
+if (! function_exists('stylebite_compact_number')) {
+    /**
+     * 999 → "999", 1500 → "1.5k", 2300000 → "2.3M". For badges and tiles where a
+     * full number would not fit; never for anything that gets added up.
+     */
+    function stylebite_compact_number(int|float|null $value): string
+    {
+        $value = (int) ($value ?? 0);
+
+        if ($value < 1000) {
+            return (string) $value;
+        }
+
+        [$divisor, $suffix] = $value < 1_000_000 ? [1000, 'k'] : [1_000_000, 'M'];
+
+        $short = $value / $divisor;
+        $formatted = $short < 10 ? number_format($short, 1) : number_format($short, 0);
+
+        return rtrim(rtrim($formatted, '0'), '.').$suffix;
+    }
+}
