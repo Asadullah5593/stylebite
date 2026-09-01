@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Profile;
 use App\Models\User;
 use App\Models\UserFollow;
+use App\Services\FollowCountSynchronizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -185,27 +185,14 @@ class FollowController extends Controller
         return $target;
     }
 
+    /**
+     * Both sides of a follow, recounted from user_follows. Delegated so that
+     * blocking and account deletion — which also change who follows whom —
+     * refresh the same cache the same way instead of leaving it behind.
+     */
     private function syncFollowCounts(int $viewerUserId, int $targetUserId): void
     {
-        $viewerFollowingCount = UserFollow::query()
-            ->where('follower_user_id', $viewerUserId)
-            ->where('status', 'accepted')
-            ->whereNull('deleted_at')
-            ->count();
-
-        $targetFollowerCount = UserFollow::query()
-            ->where('following_user_id', $targetUserId)
-            ->where('status', 'accepted')
-            ->whereNull('deleted_at')
-            ->count();
-
-        Profile::query()->firstOrCreate(['user_id' => $viewerUserId])->update([
-            'following_count' => $viewerFollowingCount,
-        ]);
-
-        Profile::query()->firstOrCreate(['user_id' => $targetUserId])->update([
-            'follower_count' => $targetFollowerCount,
-        ]);
+        app(FollowCountSynchronizer::class)->sync($viewerUserId, $targetUserId);
     }
 
     private function relationshipPayload(int $viewerUserId, User $target): array

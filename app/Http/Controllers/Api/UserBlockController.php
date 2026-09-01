@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserBlock;
 use App\Models\UserFollow;
+use App\Services\FollowCountSynchronizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -67,6 +68,11 @@ class UserBlockController extends Controller
                 ->where('following_user_id', $viewer->id)
                 ->whereNull('deleted_at')
                 ->delete();
+
+            // Both people just lost a follow in each direction. Without this the
+            // cached totals keep counting them and the profile reports followers
+            // that no longer exist.
+            app(FollowCountSynchronizer::class)->sync($viewer->id, $target->id);
 
             return [
                 'is_blocked' => true,

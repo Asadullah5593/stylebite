@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSetting;
 use App\Models\UserSession;
+use App\Services\FollowCountSynchronizer;
 use App\Services\UserModerationService;
 use App\Support\CsvExport;
 use Carbon\CarbonImmutable;
@@ -909,6 +910,11 @@ class UserController extends Controller
         $user->forceFill(['status' => 'deleted'])->save();
         $user->delete();
 
+        // A deleted account still has rows in user_follows, so everyone on the
+        // other end of them would keep counting it. Recount them and the account
+        // itself, or profiles report followers nobody can open.
+        app(FollowCountSynchronizer::class)->syncWithCounterparts($user->id);
+
         $this->logActivity('user_deleted', 'user', $user->id, [
             'status' => 'deleted',
             'email' => $user->email,
@@ -931,6 +937,9 @@ class UserController extends Controller
         $user->forceFill([
             'status' => $user->status === 'deleted' ? 'active' : $user->status,
         ])->save();
+
+        // Their follows count again, so the same people need recounting back up.
+        app(FollowCountSynchronizer::class)->syncWithCounterparts($user->id);
 
         $this->logActivity('user_restored', 'user', $user->id, [
             'email' => $user->email,
