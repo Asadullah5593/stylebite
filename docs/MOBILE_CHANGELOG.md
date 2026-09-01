@@ -8,6 +8,49 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-01 — Chat realtime moves from Pusher to self-hosted Reverb ⚠️ config change
+
+We now run our own WebSocket server (Laravel Reverb) instead of Pusher. **Reverb
+speaks the Pusher protocol**, so keep using the Pusher SDK — only the connection
+settings change.
+
+### What changes — 4 values
+
+| Setting | Before (Pusher) | After (Reverb) |
+|---|---|---|
+| Key | `5269e3033be86866f95e` | *(new key — shared separately)* |
+| Host | Pusher `ap2` cluster | your API domain, e.g. `aws.stylebiteapp.com` |
+| Port | default | `443`, `forceTLS: true` |
+| Cluster | `ap2` | **remove it — Reverb has no clusters** |
+
+```js
+new Pusher(REVERB_KEY, {
+  wsHost: 'aws.stylebiteapp.com',
+  wsPort: 443,
+  wssPort: 443,
+  forceTLS: true,
+  enabledTransports: ['ws', 'wss'],
+  authorizer: /* unchanged */
+});
+```
+
+### What does NOT change
+Channel names (`presence-conversation.{id}`, `private-user.{id}`), every event name
+(`message.sent`, `messages.delivered`, `messages.read`, `messaging.state`,
+`chat.updated`), all payload shapes, the auth endpoint `POST /api/broadcasting/auth`
+and its bearer token, and the `client-typing` whisper.
+
+### Two config profiles for now
+These settings apply to the **AWS server only**. The live domain still runs on
+Pusher until the DNS cutover, so keep both profiles until then.
+
+### Limits removed
+No 100 concurrent-connection cap and no 200k messages/day ceiling. Typing
+indicators are no longer metered — still worth throttling for battery and data,
+but not for cost.
+
+---
+
 ## 2026-08-20 — `message` notifications removed from the bell feed
 
 As requested: chat has its own unread badge, so `type: "message"` rows no longer

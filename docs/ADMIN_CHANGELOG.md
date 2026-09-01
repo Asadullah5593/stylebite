@@ -7,6 +7,46 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-01 — Self-hosted Reverb replaces Pusher · dependency updates 🚀
+
+**Chat realtime now runs on our own server.** `laravel/reverb` v1.11 replaces the
+managed Pusher service. Reverb implements the Pusher protocol, so no application
+code changed — the broadcast events, channel definitions and channel-auth endpoint
+are all untouched. Only `.env` and the mobile client's connection settings differ.
+
+**What this removes:** the 100 concurrent-connection cap, the 200k messages/day
+limit, and the ~$49/month cost that would have started once we outgrew Pusher's
+free tier. Typing indicators no longer consume a metered quota.
+
+**Server setup** (already applied on AWS, needed on any new box):
+- Supervisor program `stylebite-reverb` runs `reverb:start --host=127.0.0.1 --port=8080`.
+  Reverb binds to **localhost only** — it is never exposed directly, so port 8080
+  does not need opening in the security group.
+- nginx snippet `/etc/nginx/snippets/reverb.conf` proxies `/app` and `/apps` to
+  `127.0.0.1:8080` with WebSocket upgrade headers and `proxy_read_timeout 3600s`.
+  ⚠️ That timeout matters: nginx defaults to 60s and would silently drop every idle
+  socket after a minute, which looks exactly like a broken chat feature.
+- Clients connect to `wss://<domain>:443` — TLS terminates at nginx.
+
+**Rollback is one line:** set `BROADCAST_CONNECTION=pusher` in `.env`. The Pusher
+credentials remain in place and untouched.
+
+### Dependency security updates
+`composer audit` now reports **no advisories**. Updated:
+- `guzzlehttp/guzzle` 7.12.3 → **7.15.5** (1 high, 5 medium — host-check bypass,
+  cookie scoping, Referer leakage, Proxy-Authorization forwarding)
+- `league/commonmark` 2.8.2 → **2.10.0** (3 high, 1 medium — markdown parsing DoS)
+
+Neither was exploitable here — no user-controlled URLs reach Guzzle, and the app
+never parses markdown — but both are now patched.
+
+⚠️ **Deploys must restart the workers.** Long-running PHP processes hold the old
+autoloader in memory, so after any code or composer change the queue worker and
+Reverb keep running stale code until restarted. The AWS `~/deploy.sh` does this;
+see the deploy notes below.
+
+---
+
 ## 2026-08-26 — Fixed: sidebar counts were hardcoded placeholders 🔢
 
 The numbers beside each sidebar section (Users 7, Posts 4, Engagement 6 …) were
