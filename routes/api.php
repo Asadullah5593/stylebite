@@ -86,7 +86,6 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/profile/me/username-availability', [ProfileController::class, 'usernameAvailability']);
     Route::get('/profile/me/overview', [ProfileController::class, 'overview']);
     Route::patch('/profile/me/overview', [ProfileController::class, 'updateOverview']);
-    Route::post('/profile/me/verify', [ProfileController::class, 'verify']);
     Route::get('/profile/me/images', [ProfileController::class, 'images']);
     Route::get('/profile/me/avatar', [ProfileController::class, 'avatar']);
     Route::get('/profile/me/blocked-users', [UserBlockController::class, 'index']);

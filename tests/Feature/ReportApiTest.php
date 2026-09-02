@@ -55,7 +55,6 @@ class ReportApiTest extends TestCase
             'media_kind' => 'image',
             'feed_type' => 'style',
             'caption' => 'Reportable post',
-            'visibility' => 'public',
             'status' => 'published',
             'moderation_status' => 'clean',
         ], $attributes));
@@ -237,9 +236,9 @@ class ReportApiTest extends TestCase
             'title' => 'Reportable contest',
             'creator_user_id' => $author->id,
             'category' => 'community',
-            'contest_type' => 'group',
+            'contest_type' => 'Group Contest',
+            'contest_behavior_type' => 'group',
             'status' => 'active',
-            'visibility' => 'public',
             'voting_type' => 'community',
         ]);
 

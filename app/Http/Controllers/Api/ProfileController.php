@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Memory;
 use App\Models\Post;
-use App\Models\ProfileBadge;
 use App\Models\SavedPost;
 use App\Models\User;
 use App\Models\UserFollow;
@@ -199,46 +198,6 @@ class ProfileController extends Controller
             'username' => $requestedUsername,
             'is_available' => ! $isTaken,
             'is_current_username' => $isOwnUsername,
-        ]);
-    }
-
-    public function verify(Request $request): JsonResponse
-    {
-        $user = $request->user();
-
-        if ($user->email_verified_at === null && $user->phone_verified_at === null) {
-            return response()->json([
-                'status_code' => 0,
-                'message' => 'Please verify your email or phone before requesting a verification badge.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
-
-        DB::transaction(function () use ($profile, $user): void {
-            $profile->forceFill([
-                'is_verified_badge' => true,
-            ])->save();
-
-            ProfileBadge::query()->updateOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'badge_key' => 'verified_user',
-                ],
-                [
-                    'title' => 'Verified User',
-                    'icon_key' => 'verified_badge',
-                    'status' => 'earned',
-                    'sort_order' => 0,
-                    'earned_at' => now(),
-                ]
-            );
-        });
-
-        return response()->json([
-            'status_code' => 1,
-            'message' => 'Verification badge granted successfully.',
-            'user' => $this->overviewProfilePayload($user->fresh(['profile'])),
         ]);
     }
 

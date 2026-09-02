@@ -48,12 +48,7 @@
             @endforeach
         </select>
 
-        <select name="contest_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
-            <option value="">All Types</option>
-            @foreach (['city' => 'City vs City'] as $value => $label)
-                <option value="{{ $value }}" @selected(request('contest_type') === $value)>{{ $label }}</option>
-            @endforeach
-        </select>
+        <input type="text" name="contest_type" value="{{ request('contest_type') }}" class="form-control border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;" placeholder="Any type">
 
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
         <a href="{{ route('admin.contests.contests') }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>

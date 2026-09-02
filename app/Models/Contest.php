@@ -24,6 +24,7 @@ class Contest extends StylebiteModel
             'voting_end_at' => 'datetime',
             'is_reported' => 'boolean',
             'is_blocked' => 'boolean',
+            'is_featured' => 'boolean',
             'deleted_at' => 'datetime',
         ];
     }

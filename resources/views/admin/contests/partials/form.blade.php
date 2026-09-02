@@ -23,37 +23,24 @@
         <label class="form-label small text-muted">Description</label>
         <textarea name="description" rows="3" class="form-control border-0 bg-dark-soft rounded-3" placeholder="Explain the contest rules, theme and what users should post.">{{ old('description', $contest->description ?? '') }}</textarea>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <label class="form-label small text-muted">Contest Type</label>
-        <select name="contest_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" required>
-            @foreach (['city' => 'City vs City'] as $value => $label)
-                <option value="{{ $value }}" @selected(old('contest_type', $contest->contest_type ?? 'city') === $value)>{{ $label }}</option>
-            @endforeach
-        </select>
+        <input type="text" name="contest_type" value="{{ old('contest_type', $contest->contest_type ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3" placeholder="City vs City" maxlength="120" required>
+        <div class="form-text text-muted">Shown to users. Type anything you like.</div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <label class="form-label small text-muted">Status</label>
         <select name="status" class="form-select border-0 bg-dark-soft rounded-3 text-muted" required>
             @foreach (['draft' => 'Draft', 'upcoming' => 'Upcoming', 'active' => 'Active', 'completed' => 'Completed', 'cancelled' => 'Cancelled', 'archived' => 'Archived'] as $value => $label)
                 <option value="{{ $value }}" @selected(old('status', $contest->status ?? 'draft') === $value)>{{ $label }}</option>
             @endforeach
         </select>
+        <div class="form-text text-muted">Upcoming, Active and Completed advance automatically from the start and end dates.</div>
     </div>
-    <div class="col-md-3">
-        <label class="form-label small text-muted">Visibility</label>
-        <select name="visibility" class="form-select border-0 bg-dark-soft rounded-3 text-muted" required>
-            @foreach (['public' => 'Public', 'followers_only' => 'Followers Only', 'private' => 'Private'] as $value => $label)
-                <option value="{{ $value }}" @selected(old('visibility', $contest->visibility ?? 'public') === $value)>{{ $label }}</option>
-            @endforeach
-        </select>
-    </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <label class="form-label small text-muted">Voting Type</label>
-        <select name="voting_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" required>
-            @foreach (['community' => 'Community', 'jury' => 'Jury', 'hybrid' => 'Hybrid'] as $value => $label)
-                <option value="{{ $value }}" @selected(old('voting_type', $contest->voting_type ?? 'community') === $value)>{{ $label }}</option>
-            @endforeach
-        </select>
+        <input type="text" name="voting_type" value="{{ old('voting_type', $contest->voting_type ?? 'Community') }}" class="form-control border-0 bg-dark-soft rounded-3" placeholder="Community" maxlength="120" required>
+        <div class="form-text text-muted">Shown to users. Type anything you like.</div>
     </div>
     <div class="col-md-4">
         <label class="form-label small text-muted">City</label>
@@ -83,29 +70,30 @@
         <label class="form-label small text-muted">End At</label>
         <input type="datetime-local" name="end_at" value="{{ old('end_at', isset($contest->end_at) && $contest->end_at ? $contest->end_at->format('Y-m-d\TH:i') : '') }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
-    <div class="col-md-6">
-        <label class="form-label small text-muted">Cover Image</label>
-        <input type="file" name="cover_image" id="cover-image-input" class="form-control border-0 bg-dark-soft rounded-3" accept="image/*">
-        <div class="form-text text-muted">Upload a cover image from your device.</div>
+    <div class="col-md-8">
+        <label class="form-label small text-muted">Contest Image</label>
+        <input type="file" name="contest_image" id="cover-image-input" class="form-control border-0 bg-dark-soft rounded-3" accept="image/jpeg,image/png,image/webp">
+        <div class="form-text text-muted">
+            Used as both the banner and the cover. Square works best &mdash; minimum
+            1200 &times; 1200px. Anything larger than 2000 &times; 2000px is resized
+            automatically, so a big photo is fine.
+        </div>
         <img
             id="cover-image-preview"
             src="{{ $contest?->cover_image_url ?? '' }}"
-            alt="Cover image preview"
+            alt="Contest image preview"
             class="img-fluid rounded-3 mt-2 border border-white-05 {{ empty($contest?->cover_image_url) ? 'd-none' : '' }}"
             style="max-height: 180px; object-fit: cover;"
         >
     </div>
-    <div class="col-md-6">
-        <label class="form-label small text-muted">Banner Image</label>
-        <input type="file" name="banner_image" id="banner-image-input" class="form-control border-0 bg-dark-soft rounded-3" accept="image/*">
-        <div class="form-text text-muted">Upload a banner image from your device.</div>
-        <img
-            id="banner-image-preview"
-            src="{{ $contest?->banner_image_url ?? '' }}"
-            alt="Banner image preview"
-            class="img-fluid rounded-3 mt-2 border border-white-05 {{ empty($contest?->banner_image_url) ? 'd-none' : '' }}"
-            style="max-height: 180px; object-fit: cover;"
-        >
+    <div class="col-md-4">
+        <label class="form-label small text-muted">Featured</label>
+        <div class="form-check form-switch mt-2">
+            <input type="hidden" name="is_featured" value="0">
+            <input class="form-check-input" type="checkbox" role="switch" id="is-featured-input" name="is_featured" value="1" @checked(old('is_featured', $contest->is_featured ?? false))>
+            <label class="form-check-label small text-muted" for="is-featured-input">Feature this contest</label>
+        </div>
+        <div class="form-text text-muted">Only one contest can be featured. Turning this on removes it from whichever contest currently has it.</div>
     </div>
     <div class="col-12">
         <label class="form-label small text-muted">Rules</label>
@@ -147,7 +135,6 @@
         };
 
         bindImagePreview('cover-image-input', 'cover-image-preview');
-        bindImagePreview('banner-image-input', 'banner-image-preview');
 
         // Prevent duplicate contests from double-click / repeat submits while
         // the (slow, image-upload) request is still in flight.

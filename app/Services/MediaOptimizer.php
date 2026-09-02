@@ -23,6 +23,16 @@ class MediaOptimizer
 
     public const FEED_IMAGE_QUALITY = 72;
 
+    /**
+     * Contest artwork is shown large and square (banner and cover are the same
+     * image), so it keeps more resolution and quality than a feed thumbnail.
+     */
+    public const CONTEST_IMAGE_MAX_DIMENSION = 2000;
+
+    public const CONTEST_IMAGE_MIN_DIMENSION = 1200;
+
+    public const CONTEST_IMAGE_QUALITY = 80;
+
     public const AVATAR_MAX_DIMENSION = 512;
 
     public const AVATAR_QUALITY = 82;

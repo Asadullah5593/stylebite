@@ -17,6 +17,7 @@ use App\Models\PostMedia;
 use App\Models\Tag;
 use App\Models\User;
 use App\Models\UserFollow;
+use App\Services\ContestStatusResolver;
 use Carbon\Carbon;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
@@ -68,9 +69,9 @@ class ContestController extends Controller
                 'subtitle' => $validated['tags'] ?? implode(', ', $targetCities),
                 'description' => $validated['description'] ?? null,
                 'category' => 'community',
-                'contest_type' => 'city',
+                'contest_type' => 'City Contest',
+                'contest_behavior_type' => 'city',
                 'status' => 'upcoming',
-                'visibility' => 'public',
                 'city' => implode(' vs ', $targetCities),
                 'max_participants' => isset($validated['max_participants']) ? (int) $validated['max_participants'] : null,
                 'cover_image_url' => $upload['file_url'],
@@ -133,7 +134,7 @@ class ContestController extends Controller
             // First-come-first-join for 1v1 invites.
             if (
                 $validated['status'] === 'accepted'
-                && $contest->contest_type === 'one_vs_one'
+                && $contest->contest_behavior_type === 'one_vs_one'
                 && $invitation->request_type === 'invite'
             ) {
                 $hasOpponent = ContestParticipant::query()
@@ -160,7 +161,7 @@ class ContestController extends Controller
 
             if (
                 $validated['status'] === 'accepted'
-                && $contest->contest_type === 'one_vs_one'
+                && $contest->contest_behavior_type === 'one_vs_one'
                 && $invitation->request_type === 'invite'
             ) {
                 $this->upsertParticipant($contest->id, (int) $invitation->receiver_user_id, 'team_member', 'approved');
@@ -203,7 +204,7 @@ class ContestController extends Controller
         $contest = Contest::query()->findOrFail($contestId);
         $user = $request->user();
 
-        if ($contest->contest_type !== 'city') {
+        if ($contest->contest_behavior_type !== 'city') {
             return $this->error('Only city vs city contests are supported here.');
         }
         $allowedCities = collect(explode(' vs ', (string) $contest->city))
@@ -260,7 +261,7 @@ class ContestController extends Controller
             return $this->error('This endpoint only supports admin contests.');
         }
 
-        if ($contest->contest_type !== 'city') {
+        if ($contest->contest_behavior_type !== 'city') {
             return $this->error('Admin contests must be city contests.');
         }
 
@@ -310,7 +311,7 @@ class ContestController extends Controller
             return $this->error('Only approved participants can submit.');
         }
 
-        if ($contest->contest_type === 'city' && ! $this->isEnrollmentWindowOpen($contest)) {
+        if ($contest->contest_behavior_type === 'city' && ! $this->isEnrollmentWindowOpen($contest)) {
             return $this->error('Submission is allowed only during enrollment period for city contests.');
         }
 
@@ -371,7 +372,6 @@ class ContestController extends Controller
                     'media_kind' => $mediaType,
                     'feed_type' => 'style',
                     'caption' => $validated['caption'] ?? null,
-                    'visibility' => 'public',
                     'status' => 'published',
                     'rating_enabled' => true,
                     'posted_at' => now(),
@@ -505,7 +505,7 @@ class ContestController extends Controller
         }
 
         if ($type === 'city') {
-            $query->where('contest_type', 'city');
+            $query->where('contest_behavior_type', 'city');
         }
 
         $contests = $query->latest('id')->paginate(20);
@@ -583,9 +583,9 @@ class ContestController extends Controller
             ->where('status', 'approved')
             ->exists();
 
-        $requiresParticipantAccess = $contest->category !== 'admin' && $contest->contest_type === 'city';
+        $requiresParticipantAccess = $contest->category !== 'admin' && $contest->contest_behavior_type === 'city';
 
-        if ($contest->contest_type === 'city' && $requiresParticipantAccess && ! $isParticipant) {
+        if ($contest->contest_behavior_type === 'city' && $requiresParticipantAccess && ! $isParticipant) {
             return $this->error('City contest result is visible only to participants.', Response::HTTP_FORBIDDEN);
         }
 
@@ -593,7 +593,7 @@ class ContestController extends Controller
             'status_code' => 1,
             'message' => 'Contest fetched successfully.',
             'contest' => $this->contestPayload($contest->fresh(), (int) $user->id, true),
-            'joinable_users' => $contest->contest_type === 'city'
+            'joinable_users' => $contest->contest_behavior_type === 'city'
                 ? $this->cityJoinableUsers($contest)
                 : [],
         ]);
@@ -790,7 +790,7 @@ class ContestController extends Controller
 
     private function canAutoJoinContest(Contest $contest): bool
     {
-        return $contest->category === 'admin' || in_array($contest->contest_type, ['group', 'brand'], true);
+        return $contest->category === 'admin' || in_array($contest->contest_behavior_type, ['group', 'brand'], true);
     }
 
     private function assignCityTeam(Contest $contest, User $user): void
@@ -932,7 +932,7 @@ class ContestController extends Controller
 
         $cityContest = Contest::query()->find($contestId);
 
-        if ($cityContest && $cityContest->contest_type === 'city') {
+        if ($cityContest && $cityContest->contest_behavior_type === 'city') {
             $teams = ContestTeam::query()->where('contest_id', $contestId)->get();
             foreach ($teams as $team) {
                 $score = ContestSubmission::query()->where('contest_team_id', $team->id)->sum('final_score');
@@ -1054,11 +1054,17 @@ class ContestController extends Controller
             'category' => $contest->subtitle,
             'contest_category' => $contest->category,
             'description' => $contest->description,
+            // Free text the creator typed; contest_behavior_type is what drives
+            // enrollment windows, duels and submission gating.
             'contest_type' => $contest->contest_type,
-            'status' => $contest->status,
+            'contest_behavior_type' => $contest->contest_behavior_type,
+            // Derived from the dates, so it is correct even between cron runs.
+            'status' => app(ContestStatusResolver::class)->displayStatus($contest),
             'challenge_scope' => $contest->challenge_scope,
-            'visibility' => $contest->visibility,
+            'featured' => (bool) $contest->is_featured,
             'cover_image_url' => stylebite_asset_url($contest->cover_image_url),
+            // Same artwork as the cover — one upload fills both.
+            'banner_image_url' => stylebite_asset_url($contest->banner_image_url ?: $contest->cover_image_url),
             'max_participants' => $contest->max_participants !== null ? (int) $contest->max_participants : null,
             'participant_count' => (int) $contest->participant_count,
             'submission_count' => (int) $contest->submission_count,
@@ -1076,7 +1082,7 @@ class ContestController extends Controller
                 : false,
             'reward_amount' => (float) ($contest->prize_pool ?? 0),
             'has_reward' => (float) ($contest->prize_pool ?? 0) > 0,
-            'can_join' => $contest->contest_type === 'city' ? $this->isEnrollmentWindowOpen($contest) : null,
+            'can_join' => $contest->contest_behavior_type === 'city' ? $this->isEnrollmentWindowOpen($contest) : null,
             'is_participant' => $viewerUserId !== null
                 ? ContestParticipant::query()->where('contest_id', $contest->id)->where('user_id', $viewerUserId)->where('status', 'approved')->exists()
                 : null,
@@ -1099,7 +1105,7 @@ class ContestController extends Controller
 
     private function cityJoinableUsers(Contest $contest): array
     {
-        if ($contest->contest_type !== 'city') {
+        if ($contest->contest_behavior_type !== 'city') {
             return [];
         }
 

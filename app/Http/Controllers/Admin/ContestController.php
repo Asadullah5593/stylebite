@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Contest;
+use App\Services\MediaOptimizer;
 use App\Models\ContestLeaderboardSnapshot;
 use App\Models\ContestInvitation;
 use App\Models\ContestParticipant;
@@ -49,7 +50,7 @@ class ContestController extends Controller
             })
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
             ->when($request->filled('category'), fn ($query) => $query->where('category', $request->string('category')))
-            ->when($request->filled('contest_type'), fn ($query) => $query->where('contest_type', $request->string('contest_type')))
+            ->when($request->filled('contest_type'), fn ($query) => $query->where('contest_type', 'like', '%'.$request->string('contest_type').'%'))
             ->latest()
             ->paginate(10)
             ->withQueryString();
@@ -720,21 +721,34 @@ class ContestController extends Controller
             ],
             'subtitle' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            // Free text: the creator names the type, it is not a fixed list.
+            // Behaviour lives in contest_behavior_type, which admin contests
+            // always set to 'city'.
+            'contest_type' => ['required', 'string', 'max:120'],
             'status' => ['required', 'in:draft,active,upcoming,completed,cancelled,archived'],
-            'visibility' => ['required', 'in:public,private,followers_only'],
             'city' => ['nullable', 'string', 'max:120'],
             'country' => ['nullable', 'string', 'max:120'],
             'max_participants' => ['nullable', 'integer', 'min:1'],
             'entry_fee' => ['nullable', 'numeric', 'min:0'],
             'prize_pool' => ['nullable', 'numeric', 'min:0'],
-            'voting_type' => ['required', 'in:community,jury,hybrid'],
+            'voting_type' => ['required', 'string', 'max:120'],
             'start_at' => ['nullable', 'date'],
             'end_at' => ['nullable', 'date', 'after_or_equal:start_at'],
-            'cover_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
-            'banner_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
+            // One image serves as both banner and cover. Anything larger than
+            // 2000px is downscaled rather than refused; only images too small to
+            // look right are rejected.
+            'contest_image' => [
+                'nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:10240',
+                'dimensions:min_width='.MediaOptimizer::CONTEST_IMAGE_MIN_DIMENSION
+                    .',min_height='.MediaOptimizer::CONTEST_IMAGE_MIN_DIMENSION,
+            ],
+            'is_featured' => ['nullable', 'boolean'],
             'rules_text' => ['nullable', 'string'],
         ], [
             'title.unique' => 'A contest with this title already exists.',
+            'contest_image.dimensions' => 'The contest image must be at least '
+                .MediaOptimizer::CONTEST_IMAGE_MIN_DIMENSION.' x '
+                .MediaOptimizer::CONTEST_IMAGE_MIN_DIMENSION.' pixels.',
         ]);
 
         return DB::transaction(function () use ($validated, $contest, $request) {
@@ -758,7 +772,8 @@ class ContestController extends Controller
                 'creator_user_id' => auth()->id(),
                 'title' => $validated['title'],
                 'category' => 'admin',
-                'contest_type' => 'city',
+                'contest_type' => $validated['contest_type'],
+                'contest_behavior_type' => 'city',
             ]);
 
             $contest->forceFill([
@@ -767,9 +782,9 @@ class ContestController extends Controller
                 'subtitle' => $validated['subtitle'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'category' => 'admin',
-                'contest_type' => 'city',
+                'contest_type' => $validated['contest_type'],
+                'contest_behavior_type' => 'city',
                 'status' => $validated['status'],
-                'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
                 'country' => $validated['country'] ?? null,
                 'max_participants' => $validated['max_participants'] ?? null,
@@ -780,23 +795,23 @@ class ContestController extends Controller
                 'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at']) : null,
             ])->save();
 
-            $coverImageUrl = $contest->cover_image_url;
-            $bannerImageUrl = $contest->banner_image_url;
+            // A single upload fills both columns: banner and cover show the same
+            // artwork. banner_image_url is kept so existing app builds that read
+            // it keep working.
+            if ($request->hasFile('contest_image')) {
+                $imageUrl = $this->storeContestImage($request->file('contest_image'));
 
-            if ($request->hasFile('cover_image')) {
-                $uploadedFile = stylebite_upload_file($request->file('cover_image'), 'contests/'.auth()->id());
-                $coverImageUrl = $uploadedFile['file_url'];
+                if ($imageUrl !== null) {
+                    $contest->forceFill([
+                        'cover_image_url' => $imageUrl,
+                        'banner_image_url' => $imageUrl,
+                    ])->save();
+                }
             }
 
-            if ($request->hasFile('banner_image')) {
-                $uploadedFile = stylebite_upload_file($request->file('banner_image'), 'contests/'.auth()->id());
-                $bannerImageUrl = $uploadedFile['file_url'];
-            }
-
-            $contest->forceFill([
-                'cover_image_url' => $coverImageUrl,
-                'banner_image_url' => $bannerImageUrl,
-            ])->save();
+            $request->boolean('is_featured')
+                ? $this->makeFeatured($contest)
+                : $contest->forceFill(['is_featured' => false])->save();
 
             ContestRule::query()->where('contest_id', $contest->id)->delete();
 
@@ -816,6 +831,45 @@ class ContestController extends Controller
             }
 
             return $contest->fresh();
+        });
+    }
+
+    /**
+     * Store contest artwork, downscaling anything over the max dimension and
+     * re-encoding at a sane quality. Oversized uploads are shrunk, not refused —
+     * a 6 MB phone photo should still work.
+     */
+    private function storeContestImage($file): ?string
+    {
+        $rendition = app(MediaOptimizer::class)->storeOptimizedImageFromPath(
+            $file->getRealPath(),
+            'contests/'.auth()->id(),
+            MediaOptimizer::CONTEST_IMAGE_MAX_DIMENSION,
+            MediaOptimizer::CONTEST_IMAGE_QUALITY,
+            $file->getClientOriginalExtension(),
+        );
+
+        if ($rendition !== null) {
+            return $rendition['url'];
+        }
+
+        // Optimization failed (unreadable image, missing GD/Imagick): keep the
+        // original rather than losing the upload.
+        return stylebite_upload_file($file, 'contests/'.auth()->id())['file_url'];
+    }
+
+    /**
+     * Only one contest is featured at a time, so featuring one un-features the
+     * rest in the same transaction.
+     */
+    private function makeFeatured(Contest $contest): void
+    {
+        DB::transaction(function () use ($contest): void {
+            Contest::query()->where('id', '!=', $contest->id)
+                ->where('is_featured', true)
+                ->update(['is_featured' => false]);
+
+            $contest->forceFill(['is_featured' => true])->save();
         });
     }
 

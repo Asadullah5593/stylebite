@@ -333,34 +333,6 @@ class ProfileApiTest extends TestCase
         ]);
     }
 
-    public function test_profile_verify_grants_verification_badge_to_verified_user(): void
-    {
-        [$user, $token] = $this->authenticatedUser();
-
-        $user->forceFill([
-            'email_verified_at' => now(),
-        ])->save();
-
-        $response = $this->withHeaders($this->headers($token))
-            ->postJson('/api/profile/me/verify');
-
-        $response
-            ->assertOk()
-            ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('user.is_verified_badge', true);
-
-        $this->assertDatabaseHas('profiles', [
-            'user_id' => $user->id,
-            'is_verified_badge' => true,
-        ]);
-
-        $this->assertDatabaseHas('profile_badges', [
-            'user_id' => $user->id,
-            'badge_key' => 'verified_user',
-            'title' => 'Verified User',
-        ]);
-    }
-
     public function test_public_profile_overview_returns_any_user_complete_profile_without_saved_posts_for_others(): void
     {
         [$viewer, $token] = $this->authenticatedUser();

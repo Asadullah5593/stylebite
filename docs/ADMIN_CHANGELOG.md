@@ -7,6 +7,86 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-02 — Contest rework: free-text types, automatic status, one image, featured 🏆
+
+Requested by the mobile team. **Includes a migration.**
+
+### Contest type is now free text — behaviour moved to its own column
+`contest_type` was an enum doing two jobs: shown to users, *and* deciding how the
+contest behaves (city enrollment windows, one-vs-one duels, submission gating for
+group/brand). Making it free text as-asked would have silently disabled all of
+that — a contest typed "Fashion Week" would match none of those branches and just
+quietly do nothing.
+
+So behaviour moved to a new **`contest_behavior_type`** column (`city`,
+`one_vs_one`, `group`, `brand`), backfilled from the old values, and
+**`contest_type` is now free text** the admin types. Admin-created contests keep
+`contest_behavior_type = city` as before.
+
+### Status advances automatically
+Status was only ever set by hand, so a contest whose start date had passed stayed
+*Upcoming* forever, and one past its end date stayed *Active* until somebody
+opened it.
+
+- New `stylebite:refresh-contest-statuses` command advances
+  **upcoming → active → completed** from `start_at` / `end_at`
+- **New cron needed — every 10 minutes.** See [CRON_JOBS.md](CRON_JOBS.md)
+- `draft`, `cancelled` and `archived` are **never** auto-advanced — an admin
+  decision is not undone by the clock
+- The API also *derives* status on read, so a response is never stale between
+  cron runs
+
+### Visibility removed
+The field was validated, stored and returned, but **nothing ever branched on it**.
+Column dropped, removed from the form and the API.
+
+### Voting type is free text
+It carried no logic at all, so the fixed list is gone.
+
+### One image instead of two
+The form now has a **single Contest Image** upload, used as both banner and cover.
+`banner_image_url` is **kept and populated** with the same URL so existing app
+builds keep working.
+
+Rules: minimum **1200 × 1200px** (rejected below that), anything over
+**2000 × 2000px** is **downscaled automatically** rather than refused, re-encoded
+at 80% quality. JPEG/PNG/WebP.
+
+### Featured contest
+New **Featured** switch on the contest form. **Only one contest can be featured at
+a time** — turning it on removes it from whichever contest currently holds it, in
+the same transaction.
+
+---
+
+## 2026-09-02 — Fixed: verified badge granted in the dashboard never reached the app 🔵
+
+The blue tick had **two disconnected sources of truth**. Admins grant and revoke it
+by adding or removing a `verified_user` row in `profile_badges` (Users → the
+Verified badge toggle, and the badge catalogue). But the mobile API reads a
+separate column, `profiles.is_verified_badge` — and **nothing kept the two in
+step**. So a badge awarded from the dashboard showed correctly in the admin panel
+while the app still displayed the user as unverified.
+
+The only thing that ever wrote that column was a **self-service** API endpoint,
+`POST /profile/me/verify`, which let any logged-in user award themselves the tick
+provided they had a verified email or phone. That endpoint has been **removed** —
+the badge is now purely an admin decision.
+
+**What changed**
+- New `VerifiedBadgeSynchronizer` owns the single question "does this user hold the
+  verified_user badge?" and mirrors the answer onto the column.
+- It is wired to **`ProfileBadge` model events**, not to individual call sites. Both
+  admin routes already flow through it, and any future code that adds or removes the
+  badge is covered automatically. *(The follower-count drift fixed the day before
+  happened precisely because a call site was forgotten — this avoids repeating it.)*
+- A migration **backfills existing rows**, so badges already granted from the
+  dashboard start showing in the app on deploy. No manual step needed.
+
+**No admin UI change** — the existing toggle now simply works end to end.
+
+---
+
 ## 2026-09-01 — Self-hosted Reverb replaces Pusher · dependency updates 🚀
 
 **Chat realtime now runs on our own server.** `laravel/reverb` v1.11 replaces the
@@ -105,6 +185,32 @@ gotchas, and the three commands that must never be scheduled.
 Two that matter most: without `queue:work` **no push campaign is ever delivered**,
 and without the daily rate sync **creator crediting is blocked by design** (the
 system never credits an unconverted amount).
+
+---
+
+## 2026-08-24 — Production database cleanup plan (not yet executed)
+
+New doc: [PROD_DB_CLEANUP_PLAN.md](PROD_DB_CLEANUP_PLAN.md) — a reviewed,
+step-by-step plan for wiping accumulated test/user content from the live
+database while keeping the admin panel and the app working.
+
+- **No code changed.** Nothing has been run against production yet; the doc is
+  for review first, execution later.
+- **All 78 tables classified**: 14 preserved (roles/permissions, email
+  templates, legal documents, `app_configs`, `currency_rates`, `migrations`,
+  staff `users`/`profiles`/`user_settings`), 8 truncated as transient
+  (cache/jobs/sessions/tokens), 56 wiped as user content.
+- **Credentials are safe by construction** — every API secret lives in `.env`
+  or `public/service_file.json`, never in MySQL. `app_configs` holds SMTP host
+  and port but no passwords, and is preserved in full regardless.
+- **Admin lockout is the main risk.** `EnsureAdminUser` admits only accounts
+  holding a Spatie permission, and admin 2FA sign-in needs its
+  `email_templates` row — so `model_has_roles`, `role_has_permissions`,
+  `permissions`, `roles` and `email_templates` are all preserve-only.
+- **`migrate:fresh` was considered and rejected**: it drops `users`, and there
+  is no admin seeder, so it would lock everyone out permanently.
+- Six open questions (which accounts survive, keep `tags`/`activity_logs`,
+  orphaned media, `SUPER_ADMIN_EMAILS`) need answers before execution.
 
 ---
 
