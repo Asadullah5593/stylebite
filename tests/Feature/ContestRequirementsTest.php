@@ -90,6 +90,61 @@ class ContestRequirementsTest extends TestCase
         $this->assertSame('cancelled', $cancelled->fresh()->status);
     }
 
+    public function test_start_and_end_times_are_read_in_the_admin_timezone_not_utc(): void
+    {
+        // The exact report from the mobile team: 11:55 PM picked in Karachi came
+        // back as 23:55 UTC — the contest really started five hours late.
+        $this->actingAs($this->admin())
+            ->post(route('admin.contests.store'), $this->formPayload([
+                'start_at' => '2026-09-02T23:55',
+                'end_at' => '2026-09-03T23:55',
+            ]))
+            ->assertRedirect();
+
+        $contest = Contest::where('title', 'Winter Style Off')->firstOrFail();
+
+        $this->assertSame(
+            '2026-09-02T18:55:00+00:00',
+            $contest->start_at->utc()->toIso8601String(),
+        );
+        $this->assertSame(
+            '2026-09-03T18:55:00+00:00',
+            $contest->end_at->utc()->toIso8601String(),
+        );
+    }
+
+    public function test_a_datetime_that_already_carries_an_offset_is_not_shifted_again(): void
+    {
+        // Only a bare wall clock is ambiguous. Anything naming its own offset
+        // already names an instant and must be stored as-is.
+        $this->actingAs($this->admin())
+            ->post(route('admin.contests.store'), $this->formPayload([
+                'start_at' => '2026-09-02T18:55:00+00:00',
+            ]))
+            ->assertRedirect();
+
+        $this->assertSame(
+            '2026-09-02T18:55:00+00:00',
+            Contest::where('title', 'Winter Style Off')->firstOrFail()->start_at->utc()->toIso8601String(),
+        );
+    }
+
+    public function test_the_edit_form_shows_back_the_wall_clock_the_admin_picked(): void
+    {
+        $this->actingAs($this->admin())
+            ->post(route('admin.contests.store'), $this->formPayload(['start_at' => '2026-09-02T23:55']))
+            ->assertRedirect();
+
+        $contest = Contest::where('title', 'Winter Style Off')->firstOrFail();
+
+        // Round trip: what goes into the picker must equal what came out of it,
+        // or an admin who saves an unrelated field silently moves the schedule.
+        $this->actingAs($this->admin())
+            ->get(route('admin.contests.edit', $contest))
+            ->assertOk()
+            ->assertSee('value="2026-09-02T23:55"', false);
+    }
+
     public function test_only_one_contest_can_be_featured_at_a_time(): void
     {
         $admin = $this->admin();

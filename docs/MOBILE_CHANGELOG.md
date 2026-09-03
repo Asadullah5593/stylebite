@@ -8,6 +8,83 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-03 — Contest `start_at` / `end_at` were 5 hours late 🕐
+
+**Backend bug, now fixed. No API shape change — nothing to do in the app.**
+
+The admin panel was storing the admin's wall-clock time as if it were already UTC.
+A contest the admin scheduled for **11:55 PM PKT** was saved as `23:55:00+00:00`
+instead of `18:55:00+00:00` — five hours late.
+
+The app was right all along: it parsed the UTC timestamp and converted correctly,
+so the countdown matched what was stored. The stored value itself was wrong.
+
+Admin input is now resolved against the configured admin timezone (`Asia/Karachi`)
+before saving. **Timestamps are still returned as UTC with an explicit offset** —
+keep parsing them exactly as you do now.
+
+⚠️ **Contests created before this fix still hold the wrong time.** Their start/end
+times need to be re-picked in the panel. If a test contest looks five hours off,
+that is why — it is stale data, not a new bug.
+
+---
+
+## 2026-09-02 — Contest changes 🏆
+
+### `contest_type` and `voting_type` are now free text
+Admins type whatever they want; there is no fixed list. Display them as-is.
+
+⚠️ **New field: `contest_behavior_type`.** Because `contest_type` used to drive
+behaviour (city enrollment, duels, submission rules), that logic moved to this
+separate field with the old values — `city`, `one_vs_one`, `group`, `brand`. If
+your app branches on contest type, **branch on `contest_behavior_type`**, not on
+`contest_type`.
+
+### `status` is now automatic and always one of three
+`upcoming` → `active` → `completed`, driven by `start_at` and `end_at`. Contest
+listings only ever return these three. Status is derived on read, so it is
+accurate the moment a contest starts or ends.
+
+### `visibility` removed
+The key is gone from every contest response. It was never used for anything.
+
+### `featured` — new key
+```json
+{ "featured": true }
+```
+`true` on the featured contest, `false` on all others. **Only one contest is ever
+featured at a time.** Use this to render the featured slot.
+
+### One image, both fields
+Admins now upload a single image used as both banner and cover. `cover_image_url`
+and `banner_image_url` are both returned and will hold **the same URL** — keep
+reading whichever you already use, no change needed.
+
+---
+
+## 2026-09-02 — `is_verified_badge` now reflects the admin dashboard ✅
+
+`is_verified_badge` was always returning `false` even for users the admin had
+verified. Cause: the dashboard wrote the badge to one place and the API read
+another, and nothing connected them. Fixed — the field now follows the dashboard
+exactly:
+
+- Admin grants the badge → **`is_verified_badge: true`**
+- Admin removes it → **`is_verified_badge: false`**
+
+This applies everywhere the field appears — profile overview, public profiles, and
+the author payload on feed and reels items. Badges granted before this fix are
+backfilled on deploy, so no re-toggling is needed.
+
+**No client change required.** Keep reading the same key.
+
+### ⚠️ Removed: `POST /profile/me/verify`
+That endpoint let any logged-in user grant themselves the badge, which made the
+tick meaningless. It now returns **404**. If any build calls it, remove the call —
+verification is granted from the admin dashboard only.
+
+---
+
 ## 2026-09-01 — Chat realtime moves from Pusher to self-hosted Reverb ⚠️ config change
 
 We now run our own WebSocket server (Laravel Reverb) instead of Pusher. **Reverb
@@ -48,6 +125,24 @@ Pusher until the DNS cutover, so keep both profiles until then.
 No 100 concurrent-connection cap and no 200k messages/day ceiling. Typing
 indicators are no longer metered — still worth throttling for battery and data,
 but not for cost.
+
+---
+
+## 2026-08-24 — Heads-up: production database cleanup is planned
+
+No API change. Recording it here because the cleanup, once executed, is a
+breaking event for every currently installed app build.
+
+- **Every non-staff account will be deleted**, along with all posts, memories,
+  messages, contests, notifications, wallets and withdrawal requests.
+- **`user_sessions` is truncated**, so every stored access token becomes
+  invalid — installed apps get `401` and must send the user back to signup.
+- **`device_tokens` is truncated** — push stops until each app re-registers its
+  FCM token on next login.
+- Tags survive but their `usage_count` resets to 0; legal documents and app
+  settings are untouched, so onboarding and the terms gate keep working.
+- Plan and open questions: [PROD_DB_CLEANUP_PLAN.md](PROD_DB_CLEANUP_PLAN.md).
+  Nothing has been executed yet.
 
 ---
 

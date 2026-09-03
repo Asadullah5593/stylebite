@@ -63,12 +63,12 @@
         <input type="number" min="0" step="0.01" name="prize_pool" value="{{ old('prize_pool', $contest->prize_pool ?? 0) }}" class="form-control border-0 bg-dark-soft rounded-3" placeholder="1000">
     </div>
     <div class="col-md-4">
-        <label class="form-label small text-muted">Start At</label>
-        <input type="datetime-local" name="start_at" value="{{ old('start_at', isset($contest->start_at) && $contest->start_at ? $contest->start_at->format('Y-m-d\TH:i') : '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <label class="form-label small text-muted">Start At <span class="text-muted">({{ stylebite_reporting_timezone() }})</span></label>
+        <input type="datetime-local" name="start_at" value="{{ old('start_at', stylebite_admin_datetime_input($contest->start_at ?? null)) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-4">
-        <label class="form-label small text-muted">End At</label>
-        <input type="datetime-local" name="end_at" value="{{ old('end_at', isset($contest->end_at) && $contest->end_at ? $contest->end_at->format('Y-m-d\TH:i') : '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <label class="form-label small text-muted">End At <span class="text-muted">({{ stylebite_reporting_timezone() }})</span></label>
+        <input type="datetime-local" name="end_at" value="{{ old('end_at', stylebite_admin_datetime_input($contest->end_at ?? null)) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-8">
         <label class="form-label small text-muted">Contest Image</label>

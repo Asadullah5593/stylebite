@@ -134,7 +134,7 @@
                                     <form method="POST" action="{{ route('admin.moderation.actions.expiry', $item) }}" class="d-grid gap-2" style="min-width: 190px;">
                                         @csrf
                                         @method('PATCH')
-                                        <input type="datetime-local" name="expires_at" value="{{ $item->expires_at?->format('Y-m-d\TH:i') }}" class="form-control form-control-sm border-0 bg-dark-soft rounded-3 text-muted">
+                                        <input type="datetime-local" name="expires_at" value="{{ stylebite_admin_datetime_input($item->expires_at) }}" class="form-control form-control-sm border-0 bg-dark-soft rounded-3 text-muted" title="Times are in {{ stylebite_reporting_timezone() }}">
                                         <button class="btn btn-sm btn-outline-dynamic rounded-3" type="submit">
                                             <i class="bi bi-clock-history me-1"></i>Save Expiry
                                         </button>

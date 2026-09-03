@@ -109,6 +109,9 @@ class ModerationController extends Controller
     {
         $isUserTarget = $report->target_type === 'user';
 
+        // A picked date is a wall clock in the admin's timezone, not UTC.
+        stylebite_normalize_admin_datetimes($request, 'suspended_until');
+
         // Preset suspension lengths arrive as duration_hours; fold them into
         // suspended_until so validation deals with a single field.
         if ($request->input('action') === 'suspend'
@@ -190,6 +193,8 @@ class ModerationController extends Controller
 
     public function updateActionExpiry(Request $request, ModerationAction $moderationAction): RedirectResponse
     {
+        stylebite_normalize_admin_datetimes($request, 'expires_at');
+
         $data = $request->validate([
             'expires_at' => ['nullable', 'date'],
         ]);

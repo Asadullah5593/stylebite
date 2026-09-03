@@ -986,3 +986,98 @@ if (! function_exists('stylebite_compact_number')) {
         return rtrim(rtrim($formatted, '0'), '.').$suffix;
     }
 }
+
+if (! function_exists('stylebite_parse_admin_datetime')) {
+    /**
+     * Read a datetime the admin panel collected and return the instant it means, in UTC.
+     *
+     * An <input type="datetime-local"> posts a bare wall clock — "2026-09-02T23:55" —
+     * with no offset at all. Carbon::parse() then reads it in the app timezone, which
+     * is UTC, so 11:55 PM picked in Karachi was stored as 23:55 UTC: the contest really
+     * started five hours after the admin intended. The admin is reading the clock on
+     * the wall, so that is the timezone the value has to be resolved against.
+     *
+     * Anything that arrives with its own offset (an API caller, a seeder) already names
+     * an instant and is passed through untouched.
+     */
+    function stylebite_parse_admin_datetime(mixed $value): ?\Carbon\CarbonImmutable
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return \Carbon\CarbonImmutable::instance($value)->utc();
+        }
+
+        if (! is_string($value) && ! is_numeric($value)) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        $carriesOffset = (bool) preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', $value);
+
+        try {
+            $parsed = $carriesOffset
+                ? \Carbon\CarbonImmutable::parse($value)
+                : \Carbon\CarbonImmutable::parse($value, stylebite_reporting_timezone());
+        } catch (\Throwable) {
+            // Let validation report a malformed value rather than throwing here.
+            return null;
+        }
+
+        return $parsed->utc();
+    }
+}
+
+if (! function_exists('stylebite_admin_datetime_input')) {
+    /**
+     * Render a stored UTC datetime as the wall clock an admin expects to see in a
+     * <input type="datetime-local">. The inverse of stylebite_parse_admin_datetime().
+     *
+     * Strings pass through: those come from old() on a failed submit and are already
+     * the admin's own wall clock, so converting them again would shift the value.
+     */
+    function stylebite_admin_datetime_input(mixed $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+
+        if (! $value instanceof \DateTimeInterface) {
+            return '';
+        }
+
+        return \Carbon\CarbonImmutable::instance($value)
+            ->setTimezone(stylebite_reporting_timezone())
+            ->format('Y-m-d\TH:i');
+    }
+}
+
+if (! function_exists('stylebite_normalize_admin_datetimes')) {
+    /**
+     * Rewrite the named request fields from admin wall clock to UTC, in place.
+     *
+     * Called before validate() rather than after, because rules like `after:now` and
+     * `after_or_equal:start_at` compare against UTC too: a two-hour suspension picked
+     * in Karachi looked like it was three hours in the past and was rejected outright.
+     */
+    function stylebite_normalize_admin_datetimes(\Illuminate\Http\Request $request, string ...$fields): void
+    {
+        foreach ($fields as $field) {
+            if (! $request->has($field)) {
+                continue;
+            }
+
+            $parsed = stylebite_parse_admin_datetime($request->input($field));
+
+            // A value we could not read is left alone so validation can reject it.
+            if ($parsed === null && trim((string) $request->input($field)) !== '') {
+                continue;
+            }
+
+            $request->merge([$field => $parsed?->toDateTimeString()]);
+        }
+    }
+}

@@ -7,6 +7,45 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-03 — Admin date pickers save the time you actually picked 🕐
+
+**Bug fix. No migration.**
+
+Every `datetime-local` field in the panel posts a bare wall clock — `2026-09-02T23:55`
+— with no timezone attached. The app timezone is UTC, so the server read that as
+**23:55 UTC** and stored it. An admin in Karachi picking 11:55 PM got a contest that
+really started at **4:55 AM the next day**: five hours late, every time.
+
+Admin datetimes are now resolved against the reporting timezone
+(**Admin → Settings → `general.default_timezone`**, default `Asia/Karachi`) on the
+way in, and rendered back in that same timezone on the way out. Storage is still
+UTC everywhere — only the reading of the admin's input changed.
+
+**Fields fixed** (all of them had the same bug):
+
+| Screen | Field |
+| --- | --- |
+| Contests → Create / Edit | `start_at`, `end_at` |
+| Contests → Invitations | `expires_at` |
+| Moderation → Actions | `expires_at` |
+| Moderation → Reports → custom end time | `suspended_until` |
+| Users → Lifecycle → custom end time | `suspended_until` |
+
+Each picker now shows its timezone in the label, so there is nothing to guess.
+
+### This also fixes short suspensions being rejected
+`suspended_until` is validated with `after:now`. A two-hour suspension picked in
+Karachi looked like a time three hours in the *past* once read as UTC, so the panel
+refused it with "The suspension end time must be in the future." Conversion now
+happens **before** validation, so the comparison is like for like.
+
+### ⚠️ Contests created before this fix are still wrong in the database
+Nothing was rewritten automatically — there is no way to tell a mistyped date from a
+deliberate one. **Re-open any existing contest and re-pick its start/end times**, or
+ask for a one-off correction script.
+
+---
+
 ## 2026-09-02 — Contest rework: free-text types, automatic status, one image, featured 🏆
 
 Requested by the mobile team. **Includes a migration.**

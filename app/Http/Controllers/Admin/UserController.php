@@ -635,6 +635,11 @@ class UserController extends Controller
      */
     private function normalizeSuspensionInput(Request $request): void
     {
+        // A picked date is a wall clock in the admin's timezone; a preset duration
+        // is already an instant. Convert the picked one first so the preset branch
+        // only fires when nothing was picked.
+        stylebite_normalize_admin_datetimes($request, 'suspended_until');
+
         if ($request->input('action') === 'suspend'
             && ! $request->filled('suspended_until')
             && is_numeric($request->input('duration_hours'))) {

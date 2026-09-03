@@ -57,7 +57,7 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label small fw-bold text-muted">Expiry</label>
+                <label class="form-label small fw-bold text-muted">Expiry <span class="fw-normal">({{ stylebite_reporting_timezone() }})</span></label>
                 <input type="datetime-local" name="expires_at" class="form-control border-0 bg-dark-soft rounded-3 text-muted">
             </div>
             <div class="col-12 text-end">

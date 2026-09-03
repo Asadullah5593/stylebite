@@ -374,6 +374,8 @@ class ContestController extends Controller
 
     public function storeInvitation(Request $request): RedirectResponse
     {
+        stylebite_normalize_admin_datetimes($request, 'expires_at');
+
         $data = $request->validate([
             'contest_id' => ['required', 'integer', 'exists:contests,id'],
             'receiver_user_id' => ['required', 'integer', 'exists:users,id'],
@@ -712,6 +714,10 @@ class ContestController extends Controller
 
     private function persistContest(Request $request, ?Contest $contest = null): Contest
     {
+        // The form posts a bare wall clock; resolve it against the admin timezone
+        // before validation, so `after_or_equal:start_at` compares like for like.
+        stylebite_normalize_admin_datetimes($request, 'start_at', 'end_at');
+
         $validated = $request->validate([
             'title' => [
                 'required', 'string', 'max:191',

@@ -41,7 +41,7 @@
                     <input type="datetime-local" name="suspended_until" id="lifecycleUntilInput"
                         class="form-control bg-dark-soft border-0 rounded-3 mt-2 d-none" disabled>
                     <div class="form-text text-muted extra-small d-none" id="lifecycleUntilHint">
-                        Interpreted as server time ({{ config('app.timezone', 'UTC') }}).
+                        Interpreted as {{ stylebite_reporting_timezone() }} time.
                     </div>
                 </div>
             </div>

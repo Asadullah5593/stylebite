@@ -227,7 +227,7 @@
                                                         <option value="custom">Custom end time…</option>
                                                     </select>
                                                     <input type="hidden" name="duration_hours" value="168" class="target-duration-hours">
-                                                    <input type="datetime-local" name="suspended_until" class="form-control form-control-sm border-0 bg-dark-soft rounded-3 d-none target-until-input" disabled>
+                                                    <input type="datetime-local" name="suspended_until" class="form-control form-control-sm border-0 bg-dark-soft rounded-3 d-none target-until-input" disabled title="Times are in {{ stylebite_reporting_timezone() }}">
                                                 </div>
                                             @endif
                                             <button class="btn btn-sm btn-outline-warning rounded-3" type="submit">

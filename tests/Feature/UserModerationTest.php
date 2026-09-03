@@ -113,11 +113,15 @@ class UserModerationTest extends TestCase
 
         $until = now()->addDays(3)->startOfMinute();
 
+        // The panel's date picker posts a bare wall clock in the admin's own
+        // timezone, with no offset — exactly what a browser sends.
+        $picked = $until->copy()->setTimezone(stylebite_reporting_timezone())->format('Y-m-d H:i:s');
+
         $this->actingAs($admin)
             ->patch(route('admin.users.status', $user), [
                 'action' => 'suspend',
                 'reason' => 'Harassment in comments',
-                'suspended_until' => $until->toDateTimeString(),
+                'suspended_until' => $picked,
             ])
             ->assertRedirect()
             ->assertSessionHas('status', 'User suspended successfully.');
