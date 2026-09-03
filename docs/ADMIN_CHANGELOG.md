@@ -7,6 +7,50 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-03 — Push notifications were failing for everyone 🔔
+
+**Two separate faults, both fixed. No migration.** Found while investigating an iOS
+report; neither was iOS-specific and neither was the app's fault.
+
+### 1. The Firebase key path on AWS still pointed at Hostinger
+`FIREBASE_SERVICE_ACCOUNT_PATH` in the AWS `.env` was carried over verbatim from the
+old server:
+
+```
+/home/u353708470/domains/stylebiteapp.com/public_html/storage/app/firebase/service_file.json
+```
+
+That path does not exist on EC2, so `stylebite_firebase_service_account()` threw
+before any request reached FCM. **Push had never worked on AWS.**
+
+The key now lives at `storage/app/firebase/service_file.json` — outside the web
+root, owned `www-data:www-data`, mode `640`. The old default was
+`public/service_file.json`, i.e. a service-account private key inside the docroot;
+that default is no longer used on any server.
+
+⚠️ **This file is gitignored and does not travel with `git pull`.** Any rebuild or
+new server needs it copied across by hand, or push silently stops working.
+
+### 2. Every push without an image was rejected by FCM with a 400
+`apns.fcm_options` was built with `array_filter()` holding nothing but the image.
+With no image it became an empty PHP array, which `json_encode` writes as `[]` — a
+JSON *list*. FCM's proto expects an object there and refused the entire message:
+
+```
+Unknown name "fcm_options" at 'message.apns':
+Proto field is not repeating, cannot start list.
+```
+
+The outer `array_filter` that strips empty arrays only reaches the top level, so it
+never saw this one nested a layer down. Since most notifications carry no image,
+**this broke almost every push — on Hostinger as well, same code.** `fcm_options` is
+now only attached when there is actually an image.
+
+Covered by `tests/Feature/FirebasePushPayloadTest.php`, which walks the whole payload
+and fails on an empty array at any depth.
+
+---
+
 ## 2026-09-03 — Admin date pickers save the time you actually picked 🕐
 
 **Bug fix. No migration.**

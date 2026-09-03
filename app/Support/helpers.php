@@ -701,6 +701,30 @@ if (! function_exists('stylebite_firebase_message_payload')) {
             ->map(fn ($value) => (string) $value)
             ->all();
 
+        $hasImage = is_string($image) && $image !== '';
+
+        $apns = [
+            'headers' => [
+                'apns-priority' => '10',
+            ],
+            'payload' => [
+                'aps' => [
+                    'sound' => 'default',
+                ],
+            ],
+        ];
+
+        // fcm_options is only ever sent when it has something in it. An empty PHP
+        // array encodes as a JSON list, and FCM rejects the whole message with
+        // "Unknown name \"fcm_options\" ... Proto field is not repeating, cannot
+        // start list" — a 400 before delivery is even attempted. Because the key
+        // only ever held the image, that broke every push without one: almost all
+        // of them. The outer array_filter below cannot catch it, as it only
+        // reaches the top level and this sits a layer deeper.
+        if ($hasImage) {
+            $apns['fcm_options'] = ['image' => $image];
+        }
+
         return array_filter([
             'token' => $pushToken,
             'notification' => $notificationPayload,
@@ -708,23 +732,11 @@ if (! function_exists('stylebite_firebase_message_payload')) {
             'android' => [
                 'priority' => 'high',
                 'notification' => array_filter([
-                    'image' => $image,
+                    'image' => $hasImage ? $image : null,
                     'sound' => 'default',
                 ], fn ($value) => $value !== null && $value !== ''),
             ],
-            'apns' => [
-                'headers' => [
-                    'apns-priority' => '10',
-                ],
-                'payload' => [
-                    'aps' => [
-                        'sound' => 'default',
-                    ],
-                ],
-                'fcm_options' => array_filter([
-                    'image' => $image,
-                ], fn ($value) => $value !== null && $value !== ''),
-            ],
+            'apns' => $apns,
         ], fn ($value) => ! (is_array($value) && $value === []));
     }
 }

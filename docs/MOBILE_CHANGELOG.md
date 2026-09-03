@@ -8,6 +8,37 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-03 — Push notifications fixed (backend) 🔔
+
+**Two backend faults, both ours. No API change — nothing to do in the app.**
+
+1. The Firebase credentials path on the AWS server still pointed at the old
+   Hostinger filesystem, so every send failed before reaching FCM. Push had never
+   worked on the AWS environment.
+2. Every push **without an image** was rejected by FCM with a 400 — we were sending
+   an empty `apns.fcm_options`, which encodes as a JSON list where Google expects an
+   object. Most notifications have no image, so most pushes never left our server.
+   This one affected the old environment too.
+
+Both fixed. If you were chasing an APNs or certificate problem on the app side, you
+can stop — the messages were not getting past our backend.
+
+**What we still need from the app:** there are **zero iOS device tokens** in the AWS
+database, so nothing can be delivered yet regardless.
+
+- Please send `platform: "ios"` in the login body (or an `X-Platform: ios` header).
+  When it is missing we default to `web`, which mislabels the token — the table is
+  unique on `(platform, push_token)`, so the same token registered both ways becomes
+  two rows.
+- Better, call **`POST /api/devices/push-token`** on every app launch and from
+  `onTokenRefresh`, not only at login. It takes `device_id`, `platform`,
+  `push_token`, `app_version`. FCM rotates tokens on reinstall and restore, and
+  login-only registration leaves dead rows behind.
+- Confirm you are pointing at **`aws.stylebiteapp.com`**. The old Hostinger backend
+  is still live on a completely separate database.
+
+---
+
 ## 2026-09-03 — Contest `start_at` / `end_at` were 5 hours late 🕐
 
 **Backend bug, now fixed. No API shape change — nothing to do in the app.**
