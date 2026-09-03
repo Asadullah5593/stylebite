@@ -8,6 +8,35 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-03 — The API is live on the main domain 🚀
+
+**`https://stylebiteapp.com/api` is now the production API.** It runs on our AWS
+server in Singapore.
+
+**Nothing in the API changed** — same endpoints, same request and response shapes,
+same data. Only the machine behind the domain is different.
+
+### Which base URL should the app use?
+Either. Both work and always will:
+
+| URL | Notes |
+| --- | --- |
+| `https://stylebiteapp.com/api` | The real production address. Prefer this for shipping builds. |
+| `https://aws.stylebiteapp.com/api` | Same server, same database. Kept permanently — useful when you need to be certain which backend you are hitting. |
+
+They are the same code and the **same database**, so a token, account or upload made
+through one is immediately visible through the other.
+
+### One thing that is now gone
+The **old Hostinger backend is switched off** (it returns `503`). Until today it was
+still live on a *separate database*, and anything registered against it was invisible
+to the real API. If you have a build pointing at an old IP address rather than a
+domain name, it will stop working — switch it to one of the two URLs above.
+
+Chat websockets work on both hostnames (`wss://`), so no change is needed there either.
+
+---
+
 ## 2026-09-03 — Push notifications fixed (backend) 🔔
 
 **Two backend faults, both ours. No API change — nothing to do in the app.**

@@ -21,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -832,11 +833,24 @@ class AuthController extends Controller
 
     private function detectPlatform(Request $request): string
     {
-        $platform = Str::lower((string) $request->input('platform', $request->header('X-Platform', 'web')));
+        $supplied = $request->input('platform', $request->header('X-Platform'));
+        $platform = Str::lower((string) ($supplied ?? 'web'));
 
-        return in_array($platform, ['ios', 'android', 'web', 'desktop'], true)
-            ? $platform
-            : 'web';
+        if (in_array($platform, ['ios', 'android', 'web', 'desktop'], true)) {
+            return $platform;
+        }
+
+        // Silently defaulting to 'web' is how an iOS handset ends up with its
+        // push token filed under the wrong platform: (platform, push_token) is
+        // the unique key, so the row exists but no iOS campaign ever finds it.
+        // The fallback stays — rejecting the login would be worse — but it is
+        // no longer invisible.
+        Log::warning('Unrecognised platform on session creation, defaulting to web.', [
+            'supplied_platform' => is_string($supplied) ? Str::limit($supplied, 40) : null,
+            'user_agent' => Str::limit((string) $request->userAgent(), 60, ''),
+        ]);
+
+        return 'web';
     }
 
     private function storeDevicePushToken(User $user, Request $request, string $platform, ?string $deviceId): void
@@ -844,6 +858,20 @@ class AuthController extends Controller
         $pushToken = $request->input('push_token');
 
         if (! $pushToken) {
+            // A mobile client that authenticates without a push token will never
+            // receive a notification, and until now that left no trace anywhere:
+            // the login answered 200, device_tokens stayed empty, and the only
+            // symptom was silence. iOS ran like this in production for days.
+            if (in_array($platform, ['ios', 'android'], true)) {
+                Log::info('Mobile login carried no push token; this device cannot receive notifications.', [
+                    'user_id' => $user->id,
+                    'platform' => $platform,
+                    'has_device_id' => $deviceId !== null,
+                    'push_token_present' => $request->has('push_token'),
+                    'user_agent' => Str::limit((string) $request->userAgent(), 60, ''),
+                ]);
+            }
+
             return;
         }
 

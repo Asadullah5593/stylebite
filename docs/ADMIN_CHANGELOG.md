@@ -7,6 +7,71 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-03 — `stylebiteapp.com` now runs on AWS 🚀
+
+**The cutover is done.** The main domain resolves to the EC2 box in Singapore
+(`18.141.245.94`). AWS is production; Hostinger is in maintenance mode.
+
+`aws.stylebiteapp.com` is **kept alive permanently** and points at the same server,
+same code, same database. It stays because it names one backend unambiguously,
+which the apex cannot do while anything is in flight.
+
+### What changed in DNS
+| Record | Before | After |
+| --- | --- | --- |
+| `A @` | 145.79.26.222 | **18.141.245.94** |
+| `AAAA @` | 2a02:4780:5c:2200:… | **deleted** |
+| TTL on both | 1800 | 300 (lowered first, then flipped) |
+
+**The AAAA deletion was not optional.** EC2 has no IPv6 address. Leaving that record
+would have sent every IPv6-capable client — most mobile networks — to Hostinger
+indefinitely, with no error anywhere. Never re-add it.
+
+Every mail record (MX, SPF, DKIM, autodiscover) was left untouched, so
+`@stylebiteapp.com` email still runs on Hostinger. **Cancelling the Hostinger plan
+would kill that email.**
+
+### HTTPS was ready before the flip, not after
+The apex certificate was pre-issued over a **DNS-01 challenge** while the domain still
+pointed at Hostinger, so HTTPS worked from the very first request instead of during a
+scramble with certbot. It was then reissued with `certbot certonly --nginx
+--force-renewal`: a manual DNS-01 certificate **cannot auto-renew**, and would have
+expired silently at 90 days and taken the site down. `authenticator = nginx` now, and
+`certbot renew --dry-run` passes for both certificates.
+
+### nginx restructured
+Three server blocks now share `/etc/nginx/snippets/stylebite-app.conf`:
+
+- `443` — `aws.stylebiteapp.com` + the bare IP, on its own certificate
+- `443` — `stylebiteapp.com` + `www`, on their own certificate
+- `80` — redirects everything to HTTPS, but leaves `/.well-known/acme-challenge/`
+  on plain HTTP so renewals keep working
+
+Previously port 80 returned **404** for the apex instead of redirecting. Backup of the
+old config is at `/root/stylebite.nginx.bak.*`.
+
+### Rolling back
+Set `A @` to `145.79.26.222`, re-add `AAAA @` as `2a02:4780:5c:2200:0:1515:29b6:2`,
+run `php artisan up` on Hostinger, re-enable its 12 crons. About five minutes at the
+current TTL — but it **strands anything users created on AWS since the flip**.
+
+### Known and accepted
+- **Hostinger data was deliberately not migrated.** No final database or media sync.
+  Some older posts may reference media that only ever existed on Hostinger.
+- **18 rows hold absolute `https://aws.stylebiteapp.com` media URLs**, written while
+  `APP_URL` was still the subdomain. They resolve correctly because both hostnames
+  reach the same server. Untidy, not broken — only worth fixing if that subdomain is
+  ever retired.
+
+### Push-token logging
+Separately, `AuthController` now records when a mobile login arrives **without** a push
+token, and when an unrecognised `platform` value is silently downgraded to `web`.
+Log-only, no behaviour change. Chasing the iOS notification problem cost days precisely
+because that path was silent: the login returned 200, nothing was written, and the only
+symptom was the absence of a notification.
+
+---
+
 ## 2026-09-03 — Push notifications were failing for everyone 🔔
 
 **Two separate faults, both fixed. No migration.** Found while investigating an iOS
