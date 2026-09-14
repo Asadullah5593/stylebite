@@ -8,6 +8,27 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-14 — Admins can now delete posts (no API change)
+
+**Nothing in the API changed. No app work is needed.** This is recorded here only so
+the behaviour is not a surprise when a user reports it.
+
+Admins can now delete a post from the panel. It is the **same soft delete** the app
+already performs through `DELETE /api/posts/{id}` — same column, same effect — so
+from the app's side a post deleted by an admin is indistinguishable from one the
+creator deleted themselves:
+
+- it stops appearing in every feed, profile and search
+- fetching it directly 404s, exactly as before
+- the author's **streak is recomputed**, so it can shorten or break — the app should
+  already be reading the streak from the server rather than tracking it locally
+
+An admin can also restore a deleted post. It comes back as **`under_review`**, which
+means it is visible to admins but **not published to feeds** until someone publishes
+it. If a user says "my post came back but nobody can see it", that is why.
+
+---
+
 ## 2026-09-03 — The API is live on the main domain 🚀
 
 **`https://stylebiteapp.com/api` is now the production API.** It runs on our AWS

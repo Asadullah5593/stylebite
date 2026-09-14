@@ -7,6 +7,67 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-14 — Posts can be deleted from the panel, and their media actually shows
+
+Two things about **Posts → All Posts**: there was no way to delete a post, and the
+media pages never showed the media.
+
+### Delete (and undo it)
+
+**Posts → All Posts** and the post detail page now have a **Delete** button. It opens
+the standard confirmation dialog with a **mandatory reason**, the same as deleting a
+user, and the deletion is a **soft delete** — the same one the app performs when a
+creator deletes their own post, so nothing new happens to the data.
+
+What a delete does:
+
+- the post leaves every feed, profile and admin list at once
+- its `status` becomes `removed` as well, so anything reading the column without the
+  soft-delete scope still treats it as taken down
+- the author's **streak is recomputed** — the post's day stops counting, which can
+  shorten or break a streak
+- a row lands in **Moderation → Actions** (`remove`) with the reason, and in the
+  activity log as `post_deleted`
+
+**Nothing is lost.** Pick **Deleted** in the status filter to list deleted posts;
+each one has a **Restore** button. A restored post comes back as **Under Review**,
+not Published — whoever deleted it had a reason, so putting it back in front of users
+stays a separate, deliberate decision. Restores are logged too.
+
+### Who can do it
+
+Delete sits behind a new **`posts.delete`** permission, granted to **admin** and
+**super_admin** only. `content_moderator` deliberately does **not** get it: taking a
+post down (`posts.moderate`) leaves it reviewable and reversible by any moderator;
+deleting it removes it everywhere and touches the author's streak. Same reasoning as
+`users.delete`.
+
+To give another role delete rights, tick `posts.delete` in **Roles**.
+
+### Media previews
+
+Every post media screen showed a **line of text where the picture should have been**.
+Now there is a real thumbnail — images inline, videos as their first frame with a play
+badge — on **All Posts**, on the post detail page (with dimensions, duration and file
+size), and on **Posts → Media**. Clicking one opens the full file in a new tab.
+
+The URLs were also wrong for older posts. `post_media.file_url` is absolute and was
+written **at upload time**, so rows created on Hostinger still point at
+`http://stylebiteapp.com/...` and rows created on a developer machine point at
+`127.0.0.1`. The panel now rebuilds the URL from `file_path`, which is relative and
+cannot go stale, and only falls back to the stored absolute URL for rows that predate
+that column.
+
+**Some old posts will still show a grey placeholder.** Those are the ones whose files
+only ever existed on Hostinger and were never copied across during the AWS cutover —
+the database row survived, the file did not. That is a data gap, not a display bug,
+and the placeholder is how you spot it.
+
+> The same stale-host problem affects `file_url` as served to the **mobile app**,
+> which has not been changed here — this fix is panel-side only.
+
+---
+
 ## 2026-09-03 — `stylebiteapp.com` now runs on AWS 🚀
 
 **The cutover is done.** The main domain resolves to the EC2 box in Singapore
