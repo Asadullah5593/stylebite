@@ -131,7 +131,15 @@
                                 @if ($item->duration_seconds) · {{ $item->duration_seconds }}s @endif
                                 @if ($item->size_bytes) · {{ number_format($item->size_bytes / 1024, 1) }} KB @endif
                             </div>
-                            <div class="text-muted extra-small">{{ str($item->processing_status)->title() }}</div>
+                            <div class="text-muted extra-small">
+                                {{ str($item->processing_status)->title() }}
+                                @if ($item->has_separate_original)
+                                    ·
+                                    {{-- The preview is the H.264 rendition; moderation sometimes
+                                         needs the bytes the user actually uploaded. --}}
+                                    <a href="{{ $item->display_url }}" target="_blank" rel="noopener" class="text-decoration-none">Original</a>
+                                @endif
+                            </div>
                         </div>
                     </div>
                 @empty

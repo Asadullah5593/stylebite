@@ -6,10 +6,11 @@
     `item` may be null (a post with no media) — the placeholder covers that, so
     callers never have to guard the include themselves.
 
-    Video uses <video preload="metadata"> instead of an <img>: nothing in this
-    schema generates poster frames (thumbnail_url is null on every row the app
-    writes), so the browser pulling the first frame itself is the only preview
-    there is. It is muted and uncontrolled, so it stays a thumbnail.
+    Video plays the transcoded rendition (preview_url), never the upload: most
+    originals are .mov/video/quicktime and iPhones record HEVC, which browsers
+    either download or play as sound over a black frame. Where the optimizer has
+    not produced a poster frame, <video preload="metadata"> lets the browser pull
+    frame 0 itself; it is muted and uncontrolled, so it stays a thumbnail.
 
     Files whose bytes never made it to this host — older posts still pointing at
     Hostinger — fail to load with no event a server-side check would catch, so
@@ -18,7 +19,7 @@
 --}}
 @php
     $size = $size ?? 52;
-    $url = $item?->display_url;
+    $url = $item?->preview_url;
     $thumb = $item?->display_thumbnail_url;
     $isVideo = $item?->media_type === 'video';
     $thumbId = 'media-thumb-'.($item?->id ?? 'none').'-'.uniqid();
@@ -31,7 +32,7 @@
             <i class="bi bi-image"></i>
         </div>
     @else
-        <a href="{{ $url }}" target="_blank" rel="noopener" class="d-block h-100 text-reset text-decoration-none" title="Open full media">
+        <a href="{{ $url }}" target="_blank" rel="noopener" class="d-block h-100 text-reset text-decoration-none" title="{{ $isVideo ? 'Play' : 'Open full media' }}">
             <div id="{{ $thumbId }}-fallback" class="d-none align-items-center justify-content-center h-100 text-muted">
                 <i class="bi {{ $isVideo ? 'bi-film' : 'bi-image-alt' }}"></i>
             </div>

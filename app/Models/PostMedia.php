@@ -53,4 +53,41 @@ class PostMedia extends StylebiteModel
             $this->thumbnail_url ?: $this->upload?->thumbnail_url
         ) ?? ($this->media_type === 'image' ? $this->display_url : null));
     }
+
+    /**
+     * The URL to actually play or open in a browser.
+     *
+     * For video this is the rendition, not the upload. The original is whatever
+     * the phone produced — most of ours are .mov/video/quicktime, and iPhones
+     * record HEVC by default — and browsers play almost none of that: HEVC
+     * decodes its AAC track and shows a black frame, .mkv has no mime mapping
+     * and downloads instead. The rendition is always H.264/AAC in MP4 with
+     * +faststart, so it plays everywhere and starts without buffering the whole
+     * file. Images render fine as uploaded and are worth inspecting at full
+     * fidelity, so they keep the original.
+     *
+     * Falls back to the original when no rendition exists (transcode failed, or
+     * the row predates the pipeline) — a sound-only preview still beats none.
+     */
+    protected function previewUrl(): Attribute
+    {
+        return Attribute::get(function (): ?string {
+            if ($this->media_type === 'video' && filled($this->optimized_path ?: $this->optimized_url)) {
+                return stylebite_asset_url($this->optimized_path ?: $this->optimized_url);
+            }
+
+            return $this->display_url;
+        });
+    }
+
+    /**
+     * Whether preview_url points at a rendition rather than the upload itself,
+     * so the UI can offer the original as a separate, labelled link.
+     */
+    protected function hasSeparateOriginal(): Attribute
+    {
+        return Attribute::get(fn (): bool => $this->preview_url !== null
+            && $this->display_url !== null
+            && $this->preview_url !== $this->display_url);
+    }
 }

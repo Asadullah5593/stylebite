@@ -211,6 +211,113 @@ class AdminPostDeletionTest extends TestCase
         }
     }
 
+    public function test_video_previews_link_to_the_transcoded_rendition_not_the_quicktime_upload(): void
+    {
+        config(['app.asset_url' => 'https://current.example.com']);
+
+        $admin = $this->admin();
+        $post = $this->makePost();
+
+        // The shape live actually has: a .mov/quicktime upload that browsers
+        // will not play, with an H.264 MP4 rendition sitting beside it.
+        PostMedia::create([
+            'post_id' => $post->id,
+            'media_type' => 'video',
+            'media_role' => 'original',
+            'file_path' => 'posts/78/clip.mov',
+            'file_url' => 'https://stylebiteapp.com/posts/78/clip.mov',
+            'mime_type' => 'video/quicktime',
+            'optimized_path' => 'posts/78/optimized/clip.mp4',
+            'optimized_url' => 'https://aws.stylebiteapp.com/posts/78/optimized/clip.mp4',
+            'thumbnail_url' => 'posts/78/optimized/clip.jpg',
+            'processing_status' => 'ready',
+        ]);
+
+        // The thumbnail's own anchor is the thing a moderator clicks, so pin that
+        // one rather than "the mp4 appears somewhere on the page".
+        $thumbnailAnchor = 'href="https://current.example.com/posts/78/optimized/clip.mp4"'
+            .' target="_blank" rel="noopener" class="d-block h-100';
+
+        foreach ([
+            route('admin.posts.all_posts'),
+            route('admin.posts.show', $post),
+            route('admin.posts.post_media'),
+        ] as $url) {
+            $this->actingAs($admin)
+                ->get($url)
+                ->assertOk()
+                ->assertSee($thumbnailAnchor, false);
+        }
+
+        // All Posts has no "original" affordance, so the unplayable .mov must
+        // not be linked there at all.
+        $this->actingAs($admin)
+            ->get(route('admin.posts.all_posts'))
+            ->assertOk()
+            ->assertDontSee('clip.mov', false);
+
+        // On the media list the original stays reachable for moderation, but
+        // only as a separate, labelled link — never as the preview.
+        $this->actingAs($admin)
+            ->get(route('admin.posts.post_media'))
+            ->assertOk()
+            ->assertSee('https://current.example.com/posts/78/clip.mov', false)
+            ->assertSee('Original upload');
+    }
+
+    public function test_a_video_without_a_rendition_still_falls_back_to_the_original(): void
+    {
+        config(['app.asset_url' => 'https://current.example.com']);
+
+        $admin = $this->admin();
+        $post = $this->makePost();
+
+        PostMedia::create([
+            'post_id' => $post->id,
+            'media_type' => 'video',
+            'media_role' => 'original',
+            'file_path' => 'posts/78/untranscoded.mp4',
+            'file_url' => 'https://stylebiteapp.com/posts/78/untranscoded.mp4',
+            'optimized_path' => null,
+            'optimized_url' => null,
+            'processing_status' => 'ready',
+        ]);
+
+        // No rendition (transcode failed, or the row predates the pipeline):
+        // a sound-only preview still beats no preview at all.
+        $this->actingAs($admin)
+            ->get(route('admin.posts.post_media'))
+            ->assertOk()
+            ->assertSee('https://current.example.com/posts/78/untranscoded.mp4', false)
+            ->assertDontSee('Original upload');
+    }
+
+    public function test_images_keep_pointing_at_the_original_for_full_fidelity(): void
+    {
+        config(['app.asset_url' => 'https://current.example.com']);
+
+        $admin = $this->admin();
+        $post = $this->makePost();
+
+        PostMedia::create([
+            'post_id' => $post->id,
+            'media_type' => 'image',
+            'media_role' => 'original',
+            'file_path' => 'posts/78/photo.jpg',
+            'file_url' => 'https://stylebiteapp.com/posts/78/photo.jpg',
+            'optimized_path' => 'posts/78/optimized/photo.jpg',
+            'optimized_url' => 'https://stylebiteapp.com/posts/78/optimized/photo.jpg',
+            'processing_status' => 'ready',
+        ]);
+
+        // Images render everywhere, and moderation wants what was uploaded.
+        $this->actingAs($admin)
+            ->get(route('admin.posts.post_media'))
+            ->assertOk()
+            ->assertSee('https://current.example.com/posts/78/photo.jpg', false)
+            ->assertDontSee('Original upload');
+    }
+
     public function test_media_without_a_relative_path_still_falls_back_to_its_stored_url(): void
     {
         $admin = $this->admin();

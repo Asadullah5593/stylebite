@@ -58,10 +58,15 @@
                             </td>
                             <td>
                                 <div class="fw-bold small">#{{ $item->id }}</div>
-                                @if ($item->display_url)
-                                    <a href="{{ $item->display_url }}" target="_blank" rel="noopener"
+                                @if ($item->preview_url)
+                                    <a href="{{ $item->preview_url }}" target="_blank" rel="noopener"
                                        class="text-muted extra-small text-truncate d-block text-decoration-none"
-                                       style="max-width: 220px;" title="{{ $item->display_url }}">{{ $item->display_url }}</a>
+                                       style="max-width: 220px;" title="{{ $item->preview_url }}">{{ $item->preview_url }}</a>
+                                    @if ($item->has_separate_original)
+                                        <a href="{{ $item->display_url }}" target="_blank" rel="noopener"
+                                           class="text-muted extra-small text-decoration-none"
+                                           title="{{ $item->display_url }}">Original upload</a>
+                                    @endif
                                 @else
                                     <div class="text-muted extra-small">No file url</div>
                                 @endif
