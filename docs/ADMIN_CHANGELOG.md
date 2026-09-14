@@ -127,6 +127,27 @@ and the placeholder is how you spot it.
 > The same stale-host problem affects `file_url` as served to the **mobile app**,
 > which has not been changed here — this fix is panel-side only.
 
+### Videos play the rendition, not the upload
+
+Clicking a video preview was opening the **original upload**, and browsers play
+almost none of what phones produce: most of ours are `.mov` / `video/quicktime`,
+and iPhones record HEVC by default. Chrome decodes the AAC audio and shows a black
+frame — "it plays but there's no picture" — and a `.mkv` has no mime mapping at all,
+so it downloads instead.
+
+Video previews now open the **transcoded rendition** (`optimized_path`), which the
+optimizer always writes as H.264 + AAC in MP4 with `+faststart` — it plays in every
+browser and starts immediately instead of buffering the whole file. Where a rendition
+is missing (transcode failed, or the row predates the pipeline) it falls back to the
+original, because a sound-only preview still beats none.
+
+**The original is still one click away**, as a labelled "Original" / "Original upload"
+link on the post detail page and on Posts → Media — moderation sometimes needs the
+exact bytes that were uploaded.
+
+**Images are unchanged** and still open the original. They render everywhere, and for
+moderation you want full fidelity rather than a downscaled feed copy.
+
 ---
 
 ## 2026-09-03 — `stylebiteapp.com` now runs on AWS 🚀
