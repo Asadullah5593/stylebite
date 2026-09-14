@@ -8,6 +8,20 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-14 — Sharper videos 🎞️
+
+**No API shape change.** The files behind `media[].file_url` for videos are now
+**1080p** (portrait: 608×1080) instead of 720p (406×720), encoded at a higher quality
+tier. Still H.264/AAC MP4 with `+faststart`, so nothing changes in how you play them.
+
+Expect **~2.5–3× the bytes per video** (a typical 16 s clip: ~6 MB instead of ~2 MB).
+If you show a data-saver option or prefetch videos in the feed, that budget has
+moved. **Existing videos have been re-encoded**, and `optimized_width` /
+`optimized_height` / `thumbnail_url` on existing video rows have changed — do not
+cache those from before today.
+
+---
+
 ## 2026-09-14 — Sharper feed photos, and HTTP/2 🖼️
 
 **No API shape change.** Same fields, same URLs — but the images behind

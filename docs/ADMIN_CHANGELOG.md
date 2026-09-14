@@ -7,6 +7,35 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-14 — Videos are no longer soft either 🎞️
+
+Same problem as the photos, one step worse. Every portrait video was transcoded to
+**406×720** and then stretched almost 3× across a 1170–1290px phone screen, and the
+encoder ran at the cheapest tier (`veryfast`, CRF 23) — a choice made for the old
+shared host, which had no CPU to spare.
+
+### What changed
+| | Before | After |
+| --- | --- | --- |
+| Max height | 720 | **1080** (portraits 608×1080) |
+| x264 preset | `veryfast` | **`medium`** |
+| CRF | 23 | **21** |
+| Bitrate cap / buffer | 2000k / 3000k | **3500k / 5000k** |
+| Audio | 128k AAC | unchanged |
+
+Measured on a real 16 s clip from the feed (720×1280 HEVC, 9.4 MB): **2.16 MB →
+5.98 MB**, ~3.3 Mbps. Chosen from a three-way side-by-side (720p/veryfast/CRF 23,
+1080p/medium/CRF 21, 1080p/medium/CRF 19); CRF 19 was 30% heavier for a difference a
+phone cannot show. Expect roughly **2.5–3× the data per video**.
+
+**Existing videos were re-encoded** through the queue with
+`stylebite:optimize-media --force --type=video` (25 clips, ~6 minutes of footage);
+poster frames were regenerated with them. Encoding at `medium` takes roughly real time
+on this instance, so a long upload now takes about as long to process as it is to
+watch — it happens on the queue worker, uploads still return immediately.
+
+---
+
 ## 2026-09-14 — Feed photos are no longer soft 🖼️
 
 **Image quality on uploaded photos was visibly poor.** Asad compared the raw upload

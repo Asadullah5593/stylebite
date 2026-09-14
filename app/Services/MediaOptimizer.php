@@ -57,11 +57,23 @@ class MediaOptimizer
 
     public const AVATAR_QUALITY = 82;
 
-    public const VIDEO_MAX_HEIGHT = 720;
+    /**
+     * Video got the same treatment as photos on 2026-09-14. At 720 a portrait
+     * clip came out 406px wide and was stretched almost 3x across the phone;
+     * 1080 gives portraits 608x1080. `veryfast` / CRF 23 were picked for the old
+     * shared host with no CPU to spare — `medium` / CRF 21 is the usual tier
+     * for social video and this box can afford it. Measured on a real 16s
+     * 720x1280 clip: 2.16 MB -> 5.98 MB. Chosen by Asad from a side-by-side.
+     */
+    public const VIDEO_MAX_HEIGHT = 1080;
 
-    public const VIDEO_MAX_BITRATE = '2000k';
+    public const VIDEO_PRESET = 'medium';
 
-    public const VIDEO_BUFSIZE = '3000k';
+    public const VIDEO_CRF = '21';
+
+    public const VIDEO_MAX_BITRATE = '3500k';
+
+    public const VIDEO_BUFSIZE = '5000k';
 
     public const VIDEO_AUDIO_BITRATE = '128k';
 
@@ -191,8 +203,8 @@ class MediaOptimizer
             '-vf', 'scale=-2:'.$targetHeight,
             '-c:v', 'libx264',
             '-profile:v', 'main',
-            '-preset', 'veryfast',
-            '-crf', '23',
+            '-preset', self::VIDEO_PRESET,
+            '-crf', self::VIDEO_CRF,
             '-maxrate', self::VIDEO_MAX_BITRATE,
             '-bufsize', self::VIDEO_BUFSIZE,
             '-pix_fmt', 'yuv420p',
