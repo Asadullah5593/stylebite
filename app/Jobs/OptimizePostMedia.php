@@ -27,7 +27,13 @@ class OptimizePostMedia implements ShouldQueue
 
     public int $timeout = 1200;
 
-    public function __construct(public int $postMediaId)
+    /**
+     * @param  bool  $force  Re-render even if a rendition already exists. This is
+     *                       how a change to the rendition settings reaches media
+     *                       that was uploaded before the change; without it the
+     *                       guard below treats every existing row as done.
+     */
+    public function __construct(public int $postMediaId, public bool $force = false)
     {
     }
 
@@ -39,8 +45,9 @@ class OptimizePostMedia implements ShouldQueue
             return;
         }
 
-        // Already optimized (e.g. re-dispatched) — nothing to do.
-        if ($media->optimized_url !== null && $media->processing_status === 'ready') {
+        // Already optimized (e.g. re-dispatched) — nothing to do, unless the
+        // caller is deliberately re-rendering with new settings.
+        if (! $this->force && $media->optimized_url !== null && $media->processing_status === 'ready') {
             return;
         }
 
@@ -77,6 +84,8 @@ class OptimizePostMedia implements ShouldQueue
             return;
         }
 
+        $previousRendition = $media->optimized_path;
+
         $media->forceFill([
             'optimized_path' => $rendition['path'],
             'optimized_url' => $rendition['url'],
@@ -88,6 +97,26 @@ class OptimizePostMedia implements ShouldQueue
             'processing_status' => 'ready',
             'optimized_at' => now(),
         ])->save();
+
+        $this->forgetReplacedRendition($previousRendition, $rendition['path']);
+    }
+
+    /**
+     * A re-render writes a fresh file under a new name; the one it replaces
+     * would otherwise sit on disk forever, unreferenced. Only deleted once the
+     * row points at the new file, so a failure leaves the old rendition serving.
+     */
+    private function forgetReplacedRendition(?string $previousPath, string $newPath): void
+    {
+        if ($previousPath === null || $previousPath === '' || $previousPath === $newPath) {
+            return;
+        }
+
+        $absolute = base_path(ltrim($previousPath, '/'));
+
+        if (is_file($absolute)) {
+            @unlink($absolute);
+        }
     }
 
     private function optimizeVideo(PostMedia $media, MediaOptimizer $optimizer): void
@@ -100,6 +129,8 @@ class OptimizePostMedia implements ShouldQueue
             return;
         }
 
+        $previousRendition = $media->optimized_path;
+
         $media->forceFill([
             'optimized_path' => $rendition['path'],
             'optimized_url' => $rendition['url'],
@@ -111,5 +142,7 @@ class OptimizePostMedia implements ShouldQueue
             'processing_status' => 'ready',
             'optimized_at' => now(),
         ])->save();
+
+        $this->forgetReplacedRendition($previousRendition, $rendition['path']);
     }
 }

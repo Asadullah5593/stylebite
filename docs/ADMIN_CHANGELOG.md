@@ -34,9 +34,23 @@ smaller than the original**. Chosen from a five-way side-by-side (1080/q72, 1080
 1440/q82, 1600/q85, 1920/q85); 1920 was 30% heavier for a difference phones cannot
 show.
 
-**Existing posts were re-rendered** with `stylebite:optimize-media --force --sync`
-after deploy, so old photos got the new quality too. Avatars (512/q82) and contest
-artwork (2000/q80) are unchanged.
+**Existing posts were re-rendered** with `stylebite:optimize-media --force --sync
+--type=image` after deploy, so old photos got the new quality too. Avatars (512/q82)
+and contest artwork (2000/q80) are unchanged.
+
+### `--force` did nothing before today
+The first re-render run reported "Optimized 87 media item(s)" and changed nothing.
+`--force` widened the command's query, but the job it dispatches has its own "already
+optimized" guard and returned immediately for every row — so a settings change could
+never reach media uploaded before it, which is the only reason anyone runs `--force`.
+The flag now travels with each job. Two related additions:
+
+- **`--type=image|video`** — a photo settings change no longer re-transcodes every
+  video (slow, and pointless when the video settings did not change).
+- **The replaced rendition file is deleted** once the row points at the new one, so
+  re-renders stop leaving orphaned files on disk.
+
+Pinned by `tests/Feature/ForcedMediaRerenderTest.php`.
 
 Pinned by `tests/Feature/FeedImageRenditionTest.php`.
 

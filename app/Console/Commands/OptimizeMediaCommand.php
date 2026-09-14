@@ -18,6 +18,7 @@ class OptimizeMediaCommand extends Command
     protected $signature = 'stylebite:optimize-media
         {--force : Re-optimize media that already has a rendition}
         {--sync : Process inline instead of dispatching to the queue}
+        {--type= : Only image or video — a settings change to one need not re-transcode the other}
         {--chunk=200 : Rows to load per batch}';
 
     protected $description = 'Generate mobile-optimized renditions for existing post media (compressed images, <=720p video).';
@@ -26,8 +27,22 @@ class OptimizeMediaCommand extends Command
     {
         $query = PostMedia::query()->whereNotNull('file_path');
 
-        if (! $this->option('force')) {
+        $force = (bool) $this->option('force');
+
+        if (! $force) {
             $query->whereNull('optimized_url');
+        }
+
+        $type = $this->option('type');
+
+        if ($type !== null) {
+            if (! in_array($type, ['image', 'video'], true)) {
+                $this->error('--type must be image or video.');
+
+                return self::FAILURE;
+            }
+
+            $query->where('media_type', $type);
         }
 
         $total = (clone $query)->count();
@@ -45,11 +60,14 @@ class OptimizeMediaCommand extends Command
         $bar->start();
         $processed = 0;
 
-        $query->orderBy('id')->chunkById((int) $this->option('chunk'), function ($mediaItems) use ($sync, $bar, &$processed) {
+        // The job has its own "already optimized" guard, so --force has to travel
+        // with each dispatch — widening the query alone re-dispatched every row
+        // and then every row returned untouched.
+        $query->orderBy('id')->chunkById((int) $this->option('chunk'), function ($mediaItems) use ($sync, $force, $bar, &$processed) {
             foreach ($mediaItems as $media) {
                 $sync
-                    ? OptimizePostMedia::dispatchSync($media->id)
-                    : OptimizePostMedia::dispatch($media->id);
+                    ? OptimizePostMedia::dispatchSync($media->id, $force)
+                    : OptimizePostMedia::dispatch($media->id, $force);
 
                 $processed++;
                 $bar->advance();
