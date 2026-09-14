@@ -19,9 +19,29 @@ use Illuminate\Support\Str;
  */
 class MediaOptimizer
 {
-    public const FEED_IMAGE_MAX_DIMENSION = 1080;
+    /**
+     * Feed photos are mostly portrait, and the same rendition serves both the
+     * feed and the full-screen view. At 1080 a portrait shot came out 810px
+     * wide — narrower than a phone screen, so the phone upscaled it and every
+     * photo went soft. 1600 gives portraits 1200px, which covers current phones
+     * at native resolution. Quality 85 is where JPEG stops visibly mushing
+     * fabric texture. Measured on a real 2000x2667 upload: 214 KB, still 91%
+     * below the original. Chosen by Asad from a side-by-side on 2026-09-14.
+     */
+    public const FEED_IMAGE_MAX_DIMENSION = 1600;
 
-    public const FEED_IMAGE_QUALITY = 72;
+    public const FEED_IMAGE_QUALITY = 85;
+
+    /**
+     * Unsharp mask applied after a downscale. Lanczos resizing always softens;
+     * this restores edge definition without inventing halos. Not applied when
+     * the source is already within bounds — there is nothing to undo.
+     */
+    private const SHARPEN_SIGMA = 0.6;
+
+    private const SHARPEN_AMOUNT = 1.0;
+
+    private const SHARPEN_THRESHOLD = 0.03;
 
     /**
      * Contest artwork is shown large and square (banner and cover are the same
@@ -239,6 +259,7 @@ class MediaOptimizer
         if ($width > $maxDimension || $height > $maxDimension) {
             // bestfit within a maxDimension square, preserving aspect ratio.
             $imagick->resizeImage($maxDimension, $maxDimension, \Imagick::FILTER_LANCZOS, 1, true);
+            $imagick->unsharpMaskImage(0, self::SHARPEN_SIGMA, self::SHARPEN_AMOUNT, self::SHARPEN_THRESHOLD);
         }
 
         $imagick->stripImage();
@@ -302,6 +323,12 @@ class MediaOptimizer
         }
 
         imagecopyresampled($canvas, $image, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+
+        if ($scale < 1) {
+            // GD has no unsharp mask; a mild 3x3 sharpen kernel is the nearest
+            // equivalent to what the Imagick path does after a downscale.
+            imageconvolution($canvas, [[0, -1, 0], [-1, 9, -1], [0, -1, 0]], 5, 0);
+        }
 
         $extension = Str::lower(pathinfo($dest, PATHINFO_EXTENSION));
 

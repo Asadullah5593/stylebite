@@ -7,6 +7,53 @@ Companion doc: [MOBILE_CHANGELOG.md](MOBILE_CHANGELOG.md) (mobile app / API chan
 
 ---
 
+## 2026-09-14 — Feed photos are no longer soft 🖼️
+
+**Image quality on uploaded photos was visibly poor.** Asad compared the raw upload
+against the served rendition and the drop was not acceptable for a style app.
+
+Three causes stacked up in `MediaOptimizer`:
+
+1. **1080px maximum.** Outfit photos are mostly portrait, so a portrait shot came out
+   **810px wide** — narrower than a phone screen (1170–1290px). The phone upscaled it
+   and everything went soft. This was most of the problem.
+2. **JPEG quality 72.** Fabric texture is exactly what JPEG destroys first at that
+   level.
+3. **No sharpening after the downscale.** Lanczos resizing always softens; nothing
+   put the edges back.
+
+### What changed
+| | Before | After |
+| --- | --- | --- |
+| Max dimension | 1080 | **1600** (portraits now 1200px wide) |
+| JPEG quality | 72 | **85** |
+| Post-resize sharpen | none | **unsharp mask** (Imagick) / mild kernel (GD fallback) |
+
+Measured on a real 2000×2667 upload from the feed: **76 KB → 214 KB**, still **91%
+smaller than the original**. Chosen from a five-way side-by-side (1080/q72, 1080/q85,
+1440/q82, 1600/q85, 1920/q85); 1920 was 30% heavier for a difference phones cannot
+show.
+
+**Existing posts were re-rendered** with `stylebite:optimize-media --force --sync`
+after deploy, so old photos got the new quality too. Avatars (512/q82) and contest
+artwork (2000/q80) are unchanged.
+
+Pinned by `tests/Feature/FeedImageRenditionTest.php`.
+
+### Also: HTTP/2 is on
+nginx was serving **HTTP/1.1 only**. A screen in the app fires several API calls at
+once; on HTTP/1.1 each opened its own connection and paid the full TCP+TLS handshake
+to Singapore (~400 ms) separately. HTTP/2 multiplexes them over one connection. Enabled
+on all three hostnames with `listen 443 ssl http2;` (this nginx is 1.24, which does not
+accept the newer `http2 on;` form — the first attempt failed `nginx -t` and was reverted
+before it could apply). Verified: every hostname negotiates `h2`.
+
+For the record, the API itself answers in **45 ms** measured on the box; the ~500 ms
+seen from Pakistan is round-trip distance to Singapore, not server time. A bigger
+instance would not change it. `APP_NAME` was also set to `Stylebite`.
+
+---
+
 ## 2026-09-14 — Posts can be deleted from the panel, and their media actually shows
 
 Two things about **Posts → All Posts**: there was no way to delete a post, and the

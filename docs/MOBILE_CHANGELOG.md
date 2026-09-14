@@ -8,6 +8,32 @@ Companion doc: [ADMIN_CHANGELOG.md](ADMIN_CHANGELOG.md) (admin panel changes).
 
 ---
 
+## 2026-09-14 — Sharper feed photos, and HTTP/2 🖼️
+
+**No API shape change.** Same fields, same URLs — but the images behind
+`media[].file_url` are bigger and better.
+
+### Photos
+The served rendition of an uploaded photo was **1080px at quality 72**, which made a
+portrait shot only 810px wide — narrower than the screen, so the phone upscaled it and
+it looked soft. It is now **1600px at quality 85 with post-resize sharpening**: a
+portrait photo is **1200px wide**, at native resolution on current phones.
+
+Expect **~2–3× the bytes per photo** (≈214 KB instead of ≈76 KB on a typical upload).
+Still one rendition for feed and detail view. **Existing posts have been re-rendered**,
+so you will see the change on old content too, and `optimized_width` /
+`optimized_height` on existing media rows have changed accordingly — do not cache
+those from before today.
+
+### HTTP/2
+The API now negotiates **HTTP/2** on `stylebiteapp.com`, `www` and `aws.`. If your
+HTTP client supports it (Dart's `HttpClient` and Dio do by default over TLS), parallel
+requests to a screen now share one connection instead of each paying the TCP+TLS
+handshake to Singapore. Nothing to configure; worth confirming your client is not
+pinned to HTTP/1.1.
+
+---
+
 ## 2026-09-14 — Admins can now delete posts (no API change)
 
 **Nothing in the API changed. No app work is needed.** This is recorded here only so
