@@ -25,8 +25,37 @@
             <a href="{{ route('admin.posts.edit', $post) }}" class="btn btn-outline-dynamic rounded-3">
                 <i class="bi bi-pencil me-2"></i>Edit
             </a>
+            @can('posts.delete')
+                @if ($post->trashed())
+                    <form method="POST" action="{{ route('admin.posts.restore', $post) }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-outline-success rounded-3" type="submit">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Restore
+                        </button>
+                    </form>
+                @else
+                    <button type="button" class="btn btn-outline-danger rounded-3"
+                        onclick="confirmDestructive('{{ route('admin.posts.destroy', $post) }}', 'DELETE', {
+                            title: 'Delete post #{{ $post->id }}?',
+                            message: 'It disappears from every feed, profile and list, and the day it was posted stops counting towards the author\'s streak. It can be restored later from the Deleted filter.',
+                            submitLabel: 'Delete post',
+                            reason: 'required',
+                            reasonLabel: 'Why is this post being deleted?'
+                        })">
+                        <i class="bi bi-trash3 me-2"></i>Delete
+                    </button>
+                @endif
+            @endcan
         </div>
     </div>
+
+    @if ($post->trashed())
+        <div class="glass rounded-4 p-3 mb-4 border border-danger bg-danger-soft">
+            <i class="bi bi-trash3 me-2 text-danger"></i>
+            This post was deleted {{ $post->deleted_at?->diffForHumans() }}. It is hidden from every feed and profile until it is restored.
+        </div>
+    @endif
 
     <div class="row g-4 mb-4">
         <div class="col-12 col-xl-8">
@@ -50,6 +79,9 @@
         <div class="col-12 col-xl-4">
             <div class="glass rounded-4 p-4 h-100 border border-white-05">
                 <h3 class="h6 fw-bold mb-3">Moderation</h3>
+                @if ($post->trashed())
+                    <p class="text-muted small mb-0">Deleted posts cannot be moderated. Restore it first to change its status.</p>
+                @else
                 <form method="POST" action="{{ route('admin.posts.moderate', $post) }}" class="d-grid gap-3">
                     @csrf
                     @method('PATCH')
@@ -80,6 +112,7 @@
                         <i class="bi bi-shield-check me-2"></i>Update Moderation
                     </button>
                 </form>
+                @endif
             </div>
         </div>
     </div>
@@ -87,11 +120,19 @@
     <div class="row g-4">
         <div class="col-12 col-xl-4">
             <div class="glass rounded-4 p-4 h-100 border border-white-05">
-                <h3 class="h6 fw-bold mb-3">Media</h3>
-                @forelse ($post->media->take(6) as $item)
-                    <div class="d-flex justify-content-between py-2 border-bottom border-white-05 small">
-                        <span>{{ str($item->media_type)->title() }} · {{ str($item->media_role)->replace('_', ' ')->title() }}</span>
-                        <span class="text-muted">{{ str($item->processing_status)->title() }}</span>
+                <h3 class="h6 fw-bold mb-3">Media <span class="text-muted fw-normal">({{ $post->media->count() }})</span></h3>
+                @forelse ($post->media->sortBy([['sort_order', 'asc'], ['id', 'asc']]) as $item)
+                    <div class="d-flex align-items-center gap-3 py-2 border-bottom border-white-05 small">
+                        @include('admin.posts.partials.media-thumb', ['item' => $item, 'size' => 64])
+                        <div style="min-width: 0;">
+                            <div class="fw-semibold">{{ str($item->media_type)->title() }} · {{ str($item->media_role)->replace('_', ' ')->title() }}</div>
+                            <div class="text-muted extra-small">
+                                {{ $item->width && $item->height ? $item->width.'×'.$item->height : 'Unknown size' }}
+                                @if ($item->duration_seconds) · {{ $item->duration_seconds }}s @endif
+                                @if ($item->size_bytes) · {{ number_format($item->size_bytes / 1024, 1) }} KB @endif
+                            </div>
+                            <div class="text-muted extra-small">{{ str($item->processing_status)->title() }}</div>
+                        </div>
                     </div>
                 @empty
                     <p class="text-muted mb-0">No media attached to this post.</p>
@@ -143,4 +184,6 @@
         </div>
     </div>
 </div>
+
+@include('admin.partials.confirm-action')
 @endsection

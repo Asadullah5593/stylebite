@@ -40,7 +40,8 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="bg-white-05">
                     <tr>
-                        <th class="ps-4 text-muted small fw-bold text-uppercase py-3">Media</th>
+                        <th class="ps-4 text-muted small fw-bold text-uppercase py-3">Preview</th>
+                        <th class="text-muted small fw-bold text-uppercase py-3">Media</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Post</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Type</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Role</th>
@@ -53,10 +54,30 @@
                     @forelse ($media as $item)
                         <tr class="border-white-05">
                             <td class="ps-4">
-                                <div class="fw-bold small">#{{ $item->id }}</div>
-                                <div class="text-muted extra-small text-truncate" style="max-width: 220px;">{{ $item->file_url ?: $item->upload?->file_url ?: 'No file url' }}</div>
+                                @include('admin.posts.partials.media-thumb', ['item' => $item, 'size' => 56])
                             </td>
-                            <td><span class="text-muted small">{{ str($item->post?->caption ?: 'No post caption')->limit(34) }}</span></td>
+                            <td>
+                                <div class="fw-bold small">#{{ $item->id }}</div>
+                                @if ($item->display_url)
+                                    <a href="{{ $item->display_url }}" target="_blank" rel="noopener"
+                                       class="text-muted extra-small text-truncate d-block text-decoration-none"
+                                       style="max-width: 220px;" title="{{ $item->display_url }}">{{ $item->display_url }}</a>
+                                @else
+                                    <div class="text-muted extra-small">No file url</div>
+                                @endif
+                            </td>
+                            <td>
+                                @if ($item->post)
+                                    <a href="{{ route('admin.posts.show', $item->post_id) }}" class="text-muted small text-decoration-none">
+                                        {{ str($item->post->caption ?: 'No post caption')->limit(34) }}
+                                    </a>
+                                    @if ($item->post->trashed())
+                                        <span class="badge bg-danger-soft text-danger rounded-pill ms-1">Deleted</span>
+                                    @endif
+                                @else
+                                    <span class="text-muted small">Post no longer exists</span>
+                                @endif
+                            </td>
                             <td><span class="badge bg-info-soft text-info rounded-pill text-uppercase">{{ $item->media_type }}</span></td>
                             <td><span class="text-muted small">{{ str($item->media_role)->replace('_', ' ')->title() }}</span></td>
                             <td><span class="text-muted small">{{ $item->size_bytes ? number_format($item->size_bytes / 1024, 1).' KB' : '—' }}</span></td>
@@ -64,7 +85,7 @@
                             <td><span class="text-muted small">{{ $item->sort_order }}</span></td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="text-center py-5 text-muted">No post media found for the selected filters.</td></tr>
+                        <tr><td colspan="8" class="text-center py-5 text-muted">No post media found for the selected filters.</td></tr>
                     @endforelse
                 </tbody>
             </table>

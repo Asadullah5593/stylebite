@@ -43,6 +43,7 @@
             @foreach (['draft' => 'Draft', 'published' => 'Published', 'archived' => 'Archived', 'under_review' => 'Under Review', 'removed' => 'Removed'] as $value => $label)
                 <option value="{{ $value }}" @selected(request('status') === $value)>{{ $label }}</option>
             @endforeach
+            <option value="deleted" @selected(request('status') === 'deleted')>Deleted</option>
         </select>
 
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
@@ -68,8 +69,18 @@
                     @forelse ($posts as $post)
                         <tr class="border-white-05">
                             <td class="ps-4">
-                                <div class="fw-bold small">#{{ $post->id }}</div>
-                                <div class="text-muted extra-small text-truncate" style="max-width: 320px;">{{ $post->caption ?: 'No caption' }}</div>
+                                <div class="d-flex align-items-center gap-3">
+                                    @include('admin.posts.partials.media-thumb', ['item' => $post->media->first(), 'size' => 52])
+                                    <div style="min-width: 0;">
+                                        <div class="fw-bold small">
+                                            #{{ $post->id }}
+                                            @if ($post->trashed())
+                                                <span class="badge bg-danger-soft text-danger rounded-pill ms-1">Deleted</span>
+                                            @endif
+                                        </div>
+                                        <div class="text-muted extra-small text-truncate" style="max-width: 260px;">{{ $post->caption ?: 'No caption' }}</div>
+                                    </div>
+                                </div>
                             </td>
                             <td>
                                 <div class="small fw-semibold">{{ $post->user?->full_name ?: '@'.$post->user?->username }}</div>
@@ -94,7 +105,30 @@
                                         <a href="{{ route('admin.posts.edit', $post) }}" class="btn btn-sm btn-outline-dynamic rounded-3 flex-fill">
                                             <i class="bi bi-pencil me-1"></i>Edit
                                         </a>
+                                        @can('posts.delete')
+                                            @if ($post->trashed())
+                                                <form method="POST" action="{{ route('admin.posts.restore', $post) }}" class="flex-fill d-grid">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <button class="btn btn-sm btn-outline-success rounded-3" type="submit">
+                                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                                                    </button>
+                                                </form>
+                                            @else
+                                                <button type="button" class="btn btn-sm btn-outline-danger rounded-3 flex-fill"
+                                                    onclick="confirmDestructive('{{ route('admin.posts.destroy', $post) }}', 'DELETE', {
+                                                        title: 'Delete post #{{ $post->id }}?',
+                                                        message: 'It disappears from every feed, profile and list, and the day it was posted stops counting towards the author\'s streak. It can be restored later from the Deleted filter.',
+                                                        submitLabel: 'Delete post',
+                                                        reason: 'required',
+                                                        reasonLabel: 'Why is this post being deleted?'
+                                                    })">
+                                                    <i class="bi bi-trash3 me-1"></i>Delete
+                                                </button>
+                                            @endif
+                                        @endcan
                                     </div>
+                                    @if (! $post->trashed())
                                     <form method="POST" action="{{ route('admin.posts.moderate', $post) }}" class="d-grid gap-2">
                                         @csrf
                                         @method('PATCH')
@@ -115,6 +149,7 @@
                                             <i class="bi bi-shield-check me-1"></i>Moderate
                                         </button>
                                     </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>
@@ -134,4 +169,6 @@
         </div>
     </div>
 </div>
+
+@include('admin.partials.confirm-action')
 @endsection

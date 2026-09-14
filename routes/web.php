@@ -175,10 +175,12 @@ Route::prefix('admin')->name('admin.')->middleware(['admin', 'admin.audit'])->gr
         Route::get('/post-media', [PostController::class, 'media'])->name('post_media')->middleware('permission:posts.view');
         Route::get('/post-ratings', [PostController::class, 'ratings'])->name('post_ratings')->middleware('permission:posts.view');
         Route::get('/post-tags', [PostController::class, 'tags'])->name('post_tags')->middleware('permission:posts.view');
-        Route::get('/{post}', [PostController::class, 'show'])->name('show')->middleware('permission:posts.view');
+        Route::get('/{post}', [PostController::class, 'show'])->withTrashed()->name('show')->middleware('permission:posts.view');
         Route::get('/{post}/edit', [PostController::class, 'edit'])->name('edit')->middleware('permission:posts.update');
         Route::put('/{post}', [PostController::class, 'update'])->name('update')->middleware('permission:posts.update');
         Route::patch('/{post}/moderate', [PostController::class, 'moderate'])->name('moderate')->middleware('permission:posts.moderate');
+        Route::patch('/{post}/restore', [PostController::class, 'restore'])->withTrashed()->name('restore')->middleware('permission:posts.delete');
+        Route::delete('/{post}', [PostController::class, 'destroy'])->withTrashed()->name('destroy')->middleware('permission:posts.delete');
     });
 
     // Communication Module

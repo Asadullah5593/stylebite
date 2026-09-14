@@ -25,9 +25,23 @@ class PostController extends Controller
 
     public function index(Request $request): View
     {
+        // Two different asks, and they are not the same query: the "Deleted"
+        // status filter means *only* deleted posts (withTrashed() would return
+        // the live ones too, which just looks like the filter is ignored),
+        // while ?with_deleted=1 means live posts plus deleted ones.
+        $onlyDeleted = $request->string('status')->toString() === 'deleted';
+        $includeDeleted = $request->boolean('with_deleted');
+
         $posts = Post::query()
-            ->with('user:id,username,full_name')
+            ->with([
+                'user:id,username,full_name',
+                // First slot only: the list shows one thumbnail per post, so
+                // pulling every carousel frame for ten rows would be waste.
+                'media' => fn ($query) => $query->with('upload:id,file_url,thumbnail_url')->orderBy('sort_order')->orderBy('id')->limit(1),
+            ])
             ->withCount(['media', 'tags'])
+            ->when($onlyDeleted, fn ($query) => $query->onlyTrashed())
+            ->when($includeDeleted && ! $onlyDeleted, fn ($query) => $query->withTrashed())
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
@@ -42,7 +56,9 @@ class PostController extends Controller
                 });
             })
             ->when($request->filled('post_type'), fn ($query) => $query->where('post_type', $request->string('post_type')))
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            // "deleted" is a pseudo-status handled above; it is not a value the
+            // posts.status column can hold, so it must not reach the where().
+            ->when($request->filled('status') && ! $onlyDeleted, fn ($query) => $query->where('status', $request->string('status')))
             ->latest()
             ->paginate(10)
             ->withQueryString();
@@ -54,7 +70,7 @@ class PostController extends Controller
     {
         $post->load([
             'user:id,username,full_name,email',
-            'media',
+            'media.upload:id,file_url,thumbnail_url',
             'tags:id,name',
             'ratings.user:id,username,full_name',
             'comments.user:id,username,full_name',
@@ -179,10 +195,105 @@ class PostController extends Controller
         return back()->with('status', "Post #{$post->id} moderation updated successfully.");
     }
 
+    public function destroy(Request $request, Post $post): RedirectResponse
+    {
+        // Same bar as deleting an account: the post disappears from every feed,
+        // profile and list at once, so who did it and why is recorded first.
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please record why this post is being deleted.',
+            'reason.min' => 'Please give a meaningful reason.',
+        ]);
+
+        if ($post->trashed()) {
+            return back()->with('status', "Post #{$post->id} is already deleted.");
+        }
+
+        // Mirrors the app's own delete (Api\PostController::destroy): the row is
+        // marked removed before it is trashed, so anything reading `status`
+        // without the soft-delete scope still sees a taken-down post.
+        $post->forceFill(['status' => 'removed'])->save();
+        $post->delete();
+
+        // Deleting a post takes its day back out of the streak, which can
+        // shorten or break it — so the streak is recomputed, never decremented.
+        stylebite_recalculate_streak($post->user_id);
+
+        app(\App\Services\ModerationActionRecorder::class)->record(
+            'post',
+            $post->id,
+            'remove',
+            $data['reason'],
+            $request->user()
+        );
+
+        ActivityLog::record(
+            eventName: 'post_deleted',
+            entityType: 'post',
+            entityId: $post->id,
+            metadata: [
+                'author_user_id' => $post->user_id,
+                'post_type' => $post->post_type,
+                'media_count' => $post->media()->count(),
+                'reason' => $data['reason'],
+            ],
+            description: "Deleted post #{$post->id}",
+        );
+
+        return redirect()
+            ->route('admin.posts.all_posts')
+            ->with('status', "Post #{$post->id} deleted successfully.");
+    }
+
+    public function restore(Request $request, Post $post): RedirectResponse
+    {
+        if (! $post->trashed()) {
+            return back()->with('status', "Post #{$post->id} is already live in the admin list.");
+        }
+
+        $post->restore();
+
+        // Restored under review rather than straight back into the feeds:
+        // whoever deleted it had a reason, so republishing stays a decision
+        // someone makes on purpose from the moderation panel.
+        $post->forceFill(['status' => 'under_review'])->save();
+
+        // Its day counts towards the streak again.
+        stylebite_recalculate_streak($post->user_id);
+
+        app(\App\Services\ModerationActionRecorder::class)->record(
+            'post',
+            $post->id,
+            'restore',
+            'Restored from the admin post list.',
+            $request->user()
+        );
+
+        ActivityLog::record(
+            eventName: 'post_restored',
+            entityType: 'post',
+            entityId: $post->id,
+            metadata: [
+                'author_user_id' => $post->user_id,
+                'status' => $post->status,
+            ],
+            description: "Restored post #{$post->id}",
+        );
+
+        return back()->with('status', "Post #{$post->id} restored and set to under review.");
+    }
+
     public function media(Request $request): View
     {
         $media = PostMedia::query()
-            ->with(['post:id,caption', 'upload:id,file_url,thumbnail_url'])
+            // withTrashed: deleting a post leaves its media rows here, and
+            // without it every one of them would read "No post caption" with
+            // nothing to say why.
+            ->with([
+                'post' => fn ($query) => $query->withTrashed()->select('id', 'caption', 'deleted_at'),
+                'upload:id,file_url,thumbnail_url',
+            ])
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
