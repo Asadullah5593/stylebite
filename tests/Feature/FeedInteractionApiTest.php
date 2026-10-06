@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Comment;
 use App\Models\CommentReply;
+use App\Models\Contest;
+use App\Models\ContestSubmission;
 use App\Models\DeviceToken;
 use App\Models\Notification;
 use App\Models\Post;
@@ -143,6 +145,7 @@ class FeedInteractionApiTest extends TestCase
             'allow_comments' => true,
             'allow_shares' => true,
         ]);
+        $this->enrollPostInContest($post);
 
         $this->withHeaders($this->headers($token))
             ->postJson('/api/feed/posts/'.$post->id.'/like')
@@ -455,6 +458,28 @@ class FeedInteractionApiTest extends TestCase
             'posted_at' => now(),
             'published_at' => now(),
         ], $attributes));
+    }
+
+    private function enrollPostInContest(Post $post): void
+    {
+        $contest = Contest::query()->create([
+            'slug' => 'contest-'.uniqid(),
+            'title' => 'Rating contest',
+            'category' => 'admin',
+            'contest_type' => 'group',
+            'status' => 'active',
+            'visibility' => 'public',
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDays(3),
+        ]);
+
+        ContestSubmission::create([
+            'contest_id' => $contest->id,
+            'user_id' => $post->user_id,
+            'post_id' => $post->id,
+            'submission_status' => 'submitted',
+            'submitted_at' => now(),
+        ]);
     }
 
     private function headers(string $token): array

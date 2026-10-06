@@ -108,6 +108,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'session.auth' => \App\Http\Middleware\SessionTokenAuth::class,
+            'session.auth.optional' => \App\Http\Middleware\OptionalSessionTokenAuth::class,
             'admin' => \App\Http\Middleware\EnsureAdminUser::class,
         ]);
     })

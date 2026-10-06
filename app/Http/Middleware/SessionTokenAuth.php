@@ -6,6 +6,7 @@ use App\Models\UserSession;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class SessionTokenAuth
@@ -37,6 +38,7 @@ class SessionTokenAuth
             'last_seen_at' => now(),
         ])->save();
 
+        Auth::setUser($session->user);
         $request->setUserResolver(fn () => $session->user);
         $request->attributes->set('auth_session', $session);
 

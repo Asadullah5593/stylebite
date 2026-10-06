@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Mail\GlobalAppMail;
 use App\Models\User;
 use App\Models\UserAuthProvider;
+use App\Models\UserSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -66,7 +67,7 @@ class AuthApiTest extends TestCase
 
         Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail): bool {
             return $mail->subjectLine === 'Verify your Stylebite account'
-                && $mail->actionText === 'Verify Email';
+                && preg_match('/\b\d{6}\b/', $mail->contentText) === 1;
         });
     }
 
@@ -263,7 +264,7 @@ class AuthApiTest extends TestCase
         $this->assertTrue(Hash::check('newpassword123', $user->fresh()->password_hash));
     }
 
-    public function test_user_can_verify_email_from_mail_link(): void
+    public function test_user_can_verify_email_with_otp_code(): void
     {
         Mail::fake();
 
@@ -286,19 +287,101 @@ class AuthApiTest extends TestCase
             return true;
         });
 
-        $this->assertNotNull($mail?->actionUrl);
+        preg_match('/\b(\d{6})\b/', $mail->contentText, $matches);
+        $code = $matches[1] ?? null;
 
-        $path = parse_url($mail->actionUrl, PHP_URL_PATH);
-        $query = parse_url($mail->actionUrl, PHP_URL_QUERY);
+        $this->assertNotNull($code);
 
-        $verifyResponse = $this->getJson($path.($query ? '?'.$query : ''));
+        $verifyResponse = $this->postJson('/api/auth/verify-email-otp', [
+            'email' => 'verify@example.com',
+            'code' => $code,
+        ]);
 
         $verifyResponse
             ->assertOk()
             ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('message', 'Email verified successfully.');
+            ->assertJsonPath('message', 'OTP Verified successfully.')
+            ->assertJsonStructure(['access_token', 'bearer_token', 'user']);
 
         $this->assertNotNull(User::query()->find($response->json('user.id'))->email_verified_at);
+    }
+
+    public function test_resend_email_otp_sends_a_new_code(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/auth/register', [
+            'name' => 'Resend User',
+            'email' => 'resend@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertCreated();
+
+        Mail::fake();
+
+        $response = $this->postJson('/api/auth/resend-email-otp', [
+            'email' => 'resend@example.com',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('message', 'Verification code sent successfully.');
+
+        Mail::assertSent(GlobalAppMail::class, function (GlobalAppMail $mail): bool {
+            return $mail->subjectLine === 'Verify your Stylebite account'
+                && preg_match('/\b\d{6}\b/', $mail->contentText) === 1;
+        });
+    }
+
+    public function test_unverified_user_must_verify_email_before_login(): void
+    {
+        User::factory()->unverified()->create([
+            'email' => 'pending@example.com',
+            'password_hash' => bcrypt('password123'),
+            'status' => 'active',
+        ]);
+
+        $response = $this->postJson('/api/auth/login', [
+            'email' => 'pending@example.com',
+            'password' => 'password123',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('status_code', 0)
+            ->assertJsonPath('requires_verification', true)
+            ->assertJsonPath('email', 'pending@example.com');
+    }
+
+    public function test_user_can_logout_and_revoke_session(): void
+    {
+        $user = User::factory()->create([
+            'status' => 'active',
+        ]);
+        $token = str_repeat('z', 80);
+
+        $session = UserSession::create([
+            'user_id' => $user->id,
+            'session_token_hash' => hash('sha256', $token),
+            'platform' => 'android',
+            'last_seen_at' => now(),
+            'expires_at' => now()->addDays(30),
+        ]);
+
+        $this->postJson('/api/auth/logout', [], [
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer '.$token,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('message', 'Logged out successfully.');
+
+        $this->assertNotNull($session->fresh()->revoked_at);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$token,
+        ])->getJson('/api/profile/me')->assertUnauthorized();
     }
 
     public function test_register_can_reuse_existing_push_token_without_returning_raw_database_error(): void

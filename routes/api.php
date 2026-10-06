@@ -1,8 +1,11 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BroadcastingAuthController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\ContestController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\EarningsController;
 use App\Http\Controllers\Api\FeedController;
 use App\Http\Controllers\Api\FollowController;
@@ -10,8 +13,11 @@ use App\Http\Controllers\Api\MemoryController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\RestaurantReviewController;
+use App\Http\Controllers\Api\StoryController;
 use App\Http\Controllers\Api\UserBlockController;
 use App\Http\Controllers\Api\UserSearchController;
+use App\Http\Controllers\Api\ViewController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function (): void {
@@ -21,10 +27,27 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/apple-login', [AuthController::class, 'appleLogin']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+    Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp']);
+    Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp']);
     Route::get('/verify-email/{id}/{token}', [AuthController::class, 'verifyEmail'])->name('auth.verify-email');
 });
 
+Route::middleware('session.auth.optional')->group(function (): void {
+    Route::get('/search/posts', [FeedController::class, 'searchPosts']);
+    Route::get('/feed/hashtags/{tag}', [FeedController::class, 'hashtagPosts']);
+    Route::get('/feed/tags/{tag}', [FeedController::class, 'hashtagPosts']);
+    Route::get('/restaurants/reviews', [RestaurantReviewController::class, 'index']);
+    Route::get('/food/reviews', [RestaurantReviewController::class, 'index']);
+    Route::get('/feed/posts/{postId}/food-reviews', [RestaurantReviewController::class, 'postReviews']);
+});
+
 Route::middleware('session.auth')->group(function (): void {
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::post('/devices/push-token', [DeviceController::class, 'storePushToken']);
+    Route::post('/views/batch', [ViewController::class, 'storeBatch']);
+    Route::post('/restaurants/reviews', [RestaurantReviewController::class, 'store']);
+    Route::post('/food/reviews', [RestaurantReviewController::class, 'store']);
+    Route::post('/feed/posts/{postId}/food-review', [RestaurantReviewController::class, 'storePostReview']);
     Route::get('/feed/home', [FeedController::class, 'home']);
     Route::get('/earnings/overview', [EarningsController::class, 'overview']);
     Route::get('/earnings/breakdowns', [EarningsController::class, 'breakdowns']);
@@ -37,8 +60,11 @@ Route::middleware('session.auth')->group(function (): void {
     Route::post('/feed/posts/{postId}/share', [FeedController::class, 'share']);
     Route::post('/feed/posts/{postId}/vote', [FeedController::class, 'vote']);
     Route::post('/feed/posts/{postId}/comments', [FeedController::class, 'comment']);
+    Route::delete('/feed/posts/{postId}/comments/{commentId}', [FeedController::class, 'destroyPostComment']);
+    Route::delete('/feed/comments/{commentId}', [FeedController::class, 'destroyComment']);
     Route::post('/feed/comments/{commentId}/like', [FeedController::class, 'toggleCommentLike']);
     Route::post('/feed/comments/{commentId}/replies', [FeedController::class, 'reply']);
+    Route::delete('/feed/replies/{replyId}', [FeedController::class, 'destroyReply']);
     Route::post('/feed/replies/{replyId}/like', [FeedController::class, 'toggleReplyLike']);
     Route::get('/reels', [FeedController::class, 'reels']);
     Route::get('/reels/{postId}', [FeedController::class, 'reelShow']);
@@ -48,6 +74,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::post('/reels/{postId}/share', [FeedController::class, 'share']);
     Route::post('/reels/{postId}/vote', [FeedController::class, 'vote']);
     Route::post('/reels/{postId}/comments', [FeedController::class, 'comment']);
+    Route::delete('/reels/{postId}/comments/{commentId}', [FeedController::class, 'destroyReelComment']);
     Route::get('/profile/me', [ProfileController::class, 'me']);
     Route::patch('/profile/me', [ProfileController::class, 'update']);
     Route::get('/profile/me/username-availability', [ProfileController::class, 'usernameAvailability']);
@@ -68,6 +95,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/profiles/{username}/followers', [FollowController::class, 'followers']);
     Route::get('/profiles/{username}/following', [FollowController::class, 'following']);
     Route::get('/profiles/{username}/ratings-distribution', [ProfileController::class, 'ratingsDistribution']);
+    Route::get('/stories', [StoryController::class, 'index']);
     Route::post('/posts', [PostController::class, 'store']);
     Route::match(['put', 'patch'], '/posts/{postId}', [PostController::class, 'update']);
     Route::delete('/posts/{postId}', [PostController::class, 'destroy']);
@@ -84,9 +112,19 @@ Route::middleware('session.auth')->group(function (): void {
     Route::post('/chats/initialize', [ChatController::class, 'initialize']);
     Route::get('/chats/{username}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{conversationId}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/chats/{conversationId}/read', [ChatController::class, 'markRead']);
+    Route::get('/chats/{conversationId}/sync', [ChatController::class, 'sync']);
+    Route::post('/chats/{conversationId}/accept', [ChatController::class, 'acceptRequest']);
+    Route::post('/chats/{conversationId}/reject', [ChatController::class, 'rejectRequest']);
+    Route::post('/chats/{conversationId}/requests/accept', [ChatController::class, 'acceptRequest']);
+    Route::post('/chats/{conversationId}/requests/reject', [ChatController::class, 'rejectRequest']);
     Route::post('/chats/{conversationId}/stop', [ChatController::class, 'stopMessaging']);
     Route::post('/chats/{conversationId}/resume', [ChatController::class, 'resumeMessaging']);
     Route::patch('/profile/me/presence', [ChatController::class, 'updatePresence']);
+    Route::post('/broadcasting/auth', [BroadcastingAuthController::class, 'authenticate']);
+    Route::get('/reports/meta', [ReportController::class, 'meta']);
+    Route::get('/reports/mine', [ReportController::class, 'mine']);
+    Route::post('/reports', [ReportController::class, 'store']);
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'readAll']);
     Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'read']);
@@ -100,6 +138,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/contests/meta/tags', [ContestController::class, 'tags']);
     Route::get('/contests/profile/results', [ContestController::class, 'profileResults']);
     Route::get('/contests/invitations', [ContestController::class, 'invitations']);
+    Route::get('/contests/enrolled-posts', [ContestController::class, 'enrolledPosts']);
     Route::get('/contests/{contestId}', [ContestController::class, 'show']);
     Route::post('/contests/{contestId}/join', [ContestController::class, 'joinAdminContest']);
     Route::post('/contests/one-vs-one', [ContestController::class, 'createOneVsOne']);

@@ -149,7 +149,10 @@ class HomeFeedApiTest extends TestCase
             ->assertJsonPath('feed.0.viewer_state.is_liked', true)
             ->assertJsonPath('feed.0.viewer_state.is_saved', true)
             ->assertJsonPath('feed.0.viewer_state.viewer_rating', 5)
-            ->assertJsonPath('feed.0.tags.0.name', 'Winter');
+            ->assertJsonPath('feed.0.tags.0.name', 'Winter')
+            ->assertJsonPath('feed.0.in_contest', false)
+            ->assertJsonPath('feed.0.rating_enabled', false)
+            ->assertJsonPath('feed.0.viewer_state.can_vote', false);
     }
 
     public function test_home_feed_uses_fixed_page_size_of_ten(): void

@@ -24,6 +24,11 @@ class Conversation extends StylebiteModel
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
 
+    public function requestedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by_user_id');
+    }
+
     public function lastMessage(): BelongsTo
     {
         return $this->belongsTo(Message::class, 'last_message_id');

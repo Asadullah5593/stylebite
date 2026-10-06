@@ -12,10 +12,12 @@ use App\Models\Tag;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PostController extends Controller
 {
@@ -46,16 +48,17 @@ class PostController extends Controller
         $locationDetails = $this->resolveLocationDetails($validated);
 
         $user = $request->user();
-        $file = $request->file('file');
-        $mediaType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
-        $uploadedFile = stylebite_upload_file($file, 'posts/'.$user->id);
+        $files = $this->collectPostFiles($request);
+        $mediaKind = $this->mediaKindFor($files);
+        $isStory = $this->looksLikeStory($validated['caption'] ?? null, $validated['tags'] ?? null);
 
-        $post = DB::transaction(function () use ($validated, $normalizedPostType, $user, $mediaType, $uploadedFile, $locationDetails) {
+        $post = DB::transaction(function () use ($validated, $normalizedPostType, $user, $files, $mediaKind, $isStory, $locationDetails) {
             $post = Post::create([
                 'user_id' => $user->id,
                 'post_type' => $normalizedPostType,
                 'content_type' => $normalizedPostType === 'food' ? 'food' : 'fashion',
-                'media_kind' => $mediaType,
+                'media_kind' => $mediaKind,
+                'is_story' => $isStory,
                 'feed_type' => $normalizedPostType === 'food' ? 'bite' : 'style',
                 'caption' => $validated['caption'] ?? null,
                 'location_name' => $validated['location'] ?? $locationDetails['location_name'],
@@ -76,36 +79,10 @@ class PostController extends Controller
                 'ambience_rating' => $normalizedPostType === 'food' ? ($validated['ambience_rating'] ?? null) : null,
                 'posted_at' => now(),
                 'published_at' => now(),
+                'expires_at' => $isStory ? now()->addHours(24) : null,
             ]);
 
-            $upload = MediaUpload::create([
-                'user_id' => $user->id,
-                'source' => 'gallery',
-                'upload_type' => 'post_media',
-                'media_type' => $mediaType,
-                'original_file_name' => $uploadedFile['original_file_name'],
-                'file_path' => $uploadedFile['file_path'],
-                'file_url' => $uploadedFile['file_url'],
-                'mime_type' => $uploadedFile['mime_type'],
-                'size_bytes' => $uploadedFile['size_bytes'],
-                'storage_type' => 'local',
-                'upload_status' => 'ready',
-                'uploaded_at' => now(),
-            ]);
-
-            PostMedia::create([
-                'post_id' => $post->id,
-                'upload_id' => $upload->id,
-                'media_type' => $mediaType,
-                'media_role' => 'original',
-                'file_path' => $uploadedFile['file_path'],
-                'file_url' => $uploadedFile['file_url'],
-                'mime_type' => $uploadedFile['mime_type'],
-                'size_bytes' => $uploadedFile['size_bytes'],
-                'storage_type' => 'local',
-                'sort_order' => 0,
-                'processing_status' => 'pending',
-            ]);
+            $this->attachOriginalMedia($post, $user->id, $files);
 
             $tagIds = $this->syncTags($validated['tags'] ?? null);
 
@@ -193,7 +170,7 @@ class PostController extends Controller
             ])->save();
 
             if ($request->hasFile('file')) {
-                $this->replacePostMedia($post, $request->user()->id, $request->file('file'));
+                $this->replacePostMedia($post, $request->user()->id, $this->collectPostFiles($request));
             }
 
             if (array_key_exists('tags', $validated)) {
@@ -201,6 +178,8 @@ class PostController extends Controller
                 $post->postTags()->delete();
                 $this->attachTagsToPost($post, $tagIds);
             }
+
+            $this->syncStoryState($post);
 
             return $post->fresh(['media', 'tags']);
         });
@@ -258,6 +237,8 @@ class PostController extends Controller
             'file' => $isUpdate
                 ? ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm']
                 : ['required', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
+            'images' => ['nullable', 'array', 'max:9'],
+            'images.*' => ['file', 'mimes:jpg,jpeg,png,webp'],
             'caption' => ['nullable', 'string'],
             'tags' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],
@@ -343,47 +324,141 @@ class PostController extends Controller
         );
     }
 
-    private function replacePostMedia(Post $post, int $userId, $file): void
+    /**
+     * @return list<UploadedFile>
+     */
+    private function collectPostFiles(Request $request): array
     {
-        $mediaType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
-        $uploadedFile = stylebite_upload_file($file, 'posts/'.$userId);
+        $primary = $request->file('file');
+        $extras = $request->file('images', []);
+        if ($extras instanceof UploadedFile) {
+            $extras = [$extras];
+        }
+        $extras = array_values(array_filter($extras ?? []));
 
-        $upload = MediaUpload::create([
-            'user_id' => $userId,
-            'source' => 'gallery',
-            'upload_type' => 'post_media',
-            'media_type' => $mediaType,
-            'original_file_name' => $uploadedFile['original_file_name'],
-            'file_path' => $uploadedFile['file_path'],
-            'file_url' => $uploadedFile['file_url'],
-            'mime_type' => $uploadedFile['mime_type'],
-            'size_bytes' => $uploadedFile['size_bytes'],
-            'storage_type' => 'local',
-            'upload_status' => 'ready',
-            'uploaded_at' => now(),
-        ]);
+        if ($primary instanceof UploadedFile
+            && str_starts_with((string) $primary->getMimeType(), 'video/')
+            && $extras !== []) {
+            throw ValidationException::withMessages([
+                'images' => ['A video post cannot include extra photos.'],
+            ]);
+        }
 
+        $files = [];
+        if ($primary instanceof UploadedFile) {
+            $files[] = $primary;
+        }
+        foreach ($extras as $extra) {
+            if ($extra instanceof UploadedFile) {
+                $files[] = $extra;
+            }
+        }
+
+        return $files;
+    }
+
+    /**
+     * @param  list<UploadedFile>  $files
+     */
+    private function mediaKindFor(array $files): string
+    {
+        $imageCount = 0;
+        foreach ($files as $file) {
+            if (str_starts_with((string) $file->getMimeType(), 'video/')) {
+                return 'video';
+            }
+            $imageCount++;
+        }
+
+        return $imageCount > 1 ? 'carousel' : 'image';
+    }
+
+    /**
+     * @param  list<UploadedFile>  $files
+     */
+    private function attachOriginalMedia(Post $post, int $userId, array $files): void
+    {
+        foreach (array_values($files) as $index => $file) {
+            $mediaType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
+            $uploadedFile = stylebite_upload_file($file, 'posts/'.$userId);
+
+            $upload = MediaUpload::create([
+                'user_id' => $userId,
+                'source' => 'gallery',
+                'upload_type' => 'post_media',
+                'media_type' => $mediaType,
+                'original_file_name' => $uploadedFile['original_file_name'],
+                'file_path' => $uploadedFile['file_path'],
+                'file_url' => $uploadedFile['file_url'],
+                'mime_type' => $uploadedFile['mime_type'],
+                'size_bytes' => $uploadedFile['size_bytes'],
+                'storage_type' => 'local',
+                'upload_status' => 'ready',
+                'uploaded_at' => now(),
+            ]);
+
+            PostMedia::create([
+                'post_id' => $post->id,
+                'upload_id' => $upload->id,
+                'media_type' => $mediaType,
+                'media_role' => 'original',
+                'file_path' => $uploadedFile['file_path'],
+                'file_url' => $uploadedFile['file_url'],
+                'mime_type' => $uploadedFile['mime_type'],
+                'size_bytes' => $uploadedFile['size_bytes'],
+                'storage_type' => 'local',
+                'sort_order' => $index,
+                'processing_status' => 'pending',
+            ]);
+        }
+    }
+
+    /**
+     * @param  list<UploadedFile>  $files
+     */
+    private function replacePostMedia(Post $post, int $userId, array $files): void
+    {
         $post->media()->delete();
-
-        $media = PostMedia::create([
-            'post_id' => $post->id,
-            'upload_id' => $upload->id,
-            'media_type' => $mediaType,
-            'media_role' => 'original',
-            'file_path' => $uploadedFile['file_path'],
-            'file_url' => $uploadedFile['file_url'],
-            'mime_type' => $uploadedFile['mime_type'],
-            'size_bytes' => $uploadedFile['size_bytes'],
-            'storage_type' => 'local',
-            'sort_order' => 0,
-            'processing_status' => 'pending',
-        ]);
+        $this->attachOriginalMedia($post, $userId, $files);
 
         $post->forceFill([
-            'media_kind' => $mediaType,
+            'media_kind' => $this->mediaKindFor($files),
         ])->save();
 
-        OptimizePostMedia::dispatch($media->id)->afterCommit();
+        foreach ($post->media()->orderBy('sort_order')->get() as $media) {
+            OptimizePostMedia::dispatch($media->id)->afterCommit();
+        }
+    }
+
+    private function looksLikeStory(?string $caption, ?string $tags): bool
+    {
+        if (str_contains(strtolower((string) $caption), '#sbstory')) {
+            return true;
+        }
+
+        foreach (preg_split('/\s*,\s*/', (string) $tags) ?: [] as $tag) {
+            $normalized = ltrim(strtolower(trim($tag)), '#');
+            if ($normalized === 'sbstory') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function syncStoryState(Post $post): void
+    {
+        $post->loadMissing('tags');
+        $wasStory = (bool) $post->is_story;
+        $existingExpiry = $post->expires_at;
+        $isStory = $this->looksLikeStory($post->caption, $post->tags->pluck('name')->implode(','));
+
+        $post->forceFill([
+            'is_story' => $isStory,
+            'expires_at' => $isStory
+                ? ($wasStory && $existingExpiry !== null ? $existingExpiry : now()->addHours(24))
+                : null,
+        ])->save();
     }
 
     private function resolveLocationDetails(array $validated): array
@@ -583,11 +658,22 @@ class PostController extends Controller
             'service_rating' => $post->service_rating,
             'staff_rating' => $post->staff_rating,
             'ambience_rating' => $post->ambience_rating,
-            'media' => $post->media->map(fn (PostMedia $media) => [
+            'media_kind' => $post->media_kind,
+            'is_story' => (bool) $post->is_story,
+            'expires_at' => $post->expires_at?->toISOString(),
+            'media' => $post->media->sortBy('sort_order')->values()->map(fn (PostMedia $media) => [
                 'id' => $media->id,
                 'media_type' => $media->media_type,
                 'file_url' => stylebite_asset_url($media->file_url),
-            ])->values()->all(),
+                'original_url' => stylebite_asset_url($media->file_url),
+                'sort_order' => $media->sort_order,
+            ])->all(),
+            'images' => $post->media
+                ->sortBy('sort_order')
+                ->filter(fn (PostMedia $media) => $media->media_type === 'image')
+                ->map(fn (PostMedia $media) => stylebite_asset_url($media->file_url))
+                ->values()
+                ->all(),
             'tags' => $post->tags->pluck('name')->values()->all(),
             'posted_at' => $post->posted_at?->toISOString(),
         ];

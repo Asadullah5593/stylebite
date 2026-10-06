@@ -150,6 +150,11 @@ class User extends Authenticatable
         return $this->hasMany(PostRating::class);
     }
 
+    public function restaurantReviews(): HasMany
+    {
+        return $this->hasMany(RestaurantReview::class);
+    }
+
     public function comments(): HasMany
     {
         return $this->hasMany(Comment::class);

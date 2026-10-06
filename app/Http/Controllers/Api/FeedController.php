@@ -35,6 +35,73 @@ class FeedController extends Controller
         return $this->listPosts($request, true);
     }
 
+    public function searchPosts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'type' => ['nullable', 'string', 'in:outfit,food'],
+            'tab' => ['nullable', 'string', 'in:style,bite'],
+            'q' => ['nullable', 'string', 'max:191'],
+            'query' => ['nullable', 'string', 'max:191'],
+        ]);
+
+        $user = $request->user();
+        $search = trim((string) ($validated['q'] ?? $validated['query'] ?? ''));
+        $requestedType = $validated['type']
+            ?? $this->resolvePostTypeFromTab($validated['tab'] ?? null)
+            ?? 'outfit';
+
+        $query = $this->discoverPostsQuery((int) ($user?->id ?? 0), $requestedType);
+
+        if ($search === '') {
+            $query->whereRaw('0 = 1');
+        } else {
+            $this->applySearchScope($query, $search);
+        }
+
+        return $this->paginatedDiscoverResponse(
+            $user,
+            $query,
+            (int) ($validated['page'] ?? 1),
+            (int) ($validated['per_page'] ?? 10),
+            $requestedType,
+            'Search posts fetched successfully.',
+            ['search_query' => $search],
+        );
+    }
+
+    public function hashtagPosts(Request $request, string $tag): JsonResponse
+    {
+        $validated = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'type' => ['nullable', 'string', 'in:outfit,food'],
+        ]);
+
+        $user = $request->user();
+        $normalizedTag = $this->normalizeHashtag($tag);
+        $requestedType = $validated['type'] ?? null;
+
+        $query = $this->discoverPostsQuery((int) ($user?->id ?? 0), $requestedType);
+
+        if ($normalizedTag === '') {
+            $query->whereRaw('0 = 1');
+        } else {
+            $this->applyHashtagScope($query, $normalizedTag);
+        }
+
+        return $this->paginatedDiscoverResponse(
+            $user,
+            $query,
+            (int) ($validated['page'] ?? 1),
+            (int) ($validated['per_page'] ?? 10),
+            $requestedType ?? '',
+            'Hashtag posts fetched successfully.',
+            ['hashtag' => $normalizedTag],
+        );
+    }
+
     public function show(Request $request, int $postId): JsonResponse
     {
         $user = $request->user();
@@ -450,6 +517,157 @@ class FeedController extends Controller
         ]);
     }
 
+    public function destroyComment(Request $request, int $commentId): JsonResponse
+    {
+        return $this->deleteCommentRecord($request, $commentId);
+    }
+
+    public function destroyPostComment(Request $request, int $postId, int $commentId): JsonResponse
+    {
+        return $this->deleteCommentRecord($request, $commentId, $postId);
+    }
+
+    public function destroyReelComment(Request $request, int $postId, int $commentId): JsonResponse
+    {
+        $post = $this->findAccessiblePost($request->user()->id, $postId);
+        $this->ensureVideoPost($post);
+
+        return $this->deleteCommentRecord($request, $commentId, $postId);
+    }
+
+    public function destroyReply(Request $request, int $replyId): JsonResponse
+    {
+        $user = $request->user();
+        $reply = CommentReply::query()->with('comment.post')->findOrFail($replyId);
+
+        if ((int) $reply->user_id !== (int) $user->id) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'You can only delete your own reply.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $this->findAccessiblePost($user->id, $reply->comment->post_id);
+
+        $deletedCount = DB::transaction(function () use ($reply) {
+            $ids = $this->collectReplyTreeIds($reply);
+            $activeCount = CommentReply::query()
+                ->whereIn('id', $ids)
+                ->where('status', 'active')
+                ->count();
+
+            CommentReply::query()->whereIn('id', $ids)->update(['status' => 'deleted']);
+            CommentReply::query()->whereIn('id', $ids)->get()->each->delete();
+
+            if ($reply->parent_reply_id) {
+                $parent = CommentReply::query()->whereKey($reply->parent_reply_id)->first();
+                if ($parent) {
+                    $parent->forceFill([
+                        'reply_count' => max(0, (int) $parent->reply_count - 1),
+                    ])->save();
+                }
+            }
+
+            $comment = Comment::query()->whereKey($reply->comment_id)->first();
+            if ($comment) {
+                $comment->forceFill([
+                    'reply_count' => max(0, (int) $comment->reply_count - $activeCount),
+                ])->save();
+            }
+
+            return max(1, $activeCount);
+        });
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Reply deleted successfully.',
+            'deleted_count' => $deletedCount,
+        ]);
+    }
+
+    private function deleteCommentRecord(Request $request, int $commentId, ?int $postId = null): JsonResponse
+    {
+        $user = $request->user();
+        $comment = Comment::query()->with('post')->findOrFail($commentId);
+
+        if ($postId !== null && (int) $comment->post_id !== (int) $postId) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'Comment does not belong to this post.',
+            ], Response::HTTP_NOT_FOUND);
+        }
+
+        if ((int) $comment->user_id !== (int) $user->id) {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'You can only delete your own comment.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $this->findAccessiblePost($user->id, $comment->post_id);
+
+        $deletedCount = DB::transaction(function () use ($comment) {
+            $activeReplies = CommentReply::query()
+                ->where('comment_id', $comment->id)
+                ->where('status', 'active')
+                ->count();
+
+            CommentReply::query()
+                ->where('comment_id', $comment->id)
+                ->where('status', 'active')
+                ->update(['status' => 'deleted']);
+
+            CommentReply::query()
+                ->where('comment_id', $comment->id)
+                ->whereNull('deleted_at')
+                ->get()
+                ->each
+                ->delete();
+
+            $comment->forceFill([
+                'status' => 'deleted',
+                'reply_count' => 0,
+            ])->save();
+            $comment->delete();
+
+            Post::query()
+                ->whereKey($comment->post_id)
+                ->where('comment_count', '>', 0)
+                ->decrement('comment_count');
+
+            return 1 + $activeReplies;
+        });
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Comment deleted successfully.',
+            'deleted_count' => $deletedCount,
+            'comment_count' => (int) Post::query()->whereKey($comment->post_id)->value('comment_count'),
+        ]);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function collectReplyTreeIds(CommentReply $reply): array
+    {
+        $ids = [(int) $reply->id];
+        $frontier = [(int) $reply->id];
+
+        while ($frontier !== []) {
+            $children = CommentReply::query()
+                ->whereIn('parent_reply_id', $frontier)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $frontier = array_values(array_diff($children, $ids));
+            $ids = array_values(array_unique(array_merge($ids, $children)));
+        }
+
+        return $ids;
+    }
+
     /**
      * Remember the viewer's coordinates for the nearby-feed fallback.
      * Throttled: skips the write when the fix is fresh (<15 min) and the user
@@ -524,6 +742,7 @@ class FeedController extends Controller
             ->where('status', 'published')
             ->where('moderation_status', 'clean')
             ->where('is_blocked', false)
+            ->where('is_story', false)
             ->where(function (Builder $visibilityQuery) use ($viewerUserId) {
                 $visibilityQuery
                     ->where(function (Builder $publicQuery) {
@@ -571,6 +790,7 @@ class FeedController extends Controller
                 'latestShare.user.profile',
                 'latestShare.targetUser.profile',
             ])
+            ->withContestState()
             ->whereKey($postId)
             ->tap(fn (Builder $query) => $this->applyFeedVisibilityScope($query, $viewerUserId))
             ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $viewerUserId));
@@ -756,7 +976,7 @@ class FeedController extends Controller
 
     private function canVoteOnPost(Post $post): bool
     {
-        return $post->rating_enabled;
+        return $post->isInContest();
     }
 
     private function refreshPostRatingStats(Post $post): void
@@ -805,11 +1025,18 @@ class FeedController extends Controller
             'id' => $post->id,
             'post_type' => $post->post_type,
             'media_kind' => $post->media_kind,
+            'visibility' => $post->visibility,
             'caption' => $post->caption,
             'location' => $post->location_name,
             'distance_km' => isset($post->distance_km) ? round((float) $post->distance_km, 2) : null,
             'dish_name' => $post->dish_name,
             'restaurant' => $post->restaurant,
+            'tags' => $post->relationLoaded('tags')
+                ? $post->tags->map(fn ($tag) => [
+                    'id' => $tag->id,
+                    'name' => $tag->name,
+                ])->values()
+                : [],
             'author' => [
                 'id' => $post->user?->id,
                 'username' => $post->user?->username,
@@ -827,6 +1054,7 @@ class FeedController extends Controller
                 'comment_count' => (int) $post->comment_count,
                 'share_count' => (int) $post->share_count,
                 'save_count' => (int) $post->save_count,
+                'view_count' => (int) $post->view_count,
                 'rating_avg' => $post->rating_avg !== null ? (float) $post->rating_avg : null,
                 'rating_count' => (int) $post->rating_count,
             ],
@@ -834,11 +1062,13 @@ class FeedController extends Controller
                 'is_liked' => $isLiked,
                 'is_saved' => $isSaved,
                 'viewer_rating' => $viewerRating,
-                'can_vote' => $post->rating_enabled,
+                'can_vote' => $this->canVoteOnPost($post),
             ],
             'allow_comments' => $post->allow_comments,
             'allow_shares' => $post->allow_shares,
-            'rating_enabled' => $post->rating_enabled,
+            'rating_enabled' => $this->canVoteOnPost($post),
+            'in_contest' => $this->canVoteOnPost($post),
+            'contest' => $post->contestBadge(),
             'posted_at' => optional($post->posted_at)->toDateTimeString(),
         ];
     }
@@ -942,18 +1172,144 @@ class FeedController extends Controller
                 'is_liked' => $isLiked,
                 'is_saved' => $isSaved,
                 'viewer_rating' => $viewerRating,
-                'can_vote' => $post->rating_enabled,
+                'can_vote' => $this->canVoteOnPost($post),
             ],
             'comment_preview' => $commentPreview->values(),
             'allow_comments' => $post->allow_comments,
             'allow_shares' => $post->allow_shares,
-            'rating_enabled' => $post->rating_enabled,
+            'rating_enabled' => $this->canVoteOnPost($post),
+            'in_contest' => $this->canVoteOnPost($post),
+            'contest' => $post->contestBadge(),
             'dish_name' => $post->dish_name,
             'restaurant' => $post->restaurant,
             'posted_at' => optional($post->posted_at)->toDateTimeString(),
             'published_at' => optional($post->published_at)->toDateTimeString(),
             'created_at' => optional($post->created_at)->toDateTimeString(),
         ];
+    }
+
+    private function discoverPostsQuery(int $viewerUserId, ?string $requestedType): Builder
+    {
+        return Post::query()
+            ->with([
+                'user.profile',
+                'media' => fn ($query) => $query->orderBy('sort_order'),
+                'tags',
+            ])
+            ->withContestState()
+            ->when($requestedType !== null && $requestedType !== '', fn (Builder $query) => $query->where('post_type', $requestedType))
+            ->tap(fn (Builder $query) => $this->applyFeedVisibilityScope($query, $viewerUserId))
+            ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $viewerUserId));
+    }
+
+    private function applySearchScope(Builder $query, string $search): Builder
+    {
+        $pattern = '%'.Str::lower(addcslashes($search, '%_\\')).'%';
+
+        return $query->where(function (Builder $searchQuery) use ($pattern) {
+            $searchQuery
+                ->whereRaw("LOWER(COALESCE(caption, '')) LIKE ?", [$pattern])
+                ->orWhereRaw("LOWER(COALESCE(dish_name, '')) LIKE ?", [$pattern])
+                ->orWhereRaw("LOWER(COALESCE(restaurant, '')) LIKE ?", [$pattern])
+                ->orWhereRaw("LOWER(COALESCE(location_name, '')) LIKE ?", [$pattern])
+                ->orWhereRaw("LOWER(COALESCE(city, '')) LIKE ?", [$pattern])
+                ->orWhereRaw("LOWER(COALESCE(country, '')) LIKE ?", [$pattern])
+                ->orWhereHas('tags', function (Builder $tagQuery) use ($pattern) {
+                    $tagQuery
+                        ->where('normalized_name', 'like', $pattern)
+                        ->orWhereRaw('LOWER(name) LIKE ?', [$pattern]);
+                })
+                ->orWhereHas('user', function (Builder $userQuery) use ($pattern) {
+                    $userQuery
+                        ->whereRaw('LOWER(username) LIKE ?', [$pattern])
+                        ->orWhereRaw("LOWER(COALESCE(full_name, '')) LIKE ?", [$pattern])
+                        ->orWhereHas('profile', function (Builder $profileQuery) use ($pattern) {
+                            $profileQuery->whereRaw("LOWER(COALESCE(display_name, '')) LIKE ?", [$pattern]);
+                        });
+                });
+        });
+    }
+
+    private function applyHashtagScope(Builder $query, string $normalizedTag): Builder
+    {
+        $captionPattern = '%#'.$normalizedTag.'%';
+
+        return $query->where(function (Builder $hashtagQuery) use ($normalizedTag, $captionPattern) {
+            $hashtagQuery
+                ->whereHas('tags', fn (Builder $tagQuery) => $tagQuery->where('normalized_name', $normalizedTag))
+                ->orWhereRaw("LOWER(COALESCE(caption, '')) LIKE ?", [$captionPattern]);
+        });
+    }
+
+    private function normalizeHashtag(string $tag): string
+    {
+        $decoded = trim(urldecode($tag));
+        $withoutHash = ltrim($decoded, '#');
+
+        return Str::lower(trim($withoutHash));
+    }
+
+    private function paginatedDiscoverResponse(
+        $user,
+        Builder $query,
+        int $page,
+        int $perPage,
+        string $requestedType,
+        string $message,
+        array $extra = [],
+    ): JsonResponse {
+        $query->latest('published_at')->latest('id');
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $postIds = $paginator->getCollection()->pluck('id');
+        $authorIds = $paginator->getCollection()->pluck('user_id')->unique()->values();
+
+        $likedPostIds = collect();
+        $savedPostIds = collect();
+        $postRatings = collect();
+        $followingAuthorIds = collect();
+
+        if ($user) {
+            $likedPostIds = $user->postLikes()
+                ->whereIn('post_id', $postIds)
+                ->pluck('post_id');
+
+            $savedPostIds = $user->savedPosts()
+                ->whereIn('post_id', $postIds)
+                ->pluck('post_id');
+
+            $postRatings = $user->postRatings()
+                ->whereIn('post_id', $postIds)
+                ->get()
+                ->keyBy('post_id');
+
+            $followingAuthorIds = UserFollow::query()
+                ->where('follower_user_id', $user->id)
+                ->whereIn('following_user_id', $authorIds)
+                ->where('status', 'accepted')
+                ->pluck('following_user_id');
+        }
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => $message,
+            'type' => $requestedType,
+            'feed' => $paginator->getCollection()->map(fn (Post $post) => $this->feedListPayload(
+                $post,
+                $likedPostIds->contains($post->id),
+                $savedPostIds->contains($post->id),
+                $postRatings->get($post->id)?->rating_value,
+                $followingAuthorIds->contains($post->user_id),
+            )),
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'has_more_pages' => $paginator->hasMorePages(),
+            ],
+            ...$extra,
+        ]);
     }
 
     private function listPosts(Request $request, bool $videoOnly): JsonResponse
@@ -1003,12 +1359,14 @@ class FeedController extends Controller
         $wantsNearby = ($validated['discover_type'] ?? 'for_you') === 'nearby' && $viewerCoords !== null;
         $nearbyRadiusKm = null;
 
-        // Slim feed list: only the relations a feed card needs (author + media).
+        // Slim feed list: author, media, and tags so feed cards can show hashtags.
         $query = Post::query()
             ->with([
                 'user.profile',
                 'media' => fn ($query) => $query->orderBy('sort_order'),
+                'tags',
             ])
+            ->withContestState()
             ->where('post_type', $requestedType)
             ->when($videoOnly, fn (Builder $query) => $query->whereHas('media', fn (Builder $media) => $media->where('media_type', 'video')))
             ->when(! $videoOnly, fn (Builder $query) => $query->where('user_id', '!=', $user->id))

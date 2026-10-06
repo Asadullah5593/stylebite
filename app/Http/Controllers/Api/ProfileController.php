@@ -461,10 +461,15 @@ class ProfileController extends Controller
     private function postsPayload(int $viewerUserId, User $targetUser, string $postType, int $page, int $perPage): array
     {
         $query = Post::query()
-            ->with(['media' => fn ($query) => $query->orderBy('sort_order')])
+            ->with([
+                'media' => fn ($query) => $query->orderBy('sort_order'),
+                'tags',
+            ])
+            ->withContestState()
             ->where('user_id', $targetUser->id)
             ->where('post_type', $postType)
             ->where('status', 'published')
+            ->where('is_story', false)
             ->tap(fn (Builder $query) => $this->applyPostVisibilityScope($query, $viewerUserId, $targetUser->id))
             ->latest('published_at')
             ->latest('id');
@@ -477,12 +482,17 @@ class ProfileController extends Controller
                 'post_type' => $post->post_type,
                 'caption' => $post->caption,
                 'media_kind' => $post->media_kind,
+                'visibility' => $post->visibility,
                 'location' => $post->location_name,
                 'like_count' => (int) $post->like_count,
                 'comment_count' => (int) $post->comment_count,
                 'share_count' => (int) $post->share_count,
                 'save_count' => (int) $post->save_count,
                 'rating_avg' => $post->rating_avg !== null ? (float) $post->rating_avg : null,
+                'tags' => $post->tags->map(fn ($tag) => [
+                    'id' => $tag->id,
+                    'name' => $tag->name,
+                ])->values(),
                 'media' => $post->media->map(fn ($media) => [
                     'id' => $media->id,
                     'media_type' => $media->media_type,
@@ -490,6 +500,9 @@ class ProfileController extends Controller
                     'thumbnail_url' => stylebite_asset_url($media->thumbnail_url),
                 ])->values(),
                 'created_at' => optional($post->created_at)->toDateTimeString(),
+                'in_contest' => $post->isInContest(),
+                'rating_enabled' => $post->isInContest(),
+                'contest' => $post->contestBadge(),
             ])->values(),
             $this->paginationPayload($paginator),
         ];
@@ -498,7 +511,11 @@ class ProfileController extends Controller
     private function savedPostsPayload(int $viewerUserId, User $targetUser, int $page, int $perPage): array
     {
         $query = SavedPost::query()
-            ->with(['post.media' => fn ($query) => $query->orderBy('sort_order')])
+            ->with([
+                'post' => fn ($query) => $query
+                    ->withContestState()
+                    ->with(['media' => fn ($media) => $media->orderBy('sort_order')]),
+            ])
             ->where('user_id', $targetUser->id)
             ->latest('created_at');
 
@@ -515,11 +532,15 @@ class ProfileController extends Controller
                         'post_type' => $savedPost->post->post_type,
                         'caption' => $savedPost->post->caption,
                         'media_kind' => $savedPost->post->media_kind,
+                        'visibility' => $savedPost->post->visibility,
                         'location' => $savedPost->post->location_name,
                         'like_count' => (int) $savedPost->post->like_count,
                         'comment_count' => (int) $savedPost->post->comment_count,
                         'share_count' => (int) $savedPost->post->share_count,
                         'save_count' => (int) $savedPost->post->save_count,
+                        'in_contest' => $savedPost->post->isInContest(),
+                        'rating_enabled' => $savedPost->post->isInContest(),
+                        'contest' => $savedPost->post->contestBadge(),
                         'media' => $savedPost->post->media->map(fn ($media) => [
                             'id' => $media->id,
                             'media_type' => $media->media_type,

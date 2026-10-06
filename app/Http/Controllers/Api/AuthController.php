@@ -18,7 +18,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -80,16 +79,16 @@ class AuthController extends Controller
         $this->storeRegistrationAvatar($user, $request);
 
         $session = $this->createSession($user, $request);
-        $this->sendVerificationEmail($user);
+        $verificationCode = $this->sendVerificationEmail($user);
 
-        return response()->json([
+        return response()->json($this->withLocalDebugOtp([
             'status_code' => 1,
             'message' => 'Registration successful.',
             'token_type' => 'Bearer',
             'access_token' => $session['plain_text_token'],
             'bearer_token' => 'Bearer '.$session['plain_text_token'],
             'user' => $this->userPayload($session['user']),
-        ], 201);
+        ], $verificationCode), 201);
     }
 
     public function forgotPassword(Request $request): JsonResponse
@@ -157,6 +156,17 @@ class AuthController extends Controller
             throw ValidationException::withMessages([
                 'email' => ['This account is not active.'],
             ]);
+        }
+
+        if ($user->email_verified_at === null) {
+            $verificationCode = $this->sendVerificationEmail($user);
+
+            return response()->json($this->withLocalDebugOtp([
+                'status_code' => 0,
+                'requires_verification' => true,
+                'email' => $user->email,
+                'message' => 'Please verify your email address.',
+            ], $verificationCode));
         }
 
         $session = $this->createSession($user, $request);
@@ -249,6 +259,105 @@ class AuthController extends Controller
         return response()->json([
             'status_code' => 1,
             'message' => 'Password has been reset successfully.',
+        ]);
+    }
+
+    public function verifyEmailOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+            'code' => ['required', 'digits:6'],
+        ], $this->verifyEmailOtpValidationMessages(), $this->authValidationAttributes());
+
+        $user = User::query()->where('email', Str::lower($validated['email']))->first();
+
+        if (! $user) {
+            throw ValidationException::withMessages([
+                'code' => ['The verification code is invalid or expired.'],
+            ]);
+        }
+
+        if ($user->email_verified_at !== null) {
+            $session = $this->createSession($user, $request);
+
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'Email already verified.',
+                'token_type' => 'Bearer',
+                'access_token' => $session['plain_text_token'],
+                'bearer_token' => 'Bearer '.$session['plain_text_token'],
+                'user' => $this->userPayload($session['user']),
+            ]);
+        }
+
+        $verification = EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->latest('id')
+            ->first();
+
+        if (! $verification || ! $this->verificationCodeMatches($verification, $validated['code'])) {
+            throw ValidationException::withMessages([
+                'code' => ['The verification code is invalid or expired.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($user, $verification): void {
+            $user->forceFill([
+                'email_verified_at' => now(),
+                'status' => $user->status === 'inactive' ? 'active' : $user->status,
+            ])->save();
+
+            $verification->forceFill([
+                'verified_at' => now(),
+            ])->save();
+        });
+
+        $session = $this->createSession($user->fresh(['profile', 'settings']), $request);
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'OTP Verified successfully.',
+            'token_type' => 'Bearer',
+            'access_token' => $session['plain_text_token'],
+            'bearer_token' => 'Bearer '.$session['plain_text_token'],
+            'user' => $this->userPayload($session['user']),
+        ]);
+    }
+
+    public function resendEmailOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+        ], $this->forgotPasswordValidationMessages(), $this->authValidationAttributes());
+
+        $user = User::query()->where('email', Str::lower($validated['email']))->first();
+        $verificationCode = null;
+
+        if ($user && $user->email_verified_at === null) {
+            $verificationCode = $this->sendVerificationEmail($user);
+        }
+
+        return response()->json($this->withLocalDebugOtp([
+            'status_code' => 1,
+            'message' => 'Verification code sent successfully.',
+        ], $verificationCode));
+    }
+
+    public function logout(Request $request): JsonResponse
+    {
+        $session = $request->attributes->get('auth_session');
+
+        if ($session instanceof UserSession) {
+            $session->forceFill([
+                'revoked_at' => now(),
+            ])->save();
+        }
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Logged out successfully.',
         ]);
     }
 
@@ -502,37 +611,13 @@ class AuthController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($user, $deviceId, $platform, $pushToken, $request): void {
-            $existingForDevice = DeviceToken::query()
-                ->where('user_id', $user->id)
-                ->where('device_id', $deviceId)
-                ->first();
-
-            $existingForPushToken = DeviceToken::query()
-                ->where('platform', $platform)
-                ->where('push_token', $pushToken)
-                ->first();
-
-            if (
-                $existingForDevice
-                && $existingForPushToken
-                && $existingForDevice->id !== $existingForPushToken->id
-            ) {
-                $existingForDevice->delete();
-            }
-
-            $deviceToken = $existingForPushToken ?? $existingForDevice ?? new DeviceToken;
-
-            $deviceToken->forceFill([
-                'user_id' => $user->id,
-                'device_id' => $deviceId,
-                'platform' => $platform,
-                'push_token' => $pushToken,
-                'app_version' => $request->input('app_version'),
-                'is_active' => true,
-                'last_used_at' => now(),
-            ])->save();
-        });
+        DeviceToken::syncForUser(
+            $user,
+            $deviceId,
+            $platform,
+            $pushToken,
+            $request->input('app_version'),
+        );
     }
 
     private function generateUniqueUsername(string $name, string $email): string
@@ -560,40 +645,49 @@ class AuthController extends Controller
         return $username;
     }
 
-    private function sendVerificationEmail(User $user): void
+    private function sendVerificationEmail(User $user): string
     {
         EmailVerificationToken::query()
             ->where('user_id', $user->id)
             ->whereNull('verified_at')
             ->delete();
 
-        $plainTextToken = Str::random(64);
+        $code = $this->generateNumericCode();
 
         EmailVerificationToken::create([
             'user_id' => $user->id,
             'email' => $user->email,
-            'token_hash' => hash('sha256', $plainTextToken),
-            'expires_at' => now()->addHours(24),
+            'token_hash' => Hash::make($code),
+            'expires_at' => now()->addMinutes(15),
         ]);
-
-        $verificationUrl = URL::temporarySignedRoute(
-            'auth.verify-email',
-            now()->addHours(24),
-            [
-                'id' => $user->id,
-                'token' => $plainTextToken,
-            ]
-        );
 
         stylebite_send_email(
             $user->email,
             $user->full_name ?? $user->username,
             'Verify your Stylebite account',
             'Welcome to Stylebite',
-            "Thanks for registering with Stylebite.\n\nPlease verify your email address by clicking the button below. This verification link will expire in 24 hours.",
-            'Verify Email',
-            $verificationUrl
+            "Thanks for registering with Stylebite.\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in 15 minutes."
         );
+
+        return $code;
+    }
+
+    private function withLocalDebugOtp(array $payload, ?string $code): array
+    {
+        if ($code !== null && $code !== '' && app()->isLocal()) {
+            $payload['debug_otp'] = $code;
+        }
+
+        return $payload;
+    }
+
+    private function verificationCodeMatches(EmailVerificationToken $verification, string $code): bool
+    {
+        if (Hash::check($code, $verification->token_hash)) {
+            return true;
+        }
+
+        return hash_equals($verification->token_hash, hash('sha256', $code));
     }
 
     private function generateNumericCode(): string
@@ -690,6 +784,16 @@ class AuthController extends Controller
             'password.required' => 'Please enter a new password.',
             'password.confirmed' => 'Password confirmation does not match.',
             'password.min' => 'Your password must be at least 8 characters long.',
+        ];
+    }
+
+    private function verifyEmailOtpValidationMessages(): array
+    {
+        return [
+            'email.required' => 'Please enter your email address.',
+            'email.email' => 'Please enter a valid email address.',
+            'code.required' => 'Please enter the 6-digit verification code.',
+            'code.digits' => 'The verification code must be 6 digits.',
         ];
     }
 
