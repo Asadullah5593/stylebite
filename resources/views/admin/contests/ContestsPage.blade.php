@@ -75,8 +75,9 @@
                         <tr class="border-white-05">
                             <td class="ps-4">
                                 <div class="d-flex align-items-center gap-3">
-                                    @if ($contest->cover_image_url)
-                                        <img src="{{ $contest->cover_image_url }}" alt="{{ $contest->title }}" class="rounded-3 border border-white-05" width="48" height="48" style="object-fit: cover;">
+                                    @php($contestImage = stylebite_asset_url($contest->cover_image_url ?: $contest->banner_image_url))
+                                    @if ($contestImage)
+                                        <img src="{{ $contestImage }}" alt="{{ $contest->title }}" class="rounded-3 border border-white-05" width="48" height="48" style="object-fit: cover;">
                                     @else
                                         <div class="rounded-3 border border-white-05 d-flex align-items-center justify-content-center text-muted" style="width:48px;height:48px;">
                                             <i class="bi bi-trophy"></i>

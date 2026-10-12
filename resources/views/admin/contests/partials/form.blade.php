@@ -83,7 +83,7 @@
         <div class="form-text text-muted">Upload a cover image from your device.</div>
         <img
             id="cover-image-preview"
-            src="{{ $contest?->cover_image_url ?? '' }}"
+            src="{{ stylebite_asset_url($contest?->cover_image_url) ?? '' }}"
             alt="Cover image preview"
             class="img-fluid rounded-3 mt-2 border border-white-05 {{ empty($contest?->cover_image_url) ? 'd-none' : '' }}"
             style="max-height: 180px; object-fit: cover;"
@@ -95,7 +95,7 @@
         <div class="form-text text-muted">Upload a banner image from your device.</div>
         <img
             id="banner-image-preview"
-            src="{{ $contest?->banner_image_url ?? '' }}"
+            src="{{ stylebite_asset_url($contest?->banner_image_url) ?? '' }}"
             alt="Banner image preview"
             class="img-fluid rounded-3 mt-2 border border-white-05 {{ empty($contest?->banner_image_url) ? 'd-none' : '' }}"
             style="max-height: 180px; object-fit: cover;"

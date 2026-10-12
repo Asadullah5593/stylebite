@@ -930,29 +930,29 @@ class ContestController extends Controller
 
     private function storePublicContestImage(UploadedFile $file): string
     {
-        $userId = (int) auth()->id();
-        $directory = public_path('contests/'.$userId);
-
         try {
-            if (! File::exists($directory)) {
-                File::makeDirectory($directory, 0755, true);
+            $uploaded = stylebite_upload_file($file, 'contests/'.(int) auth()->id());
+            $relativePath = ltrim((string) ($uploaded['file_path'] ?? ''), '/');
+            $source = base_path($relativePath);
+            $publicCopy = public_path($relativePath);
+            $publicDirectory = dirname($publicCopy);
+
+            if (! File::exists($publicDirectory)) {
+                File::makeDirectory($publicDirectory, 0755, true);
             }
 
-            $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg');
-            $extension = preg_replace('/[^a-z0-9]/', '', $extension) ?: 'jpg';
-            $fileName = Str::uuid()->toString().'.'.$extension;
-            $file->move($directory, $fileName);
+            if ($relativePath !== '' && File::exists($source)) {
+                File::copy($source, $publicCopy);
+            }
         } catch (\Throwable $exception) {
             report($exception);
 
             throw ValidationException::withMessages([
-                'cover_image' => 'The image could not be stored. Check that the server can write to the public/contests folder.',
+                'cover_image' => 'The image could not be stored. Check that the server can write to the contests folder.',
             ]);
         }
 
-        $assetBase = rtrim((string) (config('app.asset_url') ?: config('app.url')), '/');
-
-        return $assetBase.'/contests/'.$userId.'/'.$fileName;
+        return (string) $uploaded['file_url'];
     }
 
     private function uniqueContestSlug(string $title): string
