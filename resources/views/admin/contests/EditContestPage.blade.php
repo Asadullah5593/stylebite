@@ -15,9 +15,18 @@
             <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Edit Contest</h1>
             <p class="text-muted small mb-0">Update the contest details and rules.</p>
         </div>
-        <a href="{{ route('admin.contests.contests') }}" class="btn btn-outline-dynamic rounded-3 px-3">
-            <i class="bi bi-arrow-left me-1"></i>Back to Contests
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{{ route('admin.contests.contests') }}" class="btn btn-outline-dynamic rounded-3 px-3">
+                <i class="bi bi-arrow-left me-1"></i>Back to Contests
+            </a>
+            <form method="POST" action="{{ route('admin.contests.destroy', $contest) }}" onsubmit="return confirm(@json('Delete '.$contest->title.'? It will be removed from the app.'));">
+                @csrf
+                @method('DELETE')
+                <button type="submit" class="btn btn-outline-danger rounded-3 px-3">
+                    <i class="bi bi-trash3 me-1"></i>Delete
+                </button>
+            </form>
+        </div>
     </div>
 
     @if ($errors->any())

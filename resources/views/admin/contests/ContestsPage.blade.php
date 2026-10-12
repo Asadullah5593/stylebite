@@ -109,49 +109,52 @@
                             <td><span class="text-muted small">{{ number_format($contest->participant_count) }} participants · {{ number_format($contest->submission_count) }} submissions</span></td>
                             <td><span class="badge {{ in_array($contest->status, ['active', 'completed'], true) ? 'bg-success-soft text-success' : ($contest->status === 'upcoming' ? 'bg-info-soft text-info' : ($contest->status === 'cancelled' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning')) }} rounded-pill">{{ str($contest->status)->title() }}</span></td>
                             <td><span class="text-muted small">{{ $contest->created_at?->format('M d, Y H:i') }}</span></td>
-                            <td class="text-end" style="min-width: 380px;">
-                                <div class="d-flex justify-content-end gap-2 mb-2">
-                                    <a href="{{ route('admin.contests.edit', $contest) }}" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
-                                        <i class="bi bi-pencil-square me-1"></i>Edit
-                                    </a>
-                                </div>
-                                <form method="POST" action="{{ route('admin.contests.workflow.update', $contest) }}" class="d-inline-flex flex-column gap-2 align-items-stretch">
-                                    @csrf
-                                    @method('PATCH')
-                                    <div class="d-flex gap-2 justify-content-end flex-wrap">
-                                        <select name="status" class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted" style="width: 135px;">
+                            <td class="pe-4" style="min-width: 280px;">
+                                <div class="contest-workflow d-grid gap-2">
+                                    <div class="d-flex gap-2">
+                                        <a href="{{ route('admin.contests.edit', $contest) }}" class="btn btn-sm btn-outline-dynamic rounded-3 flex-fill">
+                                            <i class="bi bi-pencil-square me-1"></i>Edit
+                                        </a>
+                                        <form method="POST" action="{{ route('admin.contests.destroy', $contest) }}" class="flex-fill" onsubmit="return confirm(@json('Delete '.$contest->title.'? It will be removed from the app.'));">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 w-100">
+                                                <i class="bi bi-trash3 me-1"></i>Delete
+                                            </button>
+                                        </form>
+                                    </div>
+                                    <form method="POST" action="{{ route('admin.contests.workflow.update', $contest) }}" class="d-grid gap-2" data-workflow-form>
+                                        @csrf
+                                        @method('PATCH')
+                                        <select name="status" class="form-select form-select-sm border-0 rounded-3" aria-label="Contest status">
                                             @foreach (['draft' => 'Draft', 'active' => 'Active', 'upcoming' => 'Upcoming', 'completed' => 'Completed', 'cancelled' => 'Cancelled', 'archived' => 'Archived'] as $value => $label)
                                                 <option value="{{ $value }}" @selected($contest->status === $value)>{{ $label }}</option>
                                             @endforeach
                                         </select>
-                                        <select name="winner_type" class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted" style="width: 130px;">
+                                        <select name="winner_type" class="form-select form-select-sm border-0 rounded-3" aria-label="Winner type">
                                             <option value="none" @selected(! $contest->winner_user_id && ! $contest->winner_team_id)>No winner</option>
                                             <option value="user" @selected((bool) $contest->winner_user_id)>User winner</option>
                                             <option value="team" @selected((bool) $contest->winner_team_id)>Team winner</option>
                                         </select>
-                                    </div>
-                                    <div class="d-flex gap-2 justify-content-end flex-wrap">
-                                        <select name="winner_user_id" class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted" style="width: 170px;">
+                                        <select name="winner_user_id" class="form-select form-select-sm border-0 rounded-3" aria-label="User winner">
                                             <option value="">Select user winner</option>
-                                            @foreach ($contest->participants as $participantOption)
-                                                @if ($participantOption->user)
-                                                    <option value="{{ $participantOption->user->id }}" @selected((int) $contest->winner_user_id === (int) $participantOption->user->id)>
-                                                        {{ $participantOption->user->full_name ?: '@'.$participantOption->user->username }}
-                                                    </option>
-                                                @endif
+                                            @foreach ($winnerUsers as $winnerUser)
+                                                <option value="{{ $winnerUser->id }}" @selected((int) $contest->winner_user_id === (int) $winnerUser->id)>
+                                                    {{ $winnerUser->full_name ?: '@'.$winnerUser->username }}
+                                                </option>
                                             @endforeach
                                         </select>
-                                        <select name="winner_team_id" class="form-select form-select-sm border-0 bg-dark-soft rounded-3 text-muted" style="width: 170px;">
-                                            <option value="">Select team winner</option>
+                                        <select name="winner_team_id" class="form-select form-select-sm border-0 rounded-3" aria-label="Team winner">
+                                            <option value="">{{ $contest->teams->isEmpty() ? 'No teams in this contest' : 'Select team winner' }}</option>
                                             @foreach ($contest->teams as $teamOption)
                                                 <option value="{{ $teamOption->id }}" @selected((int) $contest->winner_team_id === (int) $teamOption->id)>{{ $teamOption->name }}</option>
                                             @endforeach
                                         </select>
-                                        <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
-                                            <i class="bi bi-trophy me-1"></i>Update
+                                        <button type="submit" class="btn btn-sm btn-primary rounded-3">
+                                            <i class="bi bi-check2-circle me-1"></i>Update
                                         </button>
-                                    </div>
-                                    <div class="text-muted extra-small text-end">
+                                    </form>
+                                    <div class="text-muted extra-small">
                                         @if ($contest->winnerUser)
                                             Winner: {{ $contest->winnerUser->full_name ?: '@'.$contest->winnerUser->username }}
                                         @elseif ($contest->winnerTeam)
@@ -160,19 +163,21 @@
                                             Winner not set
                                         @endif
                                     </div>
-                                </form>
-                                <form method="POST" action="{{ route('admin.contests.recalculate', $contest) }}" class="mt-2">
-                                    @csrf
-                                    <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
-                                        <i class="bi bi-arrow-repeat me-1"></i>Recalculate ranks
-                                    </button>
-                                </form>
-                                <form method="POST" action="{{ route('admin.contests.leaderboards.regenerate', $contest) }}" class="mt-2">
-                                    @csrf
-                                    <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
-                                        <i class="bi bi-graph-up-arrow me-1"></i>Snapshot
-                                    </button>
-                                </form>
+                                    <div class="d-flex gap-2">
+                                        <form method="POST" action="{{ route('admin.contests.recalculate', $contest) }}" class="flex-fill">
+                                            @csrf
+                                            <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 w-100">
+                                                <i class="bi bi-arrow-repeat me-1"></i>Recalculate
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="{{ route('admin.contests.leaderboards.regenerate', $contest) }}" class="flex-fill">
+                                            @csrf
+                                            <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 w-100">
+                                                <i class="bi bi-graph-up-arrow me-1"></i>Snapshot
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -192,3 +197,54 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<style>
+    .contest-workflow .form-select,
+    .contest-workflow .form-select option {
+        color: var(--sb-text);
+        background-color: var(--sb-panel-2, #241c28);
+        color-scheme: dark;
+    }
+</style>
+<script>
+    document.querySelectorAll('[data-workflow-form]').forEach(function (form) {
+        const type = form.querySelector('[name="winner_type"]');
+        const user = form.querySelector('[name="winner_user_id"]');
+        const team = form.querySelector('[name="winner_team_id"]');
+
+        if (!type || !user || !team) {
+            return;
+        }
+
+        user.addEventListener('change', function () {
+            if (user.value) {
+                type.value = 'user';
+                team.value = '';
+            }
+        });
+
+        team.addEventListener('change', function () {
+            if (team.value) {
+                type.value = 'team';
+                user.value = '';
+            }
+        });
+
+        type.addEventListener('change', function () {
+            if (type.value === 'none') {
+                user.value = '';
+                team.value = '';
+            }
+
+            if (type.value === 'user') {
+                team.value = '';
+            }
+
+            if (type.value === 'team') {
+                user.value = '';
+            }
+        });
+    });
+</script>
+@endpush

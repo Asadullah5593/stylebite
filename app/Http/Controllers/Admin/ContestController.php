@@ -13,6 +13,7 @@ use App\Models\ContestSubmission;
 use App\Models\ContestTeam;
 use App\Models\ContestTeamMember;
 use App\Models\ContestVote;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -56,7 +57,27 @@ class ContestController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        return view('admin.contests.ContestsPage', compact('contests'));
+        $participantUserIds = $contests->getCollection()
+            ->flatMap(fn (Contest $contest) => $contest->participants->pluck('user_id'))
+            ->merge($contests->getCollection()->pluck('winner_user_id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $winnerUsers = User::query()
+            ->where(function ($query) use ($participantUserIds) {
+                $query->where('status', 'active');
+
+                if ($participantUserIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $participantUserIds);
+                }
+            })
+            ->orderBy('full_name')
+            ->orderBy('username')
+            ->limit(500)
+            ->get(['id', 'username', 'full_name']);
+
+        return view('admin.contests.ContestsPage', compact('contests', 'winnerUsers'));
     }
 
     public function createContest(): View
@@ -99,6 +120,19 @@ class ContestController extends Controller
         ]);
 
         return redirect()->route('admin.contests.contests')->with('status', 'Contest updated successfully.');
+    }
+
+    public function destroyContest(Contest $contest): RedirectResponse
+    {
+        $title = $contest->title;
+        $contestId = $contest->id;
+        $contest->delete();
+
+        $this->logActivity('contest_deleted', 'contest', $contestId, [
+            'title' => $title,
+        ]);
+
+        return back()->with('status', "Contest \"{$title}\" was deleted.");
     }
 
     public function invitations(Request $request): View
@@ -476,8 +510,8 @@ class ContestController extends Controller
         $validated = $request->validate([
             'status' => ['required', 'in:draft,active,upcoming,completed,cancelled,archived'],
             'winner_type' => ['nullable', 'in:none,user,team'],
-            'winner_user_id' => ['nullable', 'integer'],
-            'winner_team_id' => ['nullable', 'integer'],
+            'winner_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'winner_team_id' => ['nullable', 'integer', Rule::exists('contest_teams', 'id')->where('contest_id', $contest->id)],
         ]);
 
         $original = [
@@ -486,19 +520,11 @@ class ContestController extends Controller
             'winner_team_id' => $contest->winner_team_id,
         ];
 
-        $contest->status = $validated['status'];
-        $winnerType = $validated['winner_type'] ?? 'none';
+        $winner = $this->resolveContestWinner($contest, $validated);
 
-        if ($winnerType === 'user') {
-            $contest->winner_user_id = $validated['winner_user_id'] ?: null;
-            $contest->winner_team_id = null;
-        } elseif ($winnerType === 'team') {
-            $contest->winner_team_id = $validated['winner_team_id'] ?: null;
-            $contest->winner_user_id = null;
-        } else {
-            $contest->winner_user_id = null;
-            $contest->winner_team_id = null;
-        }
+        $contest->status = $validated['status'];
+        $contest->winner_user_id = $winner['user'];
+        $contest->winner_team_id = $winner['team'];
 
         if ($contest->status === 'completed' && $contest->result_at === null) {
             $contest->result_at = now();
@@ -515,7 +541,60 @@ class ContestController extends Controller
             ],
         ]);
 
-        return back()->with('status', 'Contest workflow updated.');
+        $winnerLabel = 'No winner set.';
+
+        if ($contest->winner_user_id) {
+            $winnerName = User::query()->whereKey($contest->winner_user_id)->value('full_name')
+                ?: User::query()->whereKey($contest->winner_user_id)->value('username');
+            $winnerLabel = 'Winner: '.($winnerName ?: 'selected user').'.';
+        } elseif ($contest->winner_team_id) {
+            $winnerLabel = 'Winner: '.(ContestTeam::query()->whereKey($contest->winner_team_id)->value('name') ?: 'selected team').'.';
+        }
+
+        return back()->with('status', 'Contest "'.$contest->title.'" is now '.str($contest->status)->title().'. '.$winnerLabel);
+    }
+
+    private function resolveContestWinner(Contest $contest, array $validated): array
+    {
+        $type = $validated['winner_type'] ?? 'none';
+        $userId = $validated['winner_user_id'] ?? null;
+        $teamId = $validated['winner_team_id'] ?? null;
+
+        if ($type === 'none') {
+            if ($userId && ! $teamId) {
+                $type = 'user';
+            } elseif ($teamId && ! $userId) {
+                $type = 'team';
+            } elseif ($userId && $teamId) {
+                throw ValidationException::withMessages([
+                    'winner_type' => 'Choose either a user winner or a team winner, not both.',
+                ]);
+            }
+        }
+
+        if ($type === 'user') {
+            if (! $userId) {
+                throw ValidationException::withMessages([
+                    'winner_user_id' => 'Select the user who won this contest.',
+                ]);
+            }
+
+            return ['user' => (int) $userId, 'team' => null];
+        }
+
+        if ($type === 'team') {
+            if (! $teamId) {
+                throw ValidationException::withMessages([
+                    'winner_team_id' => $contest->teams()->exists()
+                        ? 'Select the team that won this contest.'
+                        : 'This contest has no teams yet, so a team winner cannot be saved.',
+                ]);
+            }
+
+            return ['user' => null, 'team' => (int) $teamId];
+        }
+
+        return ['user' => null, 'team' => null];
     }
 
     public function recalculateContest(Contest $contest)
@@ -606,7 +685,7 @@ class ContestController extends Controller
             'ranking_rule' => 'submission final score = jury score + average community vote; participant/team totals are sums of approved submission final scores',
         ]);
 
-        return back()->with('status', 'Contest scores and ranks recalculated.');
+        return back()->with('status', 'Scores and ranks were recalculated for "'.$contest->title.'".');
     }
 
     public function regenerateLeaderboardSnapshot(Contest $contest): RedirectResponse
@@ -695,7 +774,7 @@ class ContestController extends Controller
             'category_key' => $snapshot->category_key,
         ]);
 
-        return back()->with('status', 'Leaderboard snapshot regenerated successfully.');
+        return back()->with('status', 'Leaderboard snapshot saved for "'.$contest->title.'".');
     }
 
     public static function tabCounts(): array
@@ -874,7 +953,7 @@ class ContestController extends Controller
             'entity_id' => $entityId,
             'metadata_json' => $metadata ?: null,
             'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
+            'user_agent' => ($userAgent = request()->userAgent()) ? mb_substr($userAgent, 0, 255) : null,
             'created_at' => now(),
         ]);
     }
