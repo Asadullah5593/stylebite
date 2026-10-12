@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminAuthController;
+use App\Http\Controllers\ShareLinkController;
 use App\Http\Controllers\Admin\AccountController;
 use App\Http\Controllers\Admin\CommentController;
 use App\Http\Controllers\Admin\ContestController;
@@ -29,6 +30,13 @@ Route::get('/', function () {
         'playStoreUrl' => config('services.stylebite.play_store_url', '#'),
     ]);
 })->name('home');
+
+Route::get('/p/{post}', [ShareLinkController::class, 'post'])->whereNumber('post')->name('share.post');
+Route::get('/post/{post}', [ShareLinkController::class, 'post'])->whereNumber('post');
+Route::get('/reel/{post}', [ShareLinkController::class, 'post'])->whereNumber('post');
+Route::get('/profile/{username}', [ShareLinkController::class, 'profile'])
+    ->where('username', '[A-Za-z0-9._]+')
+    ->name('share.profile');
 
 Route::view('/privacy-policy', 'privacy-policy')->name('privacy-policy');
 Route::view('/delete-account', 'delete-account')->name('delete-account');
