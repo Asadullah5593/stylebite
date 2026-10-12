@@ -50,7 +50,7 @@
 
         <select name="contest_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Types</option>
-            @foreach (['city' => 'City vs City'] as $value => $label)
+            @foreach (['city' => 'City vs City', 'one_vs_one' => 'One vs One', 'group' => 'Group', 'brand' => 'Brand'] as $value => $label)
                 <option value="{{ $value }}" @selected(request('contest_type') === $value)>{{ $label }}</option>
             @endforeach
         </select>

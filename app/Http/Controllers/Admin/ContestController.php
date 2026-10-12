@@ -16,7 +16,9 @@ use App\Models\ContestVote;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -156,10 +158,12 @@ class ContestController extends Controller
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
-                $query->where('rule_text', 'like', "%{$search}%")
-                    ->orWhereHas('contest', fn ($query) => $query
-                        ->where('title', 'like', "%{$search}%")
-                        ->orWhere('slug', 'like', "%{$search}%"));
+                $query->where(function ($query) use ($search) {
+                    $query->where('rule_text', 'like', "%{$search}%")
+                        ->orWhereHas('contest', fn ($query) => $query
+                            ->where('title', 'like', "%{$search}%")
+                            ->orWhere('slug', 'like', "%{$search}%"));
+                });
             })
             ->latest('created_at')
             ->paginate(10)
@@ -711,15 +715,18 @@ class ContestController extends Controller
 
     private function persistContest(Request $request, ?Contest $contest = null): Contest
     {
+        $category = $contest?->category ?? 'admin';
+
         $validated = $request->validate([
             'title' => [
                 'required', 'string', 'max:191',
                 Rule::unique('contests', 'title')
-                    ->where(fn ($query) => $query->where('category', 'admin')->whereNull('deleted_at'))
+                    ->where(fn ($query) => $query->where('category', $category)->whereNull('deleted_at'))
                     ->ignore($contest?->id),
             ],
             'subtitle' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'contest_type' => ['required', 'in:one_vs_one,group,city,brand'],
             'status' => ['required', 'in:draft,active,upcoming,completed,cancelled,archived'],
             'visibility' => ['required', 'in:public,private,followers_only'],
             'city' => ['nullable', 'string', 'max:120'],
@@ -730,6 +737,10 @@ class ContestController extends Controller
             'voting_type' => ['required', 'in:community,jury,hybrid'],
             'start_at' => ['nullable', 'date'],
             'end_at' => ['nullable', 'date', 'after_or_equal:start_at'],
+            'enrollment_start_at' => ['nullable', 'date'],
+            'enrollment_end_at' => ['nullable', 'date', 'after_or_equal:enrollment_start_at'],
+            'voting_start_at' => ['nullable', 'date'],
+            'voting_end_at' => ['nullable', 'date', 'after_or_equal:voting_start_at'],
             'cover_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
             'banner_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
             'rules_text' => ['nullable', 'string'],
@@ -737,12 +748,23 @@ class ContestController extends Controller
             'title.unique' => 'A contest with this title already exists.',
         ]);
 
-        return DB::transaction(function () use ($validated, $contest, $request) {
+        $rules = collect(preg_split('/\r\n|\r|\n/', (string) ($validated['rules_text'] ?? '')))
+            ->map(fn (string $rule) => trim($rule))
+            ->filter()
+            ->values();
+
+        if ($rules->contains(fn (string $rule) => mb_strlen($rule) > 500)) {
+            throw ValidationException::withMessages([
+                'rules_text' => 'Each rule must be 500 characters or fewer. Put one rule on each line.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($validated, $contest, $request, $category, $rules) {
             if ($contest === null) {
                 // Re-check inside the transaction: catches a rapid resubmit that
                 // slipped past validation before the first request committed.
                 $alreadyExists = Contest::query()
-                    ->where('category', 'admin')
+                    ->where('category', $category)
                     ->where('title', $validated['title'])
                     ->exists();
 
@@ -757,8 +779,8 @@ class ContestController extends Controller
                 'slug' => $this->uniqueContestSlug($validated['title']),
                 'creator_user_id' => auth()->id(),
                 'title' => $validated['title'],
-                'category' => 'admin',
-                'contest_type' => 'city',
+                'category' => $category,
+                'contest_type' => $validated['contest_type'],
             ]);
 
             $contest->forceFill([
@@ -766,8 +788,8 @@ class ContestController extends Controller
                 'slug' => $contest->slug ?: $this->uniqueContestSlug($validated['title']),
                 'subtitle' => $validated['subtitle'] ?? null,
                 'description' => $validated['description'] ?? null,
-                'category' => 'admin',
-                'contest_type' => 'city',
+                'category' => $category,
+                'contest_type' => $validated['contest_type'],
                 'status' => $validated['status'],
                 'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
@@ -778,19 +800,21 @@ class ContestController extends Controller
                 'voting_type' => $validated['voting_type'],
                 'start_at' => isset($validated['start_at']) ? Carbon::parse($validated['start_at']) : null,
                 'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at']) : null,
+                'enrollment_start_at' => isset($validated['enrollment_start_at']) ? Carbon::parse($validated['enrollment_start_at']) : null,
+                'enrollment_end_at' => isset($validated['enrollment_end_at']) ? Carbon::parse($validated['enrollment_end_at']) : null,
+                'voting_start_at' => isset($validated['voting_start_at']) ? Carbon::parse($validated['voting_start_at']) : null,
+                'voting_end_at' => isset($validated['voting_end_at']) ? Carbon::parse($validated['voting_end_at']) : null,
             ])->save();
 
             $coverImageUrl = $contest->cover_image_url;
             $bannerImageUrl = $contest->banner_image_url;
 
             if ($request->hasFile('cover_image')) {
-                $uploadedFile = stylebite_upload_file($request->file('cover_image'), 'contests/'.auth()->id());
-                $coverImageUrl = $uploadedFile['file_url'];
+                $coverImageUrl = $this->storePublicContestImage($request->file('cover_image'));
             }
 
             if ($request->hasFile('banner_image')) {
-                $uploadedFile = stylebite_upload_file($request->file('banner_image'), 'contests/'.auth()->id());
-                $bannerImageUrl = $uploadedFile['file_url'];
+                $bannerImageUrl = $this->storePublicContestImage($request->file('banner_image'));
             }
 
             $contest->forceFill([
@@ -800,23 +824,32 @@ class ContestController extends Controller
 
             ContestRule::query()->where('contest_id', $contest->id)->delete();
 
-            if (! empty($validated['rules_text'])) {
-                $rules = collect(preg_split('/\r\n|\r|\n/', (string) $validated['rules_text']))
-                    ->map(fn (string $rule) => trim($rule))
-                    ->filter()
-                    ->values();
-
-                foreach ($rules as $index => $ruleText) {
-                    ContestRule::create([
-                        'contest_id' => $contest->id,
-                        'rule_text' => $ruleText,
-                        'sort_order' => $index + 1,
-                    ]);
-                }
+            foreach ($rules as $index => $ruleText) {
+                ContestRule::create([
+                    'contest_id' => $contest->id,
+                    'rule_text' => $ruleText,
+                    'sort_order' => $index + 1,
+                ]);
             }
 
             return $contest->fresh();
         });
+    }
+
+    private function storePublicContestImage(UploadedFile $file): string
+    {
+        $userId = (int) auth()->id();
+        $directory = public_path('contests/'.$userId);
+
+        if (! File::exists($directory)) {
+            File::makeDirectory($directory, 0755, true);
+        }
+
+        $extension = $file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg';
+        $fileName = Str::uuid()->toString().'.'.$extension;
+        $file->move($directory, $fileName);
+
+        return rtrim((string) config('app.asset_url'), '/').'/contests/'.$userId.'/'.$fileName;
     }
 
     private function uniqueContestSlug(string $title): string

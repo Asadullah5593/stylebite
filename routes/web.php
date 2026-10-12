@@ -191,24 +191,24 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
     Route::prefix('contests')->name('contests.')->group(function () {
         Route::get('/', [ContestController::class, 'contests'])->name('contests');
         Route::get('/create', [ContestController::class, 'createContest'])->name('create');
-        Route::get('/{contest}/edit', [ContestController::class, 'editContest'])->name('edit');
+        Route::get('/contest-rules', [ContestController::class, 'rules'])->name('contest_rules');
+        Route::get('/participants', [ContestController::class, 'participants'])->name('participants');
+        Route::get('/invitations', [ContestController::class, 'invitations'])->name('invitations');
+        Route::get('/teams', [ContestController::class, 'teams'])->name('teams');
+        Route::get('/team-members', [ContestController::class, 'teamMembers'])->name('team_members');
+        Route::get('/submissions', [ContestController::class, 'submissions'])->name('submissions');
+        Route::get('/votes', [ContestController::class, 'votes'])->name('votes');
+        Route::get('/leader-boards', [ContestController::class, 'leaderboards'])->name('leaderboards');
         Route::post('/', [ContestController::class, 'storeContest'])->name('store');
+        Route::post('/invitations', [ContestController::class, 'storeInvitation'])->name('invitations.store');
+        Route::patch('/participants/{participant}', [ContestController::class, 'updateParticipant'])->name('participants.update');
+        Route::patch('/invitations/{invitation}', [ContestController::class, 'updateInvitation'])->name('invitations.update');
+        Route::patch('/submissions/{submission}', [ContestController::class, 'updateSubmission'])->name('submissions.update');
+        Route::get('/{contest}/edit', [ContestController::class, 'editContest'])->name('edit');
         Route::patch('/{contest}', [ContestController::class, 'updateContest'])->name('update');
         Route::patch('/{contest}/workflow', [ContestController::class, 'updateContestWorkflow'])->name('workflow.update');
         Route::post('/{contest}/recalculate', [ContestController::class, 'recalculateContest'])->name('recalculate');
         Route::post('/{contest}/leaderboard-snapshot', [ContestController::class, 'regenerateLeaderboardSnapshot'])->name('leaderboards.regenerate');
-        Route::get('/contest-rules', [ContestController::class, 'rules'])->name('contest_rules');
-        Route::get('/participants', [ContestController::class, 'participants'])->name('participants');
-        Route::post('/invitations', [ContestController::class, 'storeInvitation'])->name('invitations.store');
-        Route::patch('/participants/{participant}', [ContestController::class, 'updateParticipant'])->name('participants.update');
-        Route::get('/invitations', [ContestController::class, 'invitations'])->name('invitations');
-        Route::patch('/invitations/{invitation}', [ContestController::class, 'updateInvitation'])->name('invitations.update');
-        Route::get('/teams', [ContestController::class, 'teams'])->name('teams');
-        Route::get('/team-members', [ContestController::class, 'teamMembers'])->name('team_members');
-        Route::get('/submissions', [ContestController::class, 'submissions'])->name('submissions');
-        Route::patch('/submissions/{submission}', [ContestController::class, 'updateSubmission'])->name('submissions.update');
-        Route::get('/votes', [ContestController::class, 'votes'])->name('votes');
-        Route::get('/leader-boards', [ContestController::class, 'leaderboards'])->name('leaderboards');
 
     });
 
