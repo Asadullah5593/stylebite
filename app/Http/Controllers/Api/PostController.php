@@ -44,13 +44,15 @@ class PostController extends Controller
         $validated = $this->validatePost($request);
 
         $normalizedPostType = $this->normalizePostType($validated['post_type']);
-        $this->validatePostTypeFields($request, $normalizedPostType);
+        $isStory = $this->looksLikeStory($validated['caption'] ?? null, $validated['tags'] ?? null);
+        if (! $isStory) {
+            $this->validatePostTypeFields($request, $normalizedPostType);
+        }
         $locationDetails = $this->resolveLocationDetails($validated);
 
         $user = $request->user();
         $files = $this->collectPostFiles($request);
         $mediaKind = $this->mediaKindFor($files);
-        $isStory = $this->looksLikeStory($validated['caption'] ?? null, $validated['tags'] ?? null);
 
         $post = DB::transaction(function () use ($validated, $normalizedPostType, $user, $files, $mediaKind, $isStory, $locationDetails) {
             $post = Post::create([
@@ -70,9 +72,11 @@ class PostController extends Controller
                 'restaurant' => $normalizedPostType === 'food' ? ($validated['restaurant'] ?? null) : null,
                 'visibility' => $validated['visibility'] ?? 'public',
                 'status' => 'published',
-                'rating_enabled' => $normalizedPostType === 'food'
-                    ? true
-                    : (bool) ($validated['rating_enabled'] ?? false),
+                'rating_enabled' => $isStory
+                    ? false
+                    : ($normalizedPostType === 'food'
+                        ? true
+                        : (bool) ($validated['rating_enabled'] ?? false)),
                 'food_rating' => $normalizedPostType === 'food' ? ($validated['food_rating'] ?? null) : null,
                 'service_rating' => $normalizedPostType === 'food' ? ($validated['service_rating'] ?? null) : null,
                 'staff_rating' => $normalizedPostType === 'food' ? ($validated['staff_rating'] ?? null) : null,

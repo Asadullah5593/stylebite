@@ -89,6 +89,8 @@ class StoryController extends Controller
                 'media_url' => stylebite_asset_url($media?->file_url),
                 'media_type' => $media?->media_type ?? 'image',
                 'caption' => $post->caption,
+                'post_type' => $post->post_type,
+                'feed_type' => $post->feed_type,
                 'posted_at' => $post->posted_at?->toISOString(),
                 'expires_at' => $post->expires_at?->toISOString(),
             ];
