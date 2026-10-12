@@ -38,6 +38,12 @@
             @endforeach
         </select>
 
+        <select name="story" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
+            <option value="">Posts and stories</option>
+            <option value="live" @selected(request('story') === 'live')>Live stories</option>
+            <option value="any" @selected(request('story') === 'any')>All stories</option>
+        </select>
+
         <select name="status" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Status</option>
             @foreach (['draft' => 'Draft', 'published' => 'Published', 'archived' => 'Archived', 'under_review' => 'Under Review', 'removed' => 'Removed'] as $value => $label)
@@ -75,7 +81,19 @@
                                 <div class="small fw-semibold">{{ $post->user?->full_name ?: '@'.$post->user?->username }}</div>
                                 <div class="text-muted extra-small">{{ $post->user?->username ? '@'.$post->user->username : 'Unknown author' }}</div>
                             </td>
-                            <td><span class="badge bg-info-soft text-info rounded-pill">{{ str($post->post_type)->replace('_', ' ')->title() }}</span></td>
+                            <td>
+                                <span class="badge bg-info-soft text-info rounded-pill">{{ str($post->post_type)->replace('_', ' ')->title() }}</span>
+                                @if ($post->is_story)
+                                    <div class="text-muted extra-small mt-1">
+                                        Story
+                                        @if ($post->expires_at && $post->expires_at->isFuture() && $post->status === 'published')
+                                            · live until {{ $post->expires_at->format('M d, H:i') }}
+                                        @else
+                                            · ended
+                                        @endif
+                                    </div>
+                                @endif
+                            </td>
                             <td><span class="text-muted small">{{ collect([$post->location_name, $post->city, $post->country])->filter()->implode(', ') ?: '-' }}</span></td>
                             <td><span class="text-muted small">{{ $post->media_count }} media · {{ $post->comment_count }} comments · {{ $post->like_count }} likes</span></td>
                             <td>
@@ -112,6 +130,15 @@
                                             <i class="bi bi-shield-check me-1"></i>Moderate
                                         </button>
                                     </form>
+                                    @if ($post->is_story && $post->status === 'published' && $post->expires_at && $post->expires_at->isFuture())
+                                        <form method="POST" action="{{ route('admin.posts.end_story', $post) }}" onsubmit="return confirm('Take this story down now?');">
+                                            @csrf
+                                            @method('PATCH')
+                                            <button class="btn btn-sm btn-outline-danger rounded-3" type="submit">
+                                                <i class="bi bi-clock-history me-1"></i>End story
+                                            </button>
+                                        </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>

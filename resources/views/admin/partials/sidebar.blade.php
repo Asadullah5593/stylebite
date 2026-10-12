@@ -72,6 +72,9 @@
                 <i class="bi bi-bookmark-heart"></i> <span>Memories</span>
                 <span class="nav-count ms-auto">{{ $sidebarCounts['memories'] }}</span>
             </a>
+            <a href="{{ route('admin.reviews.index') }}" class="nav-link {{ request()->routeIs('admin.reviews*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+                <i class="bi bi-shop"></i> <span>Restaurant reviews</span>
+            </a>
         </div>
 
         <!-- Communication -->

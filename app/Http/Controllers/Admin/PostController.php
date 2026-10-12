@@ -42,6 +42,12 @@ class PostController extends Controller
             })
             ->when($request->filled('post_type'), fn ($query) => $query->where('post_type', $request->string('post_type')))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            ->when($request->string('story')->toString() === 'live', function ($query) {
+                $query->where('is_story', true)
+                    ->where('status', 'published')
+                    ->where('expires_at', '>', now());
+            })
+            ->when($request->string('story')->toString() === 'any', fn ($query) => $query->where('is_story', true))
             ->latest()
             ->paginate(10)
             ->withQueryString();
@@ -124,6 +130,22 @@ class PostController extends Controller
         $post->save();
 
         return back()->with('status', "Post #{$post->id} moderation updated successfully.");
+    }
+
+    public function endStory(Post $post): RedirectResponse
+    {
+        if (! $post->is_story) {
+            return back()->with('status', "Post #{$post->id} is not a story.");
+        }
+
+        $post->forceFill([
+            'expires_at' => now(),
+            'status' => 'removed',
+            'moderation_status' => 'blocked',
+            'is_blocked' => true,
+        ])->save();
+
+        return back()->with('status', "Story #{$post->id} was taken down.");
     }
 
     public function media(Request $request): View

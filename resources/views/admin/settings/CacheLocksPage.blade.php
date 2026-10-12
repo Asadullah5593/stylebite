@@ -15,6 +15,10 @@
         <p class="text-muted small mb-0">Review distributed lock rows and their current owners.</p>
     </div>
 
+    @if (session('status'))
+        <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
+    @endif
+
     @include('admin.settings.partials.tabs')
 
     <form method="GET" action="{{ route('admin.settings.cache_locks') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
@@ -44,9 +48,10 @@
                             <td><span class="text-muted small font-monospace">{{ $cacheLock->owner }}</span></td>
                             <td><span class="text-muted small">{{ \Carbon\Carbon::createFromTimestamp($cacheLock->expiration)->format('M d, Y H:i') }}</span></td>
                             <td class="text-end pe-4">
-                                <form method="POST" action="{{ route('admin.settings.cache_locks.delete', $cacheLock->key) }}" onsubmit="return confirm('Delete this cache lock?');">
+                                <form method="POST" action="{{ route('admin.settings.cache_locks.delete') }}" onsubmit="return confirm('Delete this cache lock?');">
                                     @csrf
                                     @method('DELETE')
+                                    <input type="hidden" name="key" value="{{ $cacheLock->key }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3">
                                         <i class="bi bi-trash3 me-1"></i>Delete
                                     </button>

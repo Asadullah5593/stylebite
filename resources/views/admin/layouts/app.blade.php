@@ -674,6 +674,16 @@
         <div class="content-area d-flex flex-column">
             @include('admin.partials.header')
             <main class="admin-main px-1 px-md-2 px-lg-3 px-xl-3">
+                @if ($errors->any())
+                    <div class="alert alert-danger rounded-4 border-0 mb-4">
+                        <div class="fw-bold mb-1">This action could not be completed.</div>
+                        <ul class="mb-0 ps-3">
+                            @foreach ($errors->all() as $error)
+                                <li>{{ $error }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
                 @yield('content')
             </main>
         </div>

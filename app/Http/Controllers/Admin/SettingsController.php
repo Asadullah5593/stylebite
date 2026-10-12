@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class SettingsController extends Controller
@@ -448,9 +449,12 @@ class SettingsController extends Controller
         return view('admin.settings.CacheLocksPage', compact('cacheLocks'));
     }
 
-    public function deleteCacheLock(string $cacheKey): RedirectResponse
+    public function deleteCacheLock(Request $request): RedirectResponse
     {
-        $cacheLock = DB::table('cache_locks')->where('key', $cacheKey)->first();
+        $cacheKey = $request->string('key')->toString();
+        $cacheLock = $cacheKey === ''
+            ? null
+            : DB::table('cache_locks')->where('key', $cacheKey)->first();
 
         if (! $cacheLock) {
             return back()->with('status', 'Cache lock record was not found.');
@@ -479,14 +483,26 @@ class SettingsController extends Controller
 
     public static function tabCounts(): array
     {
+        $count = function (string $table): int {
+            if (! Schema::hasTable($table)) {
+                return 0;
+            }
+
+            try {
+                return DB::table($table)->count();
+            } catch (\Throwable) {
+                return 0;
+            }
+        };
+
         return [
-            'configs' => AppConfig::count(),
-            'jobs' => DB::table('jobs')->count(),
-            'failed_jobs' => DB::table('failed_jobs')->count(),
-            'job_batches' => DB::table('job_batches')->count(),
-            'cache' => DB::table('cache')->count(),
-            'cache_locks' => DB::table('cache_locks')->count(),
-            'migrations' => DB::table('migrations')->count(),
+            'configs' => $count('app_configs'),
+            'jobs' => $count('jobs'),
+            'failed_jobs' => $count('failed_jobs'),
+            'job_batches' => $count('job_batches'),
+            'cache' => $count('cache'),
+            'cache_locks' => $count('cache_locks'),
+            'migrations' => $count('migrations'),
         ];
     }
 

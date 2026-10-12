@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\MessagingController;
 use App\Http\Controllers\Admin\ModerationController;
 use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\PostController;
+use App\Http\Controllers\Admin\RestaurantReviewController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SocialController;
 use App\Http\Controllers\Admin\SearchController;
@@ -143,6 +144,12 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/{post}/edit', [PostController::class, 'edit'])->name('edit');
         Route::put('/{post}', [PostController::class, 'update'])->name('update');
         Route::patch('/{post}/moderate', [PostController::class, 'moderate'])->name('moderate');
+        Route::patch('/{post}/end-story', [PostController::class, 'endStory'])->name('end_story');
+    });
+
+    Route::prefix('reviews')->name('reviews.')->group(function () {
+        Route::get('/', [RestaurantReviewController::class, 'index'])->name('index');
+        Route::delete('/{review}', [RestaurantReviewController::class, 'destroy'])->name('destroy');
     });
 
     // Communication Module
@@ -239,7 +246,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::delete('/cache/prefix', [SettingsController::class, 'clearCachePrefix'])->name('cache.clear_prefix');
         Route::delete('/cache/expired', [SettingsController::class, 'clearExpiredCacheEntries'])->name('cache.clear_expired');
         Route::get('/cache-locks', [SettingsController::class, 'cacheLocks'])->name('cache_locks');
-        Route::delete('/cache-locks/{cacheKey}', [SettingsController::class, 'deleteCacheLock'])->name('cache_locks.delete');
+        Route::delete('/cache-locks', [SettingsController::class, 'deleteCacheLock'])->name('cache_locks.delete');
         Route::get('/migrations', [SettingsController::class, 'migrations'])->name('migrations');
     });
 });
