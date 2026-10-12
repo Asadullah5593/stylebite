@@ -205,7 +205,8 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::patch('/invitations/{invitation}', [ContestController::class, 'updateInvitation'])->name('invitations.update');
         Route::patch('/submissions/{submission}', [ContestController::class, 'updateSubmission'])->name('submissions.update');
         Route::get('/{contest}/edit', [ContestController::class, 'editContest'])->name('edit');
-        Route::patch('/{contest}', [ContestController::class, 'updateContest'])->name('update');
+        Route::get('/{contest}', [ContestController::class, 'editContest'])->name('show');
+        Route::match(['post', 'patch'], '/{contest}', [ContestController::class, 'updateContest'])->name('update');
         Route::patch('/{contest}/workflow', [ContestController::class, 'updateContestWorkflow'])->name('workflow.update');
         Route::post('/{contest}/recalculate', [ContestController::class, 'recalculateContest'])->name('recalculate');
         Route::post('/{contest}/leaderboard-snapshot', [ContestController::class, 'regenerateLeaderboardSnapshot'])->name('leaderboards.regenerate');
