@@ -48,12 +48,7 @@
             @endforeach
         </select>
 
-        <select name="contest_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
-            <option value="">All Types</option>
-            @foreach (['city' => 'City vs City', 'one_vs_one' => 'One vs One', 'group' => 'Group', 'brand' => 'Brand'] as $value => $label)
-                <option value="{{ $value }}" @selected(request('contest_type') === $value)>{{ $label }}</option>
-            @endforeach
-        </select>
+        <input type="text" name="contest_type" value="{{ request('contest_type') }}" class="form-control border-0 bg-dark-soft rounded-3" style="width: 180px;" placeholder="Contest type">
 
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
         <a href="{{ route('admin.contests.contests') }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
@@ -104,7 +99,7 @@
                                 @endif
                             </td>
                             <td><span class="badge bg-info-soft text-info rounded-pill">{{ str($contest->category)->title() }}</span></td>
-                            <td><span class="badge bg-secondary-soft text-muted rounded-pill">{{ str($contest->contest_type)->replace('_', ' ')->title() }}</span></td>
+                            <td><span class="badge bg-secondary-soft text-muted rounded-pill">{{ $contest->contest_type }}</span></td>
                             <td><span class="text-muted small">{{ collect([$contest->city, $contest->country])->filter()->implode(', ') ?: 'No location' }}</span></td>
                             <td><span class="text-muted small">{{ number_format($contest->participant_count) }} participants · {{ number_format($contest->submission_count) }} submissions</span></td>
                             <td><span class="badge {{ in_array($contest->status, ['active', 'completed'], true) ? 'bg-success-soft text-success' : ($contest->status === 'upcoming' ? 'bg-info-soft text-info' : ($contest->status === 'cancelled' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning')) }} rounded-pill">{{ str($contest->status)->title() }}</span></td>

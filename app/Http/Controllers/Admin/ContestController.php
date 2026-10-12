@@ -832,21 +832,14 @@ class ContestController extends Controller
             ],
             'subtitle' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'contest_type' => ['required', 'in:one_vs_one,group,city,brand'],
+            'contest_type' => ['required', 'string', 'max:120'],
             'status' => ['required', 'in:draft,active,upcoming,completed,cancelled,archived'],
             'visibility' => ['required', 'in:public,private,followers_only'],
             'city' => ['nullable', 'string', 'max:120'],
             'country' => ['nullable', 'string', 'max:120'],
-            'max_participants' => ['nullable', 'integer', 'min:1'],
-            'entry_fee' => ['nullable', 'numeric', 'min:0'],
             'prize_pool' => ['nullable', 'numeric', 'min:0'],
-            'voting_type' => ['required', 'in:community,jury,hybrid'],
             'start_at' => ['nullable', 'date'],
             'end_at' => ['nullable', 'date', 'after_or_equal:start_at'],
-            'enrollment_start_at' => ['nullable', 'date'],
-            'enrollment_end_at' => ['nullable', 'date', 'after_or_equal:enrollment_start_at'],
-            'voting_start_at' => ['nullable', 'date'],
-            'voting_end_at' => ['nullable', 'date', 'after_or_equal:voting_start_at'],
             'cover_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
             'banner_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
             'rules_text' => ['nullable', 'string'],
@@ -900,16 +893,9 @@ class ContestController extends Controller
                 'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
                 'country' => $validated['country'] ?? null,
-                'max_participants' => $validated['max_participants'] ?? null,
-                'entry_fee' => $validated['entry_fee'] ?? 0,
                 'prize_pool' => $validated['prize_pool'] ?? 0,
-                'voting_type' => $validated['voting_type'],
                 'start_at' => isset($validated['start_at']) ? Carbon::parse($validated['start_at']) : null,
                 'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at']) : null,
-                'enrollment_start_at' => isset($validated['enrollment_start_at']) ? Carbon::parse($validated['enrollment_start_at']) : null,
-                'enrollment_end_at' => isset($validated['enrollment_end_at']) ? Carbon::parse($validated['enrollment_end_at']) : null,
-                'voting_start_at' => isset($validated['voting_start_at']) ? Carbon::parse($validated['voting_start_at']) : null,
-                'voting_end_at' => isset($validated['voting_end_at']) ? Carbon::parse($validated['voting_end_at']) : null,
             ])->save();
 
             $coverImageUrl = $contest->cover_image_url;
@@ -985,8 +971,8 @@ class ContestController extends Controller
     {
         $message = $exception->getMessage();
 
-        if (str_contains($message, 'Unknown column')) {
-            return 'The contest could not be saved because the database is missing a column. On the server run: php artisan migrate --force';
+        if (preg_match("/Unknown column '([^']+)'/", $message, $matches) === 1) {
+            return 'The contest could not be saved because the database is missing the '.$matches[1].' column. On the server run: php artisan migrate --force';
         }
 
         if (str_contains($message, 'Data too long')) {
