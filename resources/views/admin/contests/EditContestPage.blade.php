@@ -19,13 +19,15 @@
             <a href="{{ route('admin.contests.contests') }}" class="btn btn-outline-dynamic rounded-3 px-3">
                 <i class="bi bi-arrow-left me-1"></i>Back to Contests
             </a>
-            <form method="POST" action="{{ route('admin.contests.destroy', $contest) }}" onsubmit="return confirm(@json('Delete '.$contest->title.'? It will be removed from the app.'));">
-                @csrf
-                @method('DELETE')
-                <button type="submit" class="btn btn-outline-danger rounded-3 px-3">
-                    <i class="bi bi-trash3 me-1"></i>Delete
-                </button>
-            </form>
+            @if (Route::has('admin.contests.destroy'))
+                <form method="POST" action="{{ route('admin.contests.destroy', $contest) }}" onsubmit="return confirm('Delete this contest? It will be removed from the app.');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger rounded-3 px-3">
+                        <i class="bi bi-trash3 me-1"></i>Delete
+                    </button>
+                </form>
+            @endif
         </div>
     </div>
 

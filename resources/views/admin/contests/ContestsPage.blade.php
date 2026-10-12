@@ -108,20 +108,22 @@
                             <td><span class="text-muted small">{{ collect([$contest->city, $contest->country])->filter()->implode(', ') ?: 'No location' }}</span></td>
                             <td><span class="text-muted small">{{ number_format($contest->participant_count) }} participants · {{ number_format($contest->submission_count) }} submissions</span></td>
                             <td><span class="badge {{ in_array($contest->status, ['active', 'completed'], true) ? 'bg-success-soft text-success' : ($contest->status === 'upcoming' ? 'bg-info-soft text-info' : ($contest->status === 'cancelled' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning')) }} rounded-pill">{{ str($contest->status)->title() }}</span></td>
-                            <td><span class="text-muted small">{{ $contest->created_at?->format('M d, Y H:i') }}</span></td>
+                            <td><span class="text-muted small">{{ $contest->created_at instanceof \DateTimeInterface ? $contest->created_at->format('M d, Y H:i') : '' }}</span></td>
                             <td class="pe-4" style="min-width: 280px;">
                                 <div class="contest-workflow d-grid gap-2">
                                     <div class="d-flex gap-2">
                                         <a href="{{ route('admin.contests.edit', $contest) }}" class="btn btn-sm btn-outline-dynamic rounded-3 flex-fill">
                                             <i class="bi bi-pencil-square me-1"></i>Edit
                                         </a>
-                                        <form method="POST" action="{{ route('admin.contests.destroy', $contest) }}" class="flex-fill" onsubmit="return confirm(@json('Delete '.$contest->title.'? It will be removed from the app.'));">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 w-100">
-                                                <i class="bi bi-trash3 me-1"></i>Delete
-                                            </button>
-                                        </form>
+                                        @if (Route::has('admin.contests.destroy'))
+                                            <form method="POST" action="{{ route('admin.contests.destroy', $contest) }}" class="flex-fill" onsubmit="return confirm('Delete this contest? It will be removed from the app.');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 w-100">
+                                                    <i class="bi bi-trash3 me-1"></i>Delete
+                                                </button>
+                                            </form>
+                                        @endif
                                     </div>
                                     <form method="POST" action="{{ route('admin.contests.workflow.update', $contest) }}" class="d-grid gap-2" data-workflow-form>
                                         @csrf

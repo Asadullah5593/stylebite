@@ -4,6 +4,19 @@
     $method = strtoupper($method ?? 'POST');
     $formTitle = $formTitle ?? 'Contest';
     $submitLabel = $submitLabel ?? 'Create Contest';
+    $fieldDate = function (string $field) use ($contest): string {
+        if (! $contest) {
+            return '';
+        }
+
+        try {
+            $value = $contest->getAttribute($field);
+        } catch (\Throwable) {
+            return '';
+        }
+
+        return $value instanceof \DateTimeInterface ? $value->format('Y-m-d\TH:i') : '';
+    };
 @endphp
 
 <form method="POST" action="{{ $action }}" class="row g-3" enctype="multipart/form-data" data-contest-form>
@@ -78,27 +91,27 @@
     </div>
     <div class="col-md-4">
         <label class="form-label small text-muted">Start At</label>
-        <input type="datetime-local" name="start_at" value="{{ old('start_at', $contest?->start_at?->format('Y-m-d\TH:i') ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <input type="datetime-local" name="start_at" value="{{ old('start_at', $fieldDate('start_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-4">
         <label class="form-label small text-muted">End At</label>
-        <input type="datetime-local" name="end_at" value="{{ old('end_at', $contest?->end_at?->format('Y-m-d\TH:i') ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <input type="datetime-local" name="end_at" value="{{ old('end_at', $fieldDate('end_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-3">
         <label class="form-label small text-muted">Join Opens</label>
-        <input type="datetime-local" name="enrollment_start_at" value="{{ old('enrollment_start_at', $contest?->enrollment_start_at?->format('Y-m-d\TH:i') ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <input type="datetime-local" name="enrollment_start_at" value="{{ old('enrollment_start_at', $fieldDate('enrollment_start_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-3">
         <label class="form-label small text-muted">Join Closes</label>
-        <input type="datetime-local" name="enrollment_end_at" value="{{ old('enrollment_end_at', $contest?->enrollment_end_at?->format('Y-m-d\TH:i') ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <input type="datetime-local" name="enrollment_end_at" value="{{ old('enrollment_end_at', $fieldDate('enrollment_end_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-3">
         <label class="form-label small text-muted">Voting Opens</label>
-        <input type="datetime-local" name="voting_start_at" value="{{ old('voting_start_at', $contest?->voting_start_at?->format('Y-m-d\TH:i') ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <input type="datetime-local" name="voting_start_at" value="{{ old('voting_start_at', $fieldDate('voting_start_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
     </div>
     <div class="col-md-3">
         <label class="form-label small text-muted">Voting Closes</label>
-        <input type="datetime-local" name="voting_end_at" value="{{ old('voting_end_at', $contest?->voting_end_at?->format('Y-m-d\TH:i') ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <input type="datetime-local" name="voting_end_at" value="{{ old('voting_end_at', $fieldDate('voting_end_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
         <div class="form-text text-muted">Leave join and voting times empty to use the contest start and end.</div>
     </div>
     <div class="col-md-6">

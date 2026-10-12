@@ -15,6 +15,7 @@ use App\Models\ContestTeamMember;
 use App\Models\ContestVote;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -64,18 +65,22 @@ class ContestController extends Controller
             ->unique()
             ->values();
 
-        $winnerUsers = User::query()
-            ->where(function ($query) use ($participantUserIds) {
-                $query->where('status', 'active');
+        try {
+            $winnerUsers = User::query()
+                ->where(function ($query) use ($participantUserIds) {
+                    $query->where('status', 'active');
 
-                if ($participantUserIds->isNotEmpty()) {
-                    $query->orWhereIn('id', $participantUserIds);
-                }
-            })
-            ->orderBy('full_name')
-            ->orderBy('username')
-            ->limit(500)
-            ->get(['id', 'username', 'full_name']);
+                    if ($participantUserIds->isNotEmpty()) {
+                        $query->orWhereIn('id', $participantUserIds);
+                    }
+                })
+                ->orderBy('id')
+                ->limit(300)
+                ->get(['id', 'username', 'full_name']);
+        } catch (\Throwable $exception) {
+            report($exception);
+            $winnerUsers = collect();
+        }
 
         return view('admin.contests.ContestsPage', compact('contests', 'winnerUsers'));
     }
@@ -87,18 +92,32 @@ class ContestController extends Controller
 
     public function editContest(Contest $contest): View
     {
-        $contest->load('rules');
-        $contest->rules_text = $contest->rules
-            ->sortBy('sort_order')
-            ->pluck('rule_text')
-            ->implode("\n");
+        try {
+            $contest->load('rules');
+            $contest->rules_text = $contest->rules
+                ->sortBy('sort_order')
+                ->pluck('rule_text')
+                ->implode("\n");
+        } catch (\Throwable $exception) {
+            report($exception);
+            $contest->setRelation('rules', collect());
+            $contest->rules_text = '';
+        }
 
         return view('admin.contests.EditContestPage', compact('contest'));
     }
 
     public function storeContest(Request $request): RedirectResponse
     {
-        $contest = $this->persistContest($request);
+        try {
+            $contest = $this->persistContest($request);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return back()->withInput()->withErrors([
+                'title' => $this->contestSaveError($exception),
+            ]);
+        }
 
         $this->logActivity('contest_created', 'contest', $contest->id, [
             'category' => 'admin',
@@ -111,7 +130,15 @@ class ContestController extends Controller
 
     public function updateContest(Request $request, Contest $contest): RedirectResponse
     {
-        $contest = $this->persistContest($request, $contest);
+        try {
+            $contest = $this->persistContest($request, $contest);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return back()->withInput()->withErrors([
+                'title' => $this->contestSaveError($exception),
+            ]);
+        }
 
         $this->logActivity('contest_updated', 'contest', $contest->id, [
             'category' => $contest->category,
@@ -920,15 +947,26 @@ class ContestController extends Controller
         $userId = (int) auth()->id();
         $directory = public_path('contests/'.$userId);
 
-        if (! File::exists($directory)) {
-            File::makeDirectory($directory, 0755, true);
+        try {
+            if (! File::exists($directory)) {
+                File::makeDirectory($directory, 0755, true);
+            }
+
+            $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg');
+            $extension = preg_replace('/[^a-z0-9]/', '', $extension) ?: 'jpg';
+            $fileName = Str::uuid()->toString().'.'.$extension;
+            $file->move($directory, $fileName);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'cover_image' => 'The image could not be stored. Check that the server can write to the public/contests folder.',
+            ]);
         }
 
-        $extension = $file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg';
-        $fileName = Str::uuid()->toString().'.'.$extension;
-        $file->move($directory, $fileName);
+        $assetBase = rtrim((string) (config('app.asset_url') ?: config('app.url')), '/');
 
-        return rtrim((string) config('app.asset_url'), '/').'/contests/'.$userId.'/'.$fileName;
+        return $assetBase.'/contests/'.$userId.'/'.$fileName;
     }
 
     private function uniqueContestSlug(string $title): string
@@ -943,18 +981,48 @@ class ContestController extends Controller
         return $slug;
     }
 
+    private function contestSaveError(QueryException $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (str_contains($message, 'Unknown column')) {
+            return 'The contest could not be saved because the database is missing a column. On the server run: php artisan migrate --force';
+        }
+
+        if (str_contains($message, 'Data too long')) {
+            return 'The contest could not be saved because one of the values is too long.';
+        }
+
+        if (str_contains($message, 'Incorrect datetime') || str_contains($message, 'Invalid datetime')) {
+            return 'The contest could not be saved because one of the dates is not valid.';
+        }
+
+        if (str_contains($message, 'Duplicate entry')) {
+            return 'A contest with this title or address already exists.';
+        }
+
+        return 'The contest could not be saved because the database rejected it.';
+    }
+
     private function logActivity(string $eventName, ?string $entityType, ?int $entityId, array $metadata = []): void
     {
-        ActivityLog::create([
-            'user_id' => auth()->id(),
-            'actor_type' => 'admin',
-            'event_name' => $eventName,
-            'entity_type' => $entityType,
-            'entity_id' => $entityId,
-            'metadata_json' => $metadata ?: null,
-            'ip_address' => request()->ip(),
-            'user_agent' => ($userAgent = request()->userAgent()) ? mb_substr($userAgent, 0, 255) : null,
-            'created_at' => now(),
-        ]);
+        try {
+            $ip = request()->ip();
+            $userAgent = request()->userAgent();
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'actor_type' => 'admin',
+                'event_name' => mb_substr($eventName, 0, 120),
+                'entity_type' => $entityType ? mb_substr($entityType, 0, 60) : null,
+                'entity_id' => $entityId,
+                'metadata_json' => $metadata ?: null,
+                'ip_address' => $ip ? mb_substr($ip, 0, 45) : null,
+                'user_agent' => $userAgent ? mb_substr($userAgent, 0, 255) : null,
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 }
