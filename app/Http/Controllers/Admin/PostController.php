@@ -25,7 +25,10 @@ class PostController extends Controller
     public function index(Request $request): View
     {
         $posts = Post::query()
-            ->with('user:id,username,full_name')
+            ->with([
+                'user:id,username,full_name',
+                'media' => fn ($query) => $query->orderBy('sort_order'),
+            ])
             ->withCount(['media', 'tags'])
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
@@ -48,6 +51,7 @@ class PostController extends Controller
                     ->where('expires_at', '>', now());
             })
             ->when($request->string('story')->toString() === 'any', fn ($query) => $query->where('is_story', true))
+            ->tap(fn ($query) => $this->applyContentSection($query, $request->string('section')->toString()))
             ->latest()
             ->paginate(10)
             ->withQueryString();
@@ -59,7 +63,7 @@ class PostController extends Controller
     {
         $post->load([
             'user:id,username,full_name,email',
-            'media',
+            'media' => fn ($query) => $query->orderBy('sort_order'),
             'tags:id,name',
             'ratings.user:id,username,full_name',
             'comments.user:id,username,full_name',
@@ -150,8 +154,17 @@ class PostController extends Controller
 
     public function media(Request $request): View
     {
+        $section = $request->string('section')->toString();
         $media = PostMedia::query()
-            ->with(['post:id,caption', 'upload:id,file_url,thumbnail_url'])
+            ->with([
+                'post:id,caption,post_type,is_story,user_id',
+                'post.user:id,username,full_name',
+                'upload:id,file_url,thumbnail_url',
+            ])
+            ->when($section !== '', fn ($query) => $query->whereHas(
+                'post',
+                fn ($post) => $this->applyContentSection($post, $section),
+            ))
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
@@ -205,6 +218,23 @@ class PostController extends Controller
             ->withQueryString();
 
         return view('admin.posts.PostRatingsPage', compact('ratings'));
+    }
+
+    private function applyContentSection($query, string $section): void
+    {
+        match ($section) {
+            'posts' => $query->where('post_type', 'outfit')->where('is_story', false),
+            'stories' => $query->where(function ($query) {
+                $query->where('is_story', true)
+                    ->orWhere('caption', 'like', '%#sbstory%');
+            }),
+            'reels' => $query->where('is_story', false)->where(function ($query) {
+                $query->where('post_type', 'reel')
+                    ->orWhereHas('media', fn ($media) => $media->where('media_type', 'video'));
+            }),
+            'food' => $query->where('post_type', 'food')->where('is_story', false),
+            default => null,
+        };
     }
 
     public static function tabCounts(): array

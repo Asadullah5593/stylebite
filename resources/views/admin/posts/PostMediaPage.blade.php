@@ -18,8 +18,12 @@
     </div>
 
     @include('admin.posts.partials.tabs')
+    @include('admin.posts.partials.section-filters')
 
     <form method="GET" action="{{ route('admin.posts.post_media') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
+        @if (request('section'))
+            <input type="hidden" name="section" value="{{ request('section') }}">
+        @endif
         <div class="position-relative flex-grow-1" style="min-width: 250px;">
             <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
             <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search media, role, status, post...">
@@ -53,10 +57,19 @@
                     @forelse ($media as $item)
                         <tr class="border-white-05">
                             <td class="ps-4">
-                                <div class="fw-bold small">#{{ $item->id }}</div>
-                                <div class="text-muted extra-small text-truncate" style="max-width: 220px;">{{ $item->file_url ?: $item->upload?->file_url ?: 'No file url' }}</div>
+                                <div class="d-flex align-items-center gap-3">
+                                    @include('admin.posts.partials.media-preview', ['media' => $item])
+                                    <div>
+                                        <div class="fw-bold small">#{{ $item->id }}</div>
+                                        <div class="text-muted extra-small">{{ $item->post?->user?->username ? '@'.$item->post->user->username : 'Unknown author' }}</div>
+                                    </div>
+                                </div>
                             </td>
-                            <td><span class="text-muted small">{{ str($item->post?->caption ?: 'No post caption')->limit(34) }}</span></td>
+                            <td>
+                                <a href="{{ $item->post ? route('admin.posts.show', $item->post) : '#' }}" class="text-reset text-decoration-none">
+                                    <span class="text-muted small">{{ str($item->post?->caption ?: 'No post caption')->limit(34) }}</span>
+                                </a>
+                            </td>
                             <td><span class="badge bg-info-soft text-info rounded-pill text-uppercase">{{ $item->media_type }}</span></td>
                             <td><span class="text-muted small">{{ str($item->media_role)->replace('_', ' ')->title() }}</span></td>
                             <td><span class="text-muted small">{{ $item->size_bytes ? number_format($item->size_bytes / 1024, 1).' KB' : '—' }}</span></td>

@@ -24,8 +24,12 @@
     @endif
 
     @include('admin.posts.partials.tabs')
+    @include('admin.posts.partials.section-filters')
 
     <form method="GET" action="{{ route('admin.posts.all_posts') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
+        @if (request('section'))
+            <input type="hidden" name="section" value="{{ request('section') }}">
+        @endif
         <div class="position-relative flex-grow-1" style="min-width: 250px;">
             <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
             <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search posts, author, city, location...">
@@ -74,8 +78,18 @@
                     @forelse ($posts as $post)
                         <tr class="border-white-05">
                             <td class="ps-4">
-                                <div class="fw-bold small">#{{ $post->id }}</div>
-                                <div class="text-muted extra-small text-truncate" style="max-width: 320px;">{{ $post->caption ?: 'No caption' }}</div>
+                                <div class="d-flex align-items-center gap-3">
+                                    @if ($preview = $post->media->first())
+                                        @include('admin.posts.partials.media-preview', ['media' => $preview])
+                                    @endif
+                                    <div>
+                                        <div class="fw-bold small">#{{ $post->id }}</div>
+                                        <div class="text-muted extra-small text-truncate" style="max-width: 280px;">{{ $post->caption ?: 'No caption' }}</div>
+                                        @if ($post->media_count > 1)
+                                            <div class="text-muted extra-small">+{{ $post->media_count - 1 }} more</div>
+                                        @endif
+                                    </div>
+                                </div>
                             </td>
                             <td>
                                 <div class="small fw-semibold">{{ $post->user?->full_name ?: '@'.$post->user?->username }}</div>

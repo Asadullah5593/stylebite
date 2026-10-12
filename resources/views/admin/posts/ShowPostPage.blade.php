@@ -78,17 +78,24 @@
     </div>
 
     <div class="row g-4">
-        <div class="col-12 col-xl-4">
-            <div class="glass rounded-4 p-4 h-100 border border-white-05">
+        <div class="col-12">
+            <div class="glass rounded-4 p-4 border border-white-05">
                 <h3 class="h6 fw-bold mb-3">Media</h3>
-                @forelse ($post->media->take(6) as $item)
-                    <div class="d-flex justify-content-between py-2 border-bottom border-white-05 small">
-                        <span>{{ str($item->media_type)->title() }} · {{ str($item->media_role)->replace('_', ' ')->title() }}</span>
-                        <span class="text-muted">{{ str($item->processing_status)->title() }}</span>
+                @if ($post->media->isNotEmpty())
+                    <div class="row g-3">
+                        @foreach ($post->media as $item)
+                            <div class="col-12 col-md-6 col-xl-4">
+                                @include('admin.posts.partials.media-preview', ['media' => $item, 'large' => true])
+                                <div class="d-flex justify-content-between mt-2 small text-muted">
+                                    <span>{{ str($item->media_type)->title() }} · {{ str($item->media_role)->replace('_', ' ')->title() }}</span>
+                                    <span>{{ str($item->processing_status)->title() }}</span>
+                                </div>
+                            </div>
+                        @endforeach
                     </div>
-                @empty
+                @else
                     <p class="text-muted mb-0">No media attached to this post.</p>
-                @endforelse
+                @endif
             </div>
         </div>
 
