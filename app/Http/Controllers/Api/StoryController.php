@@ -20,26 +20,49 @@ class StoryController extends Controller
             ->whereNull('deleted_at')
             ->pluck('following_user_id');
 
-        $authorIds = $followingIds
-            ->push($viewer->id)
-            ->unique()
-            ->values();
-
         $posts = Post::query()
             ->with([
                 'user',
                 'media' => fn ($query) => $query->orderBy('sort_order'),
+                'tags',
             ])
-            ->whereIn('user_id', $authorIds)
-            ->where('is_story', true)
             ->where('status', 'published')
             ->where('moderation_status', 'clean')
             ->where('is_blocked', false)
-            ->where('expires_at', '>', now())
+            ->where(function ($query) {
+                $query->where('is_story', true)
+                    ->orWhere('caption', 'like', '%#sbstory%')
+                    ->orWhereHas('tags', fn ($tags) => $tags->whereRaw('LOWER(name) = ?', ['sbstory']));
+            })
+            ->where(function ($query) {
+                $cutoff = now()->subDay();
+                $query->where('expires_at', '>', now())
+                    ->orWhere(function ($open) use ($cutoff) {
+                        $open->whereNull('expires_at')
+                            ->where(function ($recent) use ($cutoff) {
+                                $recent->where('published_at', '>=', $cutoff)
+                                    ->orWhere('posted_at', '>=', $cutoff)
+                                    ->orWhere('created_at', '>=', $cutoff);
+                            });
+                    });
+            })
+            ->where(function ($query) use ($viewer, $followingIds) {
+                $query->where('user_id', $viewer->id)
+                    ->orWhere('visibility', 'public')
+                    ->orWhere(function ($followers) use ($followingIds) {
+                        $followers->where('visibility', 'followers_only');
+                        if ($followingIds->isEmpty()) {
+                            $followers->whereRaw('0 = 1');
+                        } else {
+                            $followers->whereIn('user_id', $followingIds->all());
+                        }
+                    });
+            })
             ->whereDoesntHave('user.blockedUsersEntries', fn ($query) => $query->where('blocked_user_id', $viewer->id))
             ->whereDoesntHave('user.blockedByEntries', fn ($query) => $query->where('blocker_user_id', $viewer->id))
             ->orderByDesc('published_at')
             ->orderByDesc('id')
+            ->limit(200)
             ->get();
 
         $groups = [];
