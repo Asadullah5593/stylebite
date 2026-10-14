@@ -8,12 +8,14 @@ use App\Models\Contest;
 use App\Models\ContestLeaderboardSnapshot;
 use App\Models\ContestInvitation;
 use App\Models\ContestParticipant;
+use App\Models\ContestPlace;
 use App\Models\ContestRule;
 use App\Models\ContestSubmission;
 use App\Models\ContestTeam;
 use App\Models\ContestTeamMember;
 use App\Models\ContestVote;
 use App\Models\User;
+use App\Support\ContestNotifications;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -35,6 +37,7 @@ class ContestController extends Controller
                 'creator:id,username,full_name',
                 'winnerUser:id,username,full_name',
                 'winnerTeam:id,name',
+                'places.winnerUser:id,username,full_name',
                 'participants.user:id,username,full_name',
                 'teams:id,contest_id,name',
             ])
@@ -93,7 +96,7 @@ class ContestController extends Controller
     public function editContest(Contest $contest): View
     {
         try {
-            $contest->load('rules');
+            $contest->load(['rules', 'places']);
             $contest->rules_text = $contest->rules
                 ->sortBy('sort_order')
                 ->pluck('rule_text')
@@ -125,7 +128,14 @@ class ContestController extends Controller
             'status' => $contest->status,
         ]);
 
-        return redirect()->route('admin.contests.contests')->with('status', 'Contest created successfully.');
+        $announced = ContestNotifications::announceCreated($contest);
+
+        return redirect()->route('admin.contests.contests')->with(
+            'status',
+            $announced
+                ? 'Contest created. Everyone will get a notification.'
+                : 'Contest created successfully.'
+        );
     }
 
     public function updateContest(Request $request, Contest $contest): RedirectResponse
@@ -146,7 +156,14 @@ class ContestController extends Controller
             'status' => $contest->status,
         ]);
 
-        return redirect()->route('admin.contests.contests')->with('status', 'Contest updated successfully.');
+        $announced = ContestNotifications::announceCreated($contest);
+
+        return redirect()->route('admin.contests.contests')->with(
+            'status',
+            $announced
+                ? 'Contest updated. Everyone will get a notification.'
+                : 'Contest updated successfully.'
+        );
     }
 
     public function destroyContest(Contest $contest): RedirectResponse
@@ -536,6 +553,8 @@ class ContestController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', 'in:draft,active,upcoming,completed,cancelled,archived'],
+            'place_winners' => ['nullable', 'array'],
+            'place_winners.*' => ['nullable', 'integer', 'exists:users,id'],
             'winner_type' => ['nullable', 'in:none,user,team'],
             'winner_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'winner_team_id' => ['nullable', 'integer', Rule::exists('contest_teams', 'id')->where('contest_id', $contest->id)],
@@ -547,17 +566,23 @@ class ContestController extends Controller
             'winner_team_id' => $contest->winner_team_id,
         ];
 
-        $winner = $this->resolveContestWinner($contest, $validated);
-
         $contest->status = $validated['status'];
-        $contest->winner_user_id = $winner['user'];
-        $contest->winner_team_id = $winner['team'];
 
         if ($contest->status === 'completed' && $contest->result_at === null) {
             $contest->result_at = now();
         }
 
+        $winnerLabel = $this->saveContestPlaceWinners($contest, $validated);
+
         $contest->save();
+
+        if (ContestNotifications::announceCreated($contest)) {
+            $winnerLabel .= ' Everyone will get a new-contest notification.';
+        }
+
+        if (ContestNotifications::announceWinners($contest)) {
+            $winnerLabel .= ' Win notifications are going out.';
+        }
 
         $this->logActivity('contest_workflow_updated', 'contest', $contest->id, [
             'old' => $original,
@@ -568,17 +593,70 @@ class ContestController extends Controller
             ],
         ]);
 
-        $winnerLabel = 'No winner set.';
+        return back()->with('status', 'Contest "'.$contest->title.'" is now '.str($contest->status)->title().'. '.$winnerLabel);
+    }
 
-        if ($contest->winner_user_id) {
-            $winnerName = User::query()->whereKey($contest->winner_user_id)->value('full_name')
-                ?: User::query()->whereKey($contest->winner_user_id)->value('username');
-            $winnerLabel = 'Winner: '.($winnerName ?: 'selected user').'.';
-        } elseif ($contest->winner_team_id) {
-            $winnerLabel = 'Winner: '.(ContestTeam::query()->whereKey($contest->winner_team_id)->value('name') ?: 'selected team').'.';
+    private function saveContestPlaceWinners(Contest $contest, array $validated): string
+    {
+        $places = $contest->places()->orderBy('place')->get();
+
+        if ($places->isEmpty()) {
+            $winner = $this->resolveContestWinner($contest, $validated);
+            $contest->winner_user_id = $winner['user'];
+            $contest->winner_team_id = $winner['team'];
+
+            if ($contest->winner_user_id) {
+                $winnerName = User::query()->whereKey($contest->winner_user_id)->value('full_name')
+                    ?: User::query()->whereKey($contest->winner_user_id)->value('username');
+
+                return 'Winner: '.($winnerName ?: 'selected user').'.';
+            }
+
+            if ($contest->winner_team_id) {
+                return 'Winner: '.(ContestTeam::query()->whereKey($contest->winner_team_id)->value('name') ?: 'selected team').'.';
+            }
+
+            return 'No winner set.';
         }
 
-        return back()->with('status', 'Contest "'.$contest->title.'" is now '.str($contest->status)->title().'. '.$winnerLabel);
+        $submitted = collect($validated['place_winners'] ?? [])
+            ->map(fn ($id) => $id ? (int) $id : null);
+
+        $chosen = $submitted->filter();
+        if ($chosen->unique()->count() !== $chosen->count()) {
+            throw ValidationException::withMessages([
+                'place_winners' => 'Each winner place needs a different user.',
+            ]);
+        }
+
+        foreach ($places as $place) {
+            $winnerId = $submitted->has($place->id) ? $submitted->get($place->id) : $place->winner_user_id;
+            $place->winner_user_id = $winnerId ?: null;
+            $place->save();
+        }
+
+        $firstWinner = $places->first(fn (ContestPlace $place) => $place->winner_user_id)?->winner_user_id;
+        $contest->winner_user_id = $firstWinner;
+        if ($firstWinner) {
+            $contest->winner_team_id = null;
+        }
+
+        $named = $places->filter(fn (ContestPlace $place) => $place->winner_user_id);
+        if ($named->isEmpty()) {
+            return 'No winners set.';
+        }
+
+        $names = User::query()
+            ->whereIn('id', $named->pluck('winner_user_id'))
+            ->get(['id', 'username', 'full_name'])
+            ->keyBy('id');
+
+        return $named->map(function (ContestPlace $place) use ($names) {
+            $user = $names->get($place->winner_user_id);
+            $label = $user?->full_name ?: ($user?->username ? '@'.$user->username : 'selected user');
+
+            return ContestPlace::ordinal((int) $place->place).': '.$label;
+        })->implode(', ').'.';
     }
 
     private function resolveContestWinner(Contest $contest, array $validated): array
@@ -838,6 +916,9 @@ class ContestController extends Controller
             'city' => ['nullable', 'string', 'max:120'],
             'country' => ['nullable', 'string', 'max:120'],
             'prize_pool' => ['nullable', 'numeric', 'min:0'],
+            'places' => ['nullable', 'array', 'max:10'],
+            'places.*.prize_title' => ['nullable', 'string', 'max:120'],
+            'places.*.prize_amount' => ['nullable', 'numeric', 'min:0'],
             'start_at' => ['nullable', 'date'],
             'end_at' => ['nullable', 'date', 'after_or_equal:start_at'],
             'cover_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:10240'],
@@ -846,6 +927,14 @@ class ContestController extends Controller
         ], [
             'title.unique' => 'A contest with this title already exists.',
         ]);
+
+        $placeRows = collect($validated['places'] ?? [])->values();
+        if ($placeRows->isEmpty()) {
+            $placeRows = collect([[
+                'prize_title' => '1st place',
+                'prize_amount' => $validated['prize_pool'] ?? 0,
+            ]]);
+        }
 
         $rules = collect(preg_split('/\r\n|\r|\n/', (string) ($validated['rules_text'] ?? '')))
             ->map(fn (string $rule) => trim($rule))
@@ -858,7 +947,7 @@ class ContestController extends Controller
             ]);
         }
 
-        return DB::transaction(function () use ($validated, $contest, $request, $category, $rules) {
+        return DB::transaction(function () use ($validated, $contest, $request, $category, $rules, $placeRows) {
             if ($contest === null) {
                 // Re-check inside the transaction: catches a rapid resubmit that
                 // slipped past validation before the first request committed.
@@ -893,7 +982,6 @@ class ContestController extends Controller
                 'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
                 'country' => $validated['country'] ?? null,
-                'prize_pool' => $validated['prize_pool'] ?? 0,
                 'start_at' => isset($validated['start_at']) ? Carbon::parse($validated['start_at']) : null,
                 'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at']) : null,
             ])->save();
@@ -924,6 +1012,8 @@ class ContestController extends Controller
                 ]);
             }
 
+            $this->syncContestPlaces($contest, $placeRows);
+
             return $contest->fresh();
         });
     }
@@ -953,6 +1043,44 @@ class ContestController extends Controller
         }
 
         return (string) $uploaded['file_url'];
+    }
+
+    private function syncContestPlaces(Contest $contest, $placeRows): void
+    {
+        $existingWinners = ContestPlace::query()
+            ->where('contest_id', $contest->id)
+            ->get()
+            ->keyBy('place');
+
+        ContestPlace::query()->where('contest_id', $contest->id)->delete();
+
+        $total = 0.0;
+
+        foreach ($placeRows->values() as $index => $row) {
+            $place = $index + 1;
+            $amount = round((float) ($row['prize_amount'] ?? 0), 2);
+            $title = trim((string) ($row['prize_title'] ?? ''));
+            $total += $amount;
+
+            ContestPlace::create([
+                'contest_id' => $contest->id,
+                'place' => $place,
+                'prize_title' => $title !== '' ? $title : ContestPlace::ordinal($place).' place',
+                'prize_amount' => $amount,
+                'winner_user_id' => $existingWinners->get($place)?->winner_user_id,
+            ]);
+        }
+
+        $firstWinner = ContestPlace::query()
+            ->where('contest_id', $contest->id)
+            ->whereNotNull('winner_user_id')
+            ->orderBy('place')
+            ->value('winner_user_id');
+
+        $contest->forceFill([
+            'prize_pool' => $total,
+            'winner_user_id' => $firstWinner,
+        ])->save();
     }
 
     private function uniqueContestSlug(string $title): string

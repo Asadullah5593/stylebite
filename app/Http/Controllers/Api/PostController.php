@@ -243,6 +243,7 @@ class PostController extends Controller
                 : ['required', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
             'images' => ['nullable', 'array', 'max:9'],
             'images.*' => ['file', 'mimes:jpg,jpeg,png,webp'],
+            'image_count' => ['nullable', 'integer', 'min:1', 'max:10'],
             'caption' => ['nullable', 'string'],
             'tags' => ['nullable', 'string'],
             'location' => ['nullable', 'string', 'max:255'],
@@ -333,32 +334,88 @@ class PostController extends Controller
      */
     private function collectPostFiles(Request $request): array
     {
+        $this->assertUploadsSucceeded($request);
+
+        $files = [];
         $primary = $request->file('file');
-        $extras = $request->file('images', []);
-        if ($extras instanceof UploadedFile) {
-            $extras = [$extras];
+        if ($primary instanceof UploadedFile) {
+            $files[] = $primary;
         }
-        $extras = array_values(array_filter($extras ?? []));
+        foreach ($this->extraImageFiles($request) as $extra) {
+            $files[] = $extra;
+        }
 
         if ($primary instanceof UploadedFile
             && str_starts_with((string) $primary->getMimeType(), 'video/')
-            && $extras !== []) {
+            && count($files) > 1) {
             throw ValidationException::withMessages([
                 'images' => ['A video post cannot include extra photos.'],
             ]);
         }
 
-        $files = [];
-        if ($primary instanceof UploadedFile) {
-            $files[] = $primary;
-        }
-        foreach ($extras as $extra) {
-            if ($extra instanceof UploadedFile) {
-                $files[] = $extra;
-            }
+        $expected = (int) $request->input('image_count', 0);
+        if ($expected > 1 && count($files) !== $expected) {
+            throw ValidationException::withMessages([
+                'images' => ['Only '.count($files).' of '.$expected.' photos arrived. Try again with smaller photos.'],
+            ]);
         }
 
         return $files;
+    }
+
+    /**
+     * @return list<UploadedFile>
+     */
+    private function extraImageFiles(Request $request): array
+    {
+        $extras = [];
+        foreach ($request->allFiles() as $key => $value) {
+            if ($key === 'file' || ! str_starts_with((string) $key, 'images')) {
+                continue;
+            }
+            $this->pushUploadedFiles($extras, $value);
+        }
+
+        return $extras;
+    }
+
+    /**
+     * @param  list<UploadedFile>  $extras
+     */
+    private function pushUploadedFiles(array &$extras, mixed $value): void
+    {
+        if ($value instanceof UploadedFile) {
+            $extras[] = $value;
+
+            return;
+        }
+        if (! is_array($value)) {
+            return;
+        }
+        foreach ($value as $item) {
+            $this->pushUploadedFiles($extras, $item);
+        }
+    }
+
+    private function assertUploadsSucceeded(Request $request): void
+    {
+        foreach (['file', 'images'] as $key) {
+            $error = $_FILES[$key]['error'] ?? null;
+            $codes = is_array($error) ? $error : ($error === null ? [] : [$error]);
+            foreach ($codes as $code) {
+                $code = (int) $code;
+                if ($code === UPLOAD_ERR_OK || $code === UPLOAD_ERR_NO_FILE) {
+                    continue;
+                }
+                $message = match ($code) {
+                    UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'One of the photos is too large for the server. Use a smaller photo.',
+                    default => 'One of the photos could not be uploaded. Please try again.',
+                };
+                throw ValidationException::withMessages([
+                    $key => [$message],
+                ]);
+            }
+        }
     }
 
     /**

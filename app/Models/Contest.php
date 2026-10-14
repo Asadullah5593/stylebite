@@ -48,6 +48,11 @@ class Contest extends StylebiteModel
         return $this->hasMany(ContestRule::class);
     }
 
+    public function places(): HasMany
+    {
+        return $this->hasMany(ContestPlace::class)->orderBy('place');
+    }
+
     public function participants(): HasMany
     {
         return $this->hasMany(ContestParticipant::class);

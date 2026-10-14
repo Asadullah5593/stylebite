@@ -496,9 +496,16 @@ class ProfileController extends Controller
                 'media' => $post->media->map(fn ($media) => [
                     'id' => $media->id,
                     'media_type' => $media->media_type,
-                    'file_url' => stylebite_asset_url($media->file_url),
+                    'file_url' => stylebite_asset_url($media->optimized_url ?? $media->file_url),
+                    'original_url' => stylebite_asset_url($media->file_url),
                     'thumbnail_url' => stylebite_asset_url($media->thumbnail_url),
-                ])->values(),
+                ])->values()->all(),
+                'images' => $post->media
+                    ->filter(fn ($media) => $media->media_type === 'image')
+                    ->map(fn ($media) => stylebite_asset_url($media->optimized_url ?? $media->file_url))
+                    ->filter()
+                    ->values()
+                    ->all(),
                 'created_at' => optional($post->created_at)->toDateTimeString(),
                 'in_contest' => $post->isInContest(),
                 'rating_enabled' => $post->isInContest(),
@@ -544,9 +551,16 @@ class ProfileController extends Controller
                         'media' => $savedPost->post->media->map(fn ($media) => [
                             'id' => $media->id,
                             'media_type' => $media->media_type,
-                            'file_url' => stylebite_asset_url($media->file_url),
+                            'file_url' => stylebite_asset_url($media->optimized_url ?? $media->file_url),
+                            'original_url' => stylebite_asset_url($media->file_url),
                             'thumbnail_url' => stylebite_asset_url($media->thumbnail_url),
-                        ])->values(),
+                        ])->values()->all(),
+                        'images' => $savedPost->post->media
+                            ->filter(fn ($media) => $media->media_type === 'image')
+                            ->map(fn ($media) => stylebite_asset_url($media->optimized_url ?? $media->file_url))
+                            ->filter()
+                            ->values()
+                            ->all(),
                     ],
                 ])->values(),
             $this->paginationPayload($paginator),

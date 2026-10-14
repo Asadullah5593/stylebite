@@ -165,7 +165,7 @@ class FeedController extends Controller
     public function toggleLike(Request $request, int $postId): JsonResponse
     {
         $user = $request->user();
-        $post = $this->findAccessiblePost($user->id, $postId);
+        $post = $this->findLikeablePost($user->id, $postId);
 
         $isLiked = DB::transaction(function () use ($post, $user) {
             $existing = PostLike::query()
@@ -194,7 +194,7 @@ class FeedController extends Controller
             'status_code' => 1,
             'message' => $isLiked ? 'Post liked successfully.' : 'Post unliked successfully.',
             'is_liked' => $isLiked,
-            'like_count' => (int) $post->fresh()->like_count,
+            'like_count' => max(0, (int) $post->like_count),
         ]);
     }
 
@@ -780,6 +780,24 @@ class FeedController extends Controller
             ->whereDoesntHave('user.blockedByEntries', fn (Builder $blockQuery) => $blockQuery->where('blocker_user_id', $viewerUserId));
     }
 
+    private function findLikeablePost(int $viewerUserId, int $postId): Post
+    {
+        $post = Post::query()
+            ->whereKey($postId)
+            ->tap(fn (Builder $query) => $this->applyFeedVisibilityScope($query, $viewerUserId))
+            ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $viewerUserId))
+            ->first();
+
+        if ($post) {
+            return $post;
+        }
+
+        abort(response()->json([
+            'status_code' => 0,
+            'message' => 'Post not found or not accessible.',
+        ], Response::HTTP_NOT_FOUND));
+    }
+
     private function findAccessiblePost(int $viewerUserId, int $postId, bool $includeDetailRelations = false): Post
     {
         $query = Post::query()
@@ -1045,7 +1063,13 @@ class FeedController extends Controller
                 'is_verified_badge' => (bool) ($profile?->is_verified_badge ?? false),
                 'is_following' => $isFollowingAuthor,
             ],
-            'media' => $media->map(fn ($item) => $this->mediaPayload($item))->values(),
+            'media' => $media->map(fn ($item) => $this->mediaPayload($item))->values()->all(),
+            'images' => $media
+                ->filter(fn ($item) => $item->media_type === 'image')
+                ->map(fn ($item) => stylebite_asset_url($item->optimized_url ?? $item->file_url))
+                ->filter()
+                ->values()
+                ->all(),
             'primary_media_type' => $primaryMedia?->media_type,
             'media_count' => $media->count(),
             'has_multiple_media' => $media->count() > 1,
@@ -1144,7 +1168,13 @@ class FeedController extends Controller
                 'is_private' => (bool) ($profile?->is_private ?? false),
                 'is_following' => $isFollowingAuthor,
             ],
-            'media' => $media->map(fn ($item) => $this->mediaPayload($item))->values(),
+            'media' => $media->map(fn ($item) => $this->mediaPayload($item))->values()->all(),
+            'images' => $media
+                ->filter(fn ($item) => $item->media_type === 'image')
+                ->map(fn ($item) => stylebite_asset_url($item->optimized_url ?? $item->file_url))
+                ->filter()
+                ->values()
+                ->all(),
             'comments' => $commentPreview->values(),
             'primary_media_type' => $primaryMedia?->media_type,
             'has_multiple_media' => $media->count() > 1,

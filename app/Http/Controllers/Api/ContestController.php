@@ -534,6 +534,19 @@ class ContestController extends Controller
             });
     }
 
+    private function contestPlaces(Contest $contest)
+    {
+        try {
+            $contest->loadMissing(['places.winnerUser:id,username']);
+
+            return $contest->places;
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return collect();
+        }
+    }
+
     private function contestPayload(Contest $contest, ?int $viewerUserId = null, bool $includeDetails = false): array
     {
         $liveQuery = $this->liveSubmissionsQuery($contest->id);
@@ -585,6 +598,25 @@ class ContestController extends Controller
             $winnerName = $participants->firstWhere('user_id', $winnerUserId)?->user?->username;
         }
 
+        $places = $this->contestPlaces($contest);
+        $prizes = $places->map(function ($place) {
+            return [
+                'place' => (int) $place->place,
+                'title' => $place->displayTitle(),
+                'amount' => (float) $place->prize_amount,
+                'winner_user_id' => $place->winner_user_id ? (int) $place->winner_user_id : null,
+                'winner' => $place->winnerUser?->username,
+            ];
+        })->values();
+        $rewardAmount = $prizes->isNotEmpty()
+            ? (float) $prizes->sum('amount')
+            : (float) ($contest->prize_pool ?? 0);
+        $leadPrize = $prizes->first(fn (array $prize) => ! empty($prize['winner']));
+        if ($leadPrize) {
+            $winnerUserId = $leadPrize['winner_user_id'];
+            $winnerName = $leadPrize['winner'];
+        }
+
         return [
             'id' => (int) $contest->id,
             'slug' => $contest->slug,
@@ -610,10 +642,12 @@ class ContestController extends Controller
             'voting_end_at' => optional($contest->voting_end_at)?->toIso8601String(),
             'winner_user_id' => $winnerUserId,
             'winner' => $winnerName,
+            'winner_count' => $prizes->count(),
+            'prizes' => $prizes,
             'is_admin_contest' => $contest->category === 'admin',
-            'reward_amount' => (float) ($contest->prize_pool ?? 0),
-            'has_reward' => (float) ($contest->prize_pool ?? 0) > 0,
-            'featured' => $contest->category === 'admin' && (float) ($contest->prize_pool ?? 0) > 0,
+            'reward_amount' => $rewardAmount,
+            'has_reward' => $rewardAmount > 0,
+            'featured' => $contest->category === 'admin' && $rewardAmount > 0,
             'can_join' => $this->canJoin($contest, $alreadySubmitted, $isParticipant, $participants->count()),
             'is_participant' => $isParticipant,
             'enrolled_post_ids' => $enrolledPostIds,

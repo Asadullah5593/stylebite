@@ -17,6 +17,22 @@
 
         return $value instanceof \DateTimeInterface ? $value->format('Y-m-d\TH:i') : '';
     };
+    $placeRows = old('places');
+    if (! is_array($placeRows)) {
+        $placeRows = ($contest?->places ?? collect())
+            ->map(fn ($place) => [
+                'prize_title' => $place->prize_title,
+                'prize_amount' => $place->prize_amount,
+            ])
+            ->values()
+            ->all();
+    }
+    if ($placeRows === []) {
+        $placeRows = [[
+            'prize_title' => '1st place',
+            'prize_amount' => $contest?->prize_pool ?? 0,
+        ]];
+    }
 @endphp
 
 <form method="POST" action="{{ $action }}" class="row g-3" enctype="multipart/form-data" data-contest-form>
@@ -65,9 +81,28 @@
         <label class="form-label small text-muted">Country</label>
         <input type="text" name="country" value="{{ old('country', $contest?->country ?? '') }}" class="form-control border-0 bg-dark-soft rounded-3" placeholder="Pakistan">
     </div>
-    <div class="col-md-4">
-        <label class="form-label small text-muted">Prize Pool</label>
-        <input type="number" min="0" step="0.01" name="prize_pool" value="{{ old('prize_pool', $contest?->prize_pool ?? 0) }}" class="form-control border-0 bg-dark-soft rounded-3" placeholder="1000">
+    <div class="col-12">
+        <label class="form-label small text-muted">Winner places</label>
+        <div class="form-text text-muted mb-2">Add one row for each winner. A contest can have a single winner or several, and each place has its own prize.</div>
+        <div id="winner-places" class="d-grid gap-2">
+            @foreach ($placeRows as $row)
+                <div class="d-flex flex-wrap gap-2 align-items-center" data-place-row>
+                    <span class="badge bg-secondary-soft text-muted rounded-pill" data-place-label style="min-width: 42px;">1st</span>
+                    <input type="text" data-title name="places[][prize_title]" value="{{ $row['prize_title'] ?? '' }}" class="form-control border-0 bg-dark-soft rounded-3" placeholder="1st place" maxlength="120" style="max-width: 280px;">
+                    <div class="input-group" style="max-width: 180px;">
+                        <span class="input-group-text border-0 bg-dark-soft text-muted">PKR</span>
+                        <input type="number" data-amount name="places[][prize_amount]" value="{{ $row['prize_amount'] ?? 0 }}" min="0" step="0.01" class="form-control border-0 bg-dark-soft" placeholder="5000">
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger rounded-3" data-remove-place>Remove</button>
+                </div>
+            @endforeach
+        </div>
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-dynamic rounded-3" id="add-winner-place">
+                <i class="bi bi-plus-lg me-1"></i>Add winner place
+            </button>
+            <div class="text-muted small">Prize pool total: <span class="fw-semibold" id="prize-pool-total">0</span></div>
+        </div>
     </div>
     <div class="col-md-6">
         <label class="form-label small text-muted">Start At</label>
@@ -142,6 +177,88 @@
 
         bindImagePreview('cover-image-input', 'cover-image-preview');
         bindImagePreview('banner-image-input', 'banner-image-preview');
+
+        const placeList = document.getElementById('winner-places');
+        const addPlaceButton = document.getElementById('add-winner-place');
+        const prizeTotal = document.getElementById('prize-pool-total');
+
+        const placeLabel = (place) => {
+            const mod100 = place % 100;
+            if (mod100 >= 11 && mod100 <= 13) {
+                return place + 'th';
+            }
+            if (place % 10 === 1) return place + 'st';
+            if (place % 10 === 2) return place + 'nd';
+            if (place % 10 === 3) return place + 'rd';
+            return place + 'th';
+        };
+
+        const refreshPlaces = () => {
+            if (!placeList) {
+                return;
+            }
+
+            const rows = placeList.querySelectorAll('[data-place-row]');
+            let total = 0;
+
+            rows.forEach((row, index) => {
+                const label = row.querySelector('[data-place-label]');
+                const title = row.querySelector('[data-title]');
+                const amount = row.querySelector('[data-amount]');
+                const remove = row.querySelector('[data-remove-place]');
+
+                if (label) label.textContent = placeLabel(index + 1);
+                if (title) title.name = 'places[' + index + '][prize_title]';
+                if (amount) {
+                    amount.name = 'places[' + index + '][prize_amount]';
+                    total += Number(amount.value || 0);
+                }
+                if (remove) remove.disabled = rows.length === 1;
+            });
+
+            if (prizeTotal) {
+                prizeTotal.textContent = Number.isInteger(total) ? String(total) : total.toFixed(2);
+            }
+
+            if (addPlaceButton) {
+                addPlaceButton.disabled = rows.length >= 10;
+            }
+        };
+
+        if (placeList && addPlaceButton) {
+            addPlaceButton.addEventListener('click', function () {
+                const rows = placeList.querySelectorAll('[data-place-row]');
+                if (!rows.length || rows.length >= 10) {
+                    return;
+                }
+
+                const copy = rows[rows.length - 1].cloneNode(true);
+                const title = copy.querySelector('[data-title]');
+                const amount = copy.querySelector('[data-amount]');
+                if (title) title.value = '';
+                if (amount) amount.value = '0';
+                placeList.appendChild(copy);
+                refreshPlaces();
+            });
+
+            placeList.addEventListener('click', function (event) {
+                const remove = event.target.closest('[data-remove-place]');
+                if (!remove || remove.disabled) {
+                    return;
+                }
+
+                remove.closest('[data-place-row]')?.remove();
+                refreshPlaces();
+            });
+
+            placeList.addEventListener('input', function (event) {
+                if (event.target.matches('[data-amount]')) {
+                    refreshPlaces();
+                }
+            });
+
+            refreshPlaces();
+        }
 
         // Prevent duplicate contests from double-click / repeat submits while
         // the (slow, image-upload) request is still in flight.

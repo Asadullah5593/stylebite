@@ -75,7 +75,9 @@
                         <tr class="border-white-05">
                             <td class="ps-4">
                                 <div class="d-flex align-items-center gap-3">
-                                    @php($contestImage = stylebite_asset_url($contest->cover_image_url ?: $contest->banner_image_url))
+                                    @php
+                                        $contestImage = stylebite_asset_url($contest->cover_image_url ?: $contest->banner_image_url);
+                                    @endphp
                                     @if ($contestImage)
                                         <img src="{{ $contestImage }}" alt="{{ $contest->title }}" class="rounded-3 border border-white-05" width="48" height="48" style="object-fit: cover;">
                                     @else
@@ -129,31 +131,45 @@
                                                 <option value="{{ $value }}" @selected($contest->status === $value)>{{ $label }}</option>
                                             @endforeach
                                         </select>
-                                        <select name="winner_type" class="form-select form-select-sm border-0 rounded-3" aria-label="Winner type">
-                                            <option value="none" @selected(! $contest->winner_user_id && ! $contest->winner_team_id)>No winner</option>
-                                            <option value="user" @selected((bool) $contest->winner_user_id)>User winner</option>
-                                            <option value="team" @selected((bool) $contest->winner_team_id)>Team winner</option>
-                                        </select>
-                                        <select name="winner_user_id" class="form-select form-select-sm border-0 rounded-3" aria-label="User winner">
-                                            <option value="">Select user winner</option>
-                                            @foreach ($winnerUsers as $winnerUser)
-                                                <option value="{{ $winnerUser->id }}" @selected((int) $contest->winner_user_id === (int) $winnerUser->id)>
-                                                    {{ $winnerUser->full_name ?: '@'.$winnerUser->username }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                        <select name="winner_team_id" class="form-select form-select-sm border-0 rounded-3" aria-label="Team winner">
-                                            <option value="">{{ $contest->teams->isEmpty() ? 'No teams in this contest' : 'Select team winner' }}</option>
-                                            @foreach ($contest->teams as $teamOption)
-                                                <option value="{{ $teamOption->id }}" @selected((int) $contest->winner_team_id === (int) $teamOption->id)>{{ $teamOption->name }}</option>
-                                            @endforeach
-                                        </select>
+                                        @php
+                                            $winnerOptions = $contest->participants
+                                                ->map(fn ($participant) => $participant->user)
+                                                ->filter()
+                                                ->merge($contest->places->map(fn ($place) => $place->winnerUser)->filter())
+                                                ->unique('id')
+                                                ->values();
+                                            if ($winnerOptions->isEmpty()) {
+                                                $winnerOptions = $winnerUsers;
+                                            }
+                                        @endphp
+                                        @forelse ($contest->places as $place)
+                                            <label class="extra-small text-muted mb-0">
+                                                {{ $place->displayTitle() }} · PKR {{ rtrim(rtrim(number_format((float) $place->prize_amount, 2, '.', ''), '0'), '.') }}
+                                            </label>
+                                            <select name="place_winners[{{ $place->id }}]" class="form-select form-select-sm border-0 rounded-3" aria-label="{{ $place->displayTitle() }} winner">
+                                                <option value="">No winner yet</option>
+                                                @foreach ($winnerOptions as $winnerUser)
+                                                    <option value="{{ $winnerUser->id }}" @selected((int) $place->winner_user_id === (int) $winnerUser->id)>
+                                                        {{ $winnerUser->full_name ?: '@'.$winnerUser->username }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        @empty
+                                            <div class="extra-small text-muted">Add winner places from Edit before choosing winners.</div>
+                                        @endforelse
                                         <button type="submit" class="btn btn-sm btn-primary rounded-3">
                                             <i class="bi bi-check2-circle me-1"></i>Update
                                         </button>
                                     </form>
                                     <div class="text-muted extra-small">
-                                        @if ($contest->winnerUser)
+                                        @if ($contest->places->isNotEmpty())
+                                            @foreach ($contest->places as $place)
+                                                <div>
+                                                    {{ \App\Models\ContestPlace::ordinal((int) $place->place) }}:
+                                                    {{ $place->winnerUser ? ($place->winnerUser->full_name ?: '@'.$place->winnerUser->username) : 'not set' }}
+                                                </div>
+                                            @endforeach
+                                        @elseif ($contest->winnerUser)
                                             Winner: {{ $contest->winnerUser->full_name ?: '@'.$contest->winnerUser->username }}
                                         @elseif ($contest->winnerTeam)
                                             Winner: {{ $contest->winnerTeam->name }}
@@ -207,41 +223,20 @@
 </style>
 <script>
     document.querySelectorAll('[data-workflow-form]').forEach(function (form) {
-        const type = form.querySelector('[name="winner_type"]');
-        const user = form.querySelector('[name="winner_user_id"]');
-        const team = form.querySelector('[name="winner_team_id"]');
+        const selects = form.querySelectorAll('select[name^="place_winners"]');
 
-        if (!type || !user || !team) {
-            return;
-        }
+        selects.forEach(function (select) {
+            select.addEventListener('change', function () {
+                if (!select.value) {
+                    return;
+                }
 
-        user.addEventListener('change', function () {
-            if (user.value) {
-                type.value = 'user';
-                team.value = '';
-            }
-        });
-
-        team.addEventListener('change', function () {
-            if (team.value) {
-                type.value = 'team';
-                user.value = '';
-            }
-        });
-
-        type.addEventListener('change', function () {
-            if (type.value === 'none') {
-                user.value = '';
-                team.value = '';
-            }
-
-            if (type.value === 'user') {
-                team.value = '';
-            }
-
-            if (type.value === 'team') {
-                user.value = '';
-            }
+                selects.forEach(function (other) {
+                    if (other !== select && other.value === select.value) {
+                        other.value = '';
+                    }
+                });
+            });
         });
     });
 </script>
