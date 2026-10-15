@@ -20,6 +20,10 @@
         </a>
     </div>
 
+    @if (session('status'))
+        <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
+    @endif
+
     <div class="row g-3 mb-4">
         <div class="col-md-4 col-sm-6">
             <div class="glass rounded-4 p-3 h-100">
@@ -35,12 +39,14 @@
         </div>
         <div class="col-md-4 col-sm-6">
             <div class="glass rounded-4 p-3 h-100">
-                <div class="text-muted small">Status</div>
-                <div class="fs-4 fw-bold">{{ str($contest->status)->title() }}</div>
+                <div class="text-muted small">Ratings</div>
+                <div class="fs-4 fw-bold">{{ number_format($ratingsByUserId->sum('count')) }}</div>
             </div>
         </div>
     </div>
 
+    <div class="row g-4">
+        <div class="col-xl-8">
     <div class="glass rounded-4 overflow-hidden border-white-05">
         <div class="table-responsive scrollbar-hidden">
             <table class="table table-hover align-middle mb-0">
@@ -50,6 +56,7 @@
                         <th class="text-muted small fw-bold text-uppercase py-3">Status</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Place</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Score</th>
+                        <th class="text-muted small fw-bold text-uppercase py-3">Rated by</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Joined</th>
                     </tr>
                 </thead>
@@ -59,6 +66,10 @@
                             $place = $placeByUserId->get((int) $participant->user_id);
                             $submission = $submissionByUserId->get($participant->user_id);
                             $score = $participant->total_score ?? $submission?->final_score ?? $submission?->community_score;
+                            $rating = $ratingsByUserId->get($participant->user_id) ?? $ratingsByUserId->get((string) $participant->user_id);
+                            $ratingCount = is_array($rating) ? (int) $rating['count'] : 0;
+                            $ratingAverage = is_array($rating) ? $rating['average'] : null;
+                            $ratingVoters = is_array($rating) ? $rating['voters'] : collect();
                         @endphp
                         <tr class="border-white-05">
                             <td class="ps-4">
@@ -86,15 +97,32 @@
                                 @endif
                             </td>
                             <td><span class="text-muted small">{{ $score !== null ? number_format((float) $score, 2) : '—' }}</span></td>
+                            <td>
+                                <div class="small fw-semibold">{{ number_format($ratingCount) }} {{ $ratingCount === 1 ? 'user' : 'users' }}</div>
+                                @if ($ratingAverage !== null)
+                                    <div class="text-muted extra-small">Average {{ number_format((float) $ratingAverage, 2) }}</div>
+                                @endif
+                                @if ($ratingVoters->isNotEmpty())
+                                    <div class="text-muted extra-small">{{ $ratingVoters->implode(', ') }}</div>
+                                @endif
+                            </td>
                             <td><span class="text-muted small">{{ $participant->joined_at?->format('M d, Y H:i') ?? '—' }}</span></td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="text-center py-5 text-muted">No users have enrolled in this contest yet.</td>
+                            <td colspan="6" class="text-center py-5 text-muted">No users have enrolled in this contest yet.</td>
                         </tr>
                     @endforelse
                 </tbody>
             </table>
+        </div>
+    </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="glass rounded-4 p-3">
+                <div class="small fw-bold text-uppercase text-muted mb-3">Contest actions</div>
+                @include('admin.contests.partials.workflow', ['showEnrolledLink' => false])
+            </div>
         </div>
     </div>
 </div>

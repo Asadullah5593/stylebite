@@ -177,7 +177,13 @@ class ContestController extends Controller
             'title' => $title,
         ]);
 
-        return back()->with('status', "Contest \"{$title}\" was deleted.");
+        $status = "Contest \"{$title}\" was deleted.";
+
+        if (str_contains(url()->previous(), '/enrolled')) {
+            return redirect()->route('admin.contests.contests')->with('status', $status);
+        }
+
+        return back()->with('status', $status);
     }
 
     public function invitations(Request $request): View
@@ -285,9 +291,11 @@ class ContestController extends Controller
     public function enrolled(Contest $contest): View
     {
         $contest->load([
+            'winnerUser:id,username,full_name',
+            'winnerTeam:id,name',
             'places.winnerUser:id,username,full_name',
             'participants.user:id,username,full_name,email',
-            'submissions:id,contest_id,user_id,final_score,community_score,submission_status,rank_position',
+            'submissions.votes.voter:id,username,full_name',
         ]);
 
         $participants = $contest->participants
@@ -303,12 +311,36 @@ class ContestController extends Controller
             ->keyBy(fn (ContestPlace $place) => (int) $place->winner_user_id);
 
         $submissionByUserId = $contest->submissions->keyBy('user_id');
+        $ratingsByUserId = $contest->submissions
+            ->groupBy('user_id')
+            ->map(function ($submissions) {
+                $votes = $submissions->flatMap(fn (ContestSubmission $submission) => $submission->votes);
+                $scores = $votes
+                    ->pluck('score')
+                    ->filter(fn ($score) => $score !== null)
+                    ->map(fn ($score) => (float) $score);
+
+                return [
+                    'count' => $votes->count(),
+                    'average' => $scores->isEmpty() ? null : round($scores->avg(), 2),
+                    'voters' => $votes
+                        ->map(function (ContestVote $vote) {
+                            $name = $vote->voter?->full_name ?: $vote->voter?->username;
+
+                            return $name ? ($vote->voter?->full_name ? $name : '@'.$name) : null;
+                        })
+                        ->filter()
+                        ->unique()
+                        ->values(),
+                ];
+            });
 
         return view('admin.contests.EnrolledUsersPage', compact(
             'contest',
             'participants',
             'placeByUserId',
             'submissionByUserId',
+            'ratingsByUserId',
         ));
     }
 
