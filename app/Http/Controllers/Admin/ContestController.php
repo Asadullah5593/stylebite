@@ -282,6 +282,36 @@ class ContestController extends Controller
         return view('admin.contests.ParticipantsPage', compact('participants', 'participantStats'));
     }
 
+    public function enrolled(Contest $contest): View
+    {
+        $contest->load([
+            'places.winnerUser:id,username,full_name',
+            'participants.user:id,username,full_name,email',
+            'submissions:id,contest_id,user_id,final_score,community_score,submission_status,rank_position',
+        ]);
+
+        $participants = $contest->participants
+            ->sortBy([
+                fn (ContestParticipant $participant) => $participant->rank_position === null ? 1 : 0,
+                fn (ContestParticipant $participant) => (int) ($participant->rank_position ?? 0),
+                fn (ContestParticipant $participant) => $participant->joined_at?->timestamp ?? PHP_INT_MAX,
+            ])
+            ->values();
+
+        $placeByUserId = $contest->places
+            ->filter(fn (ContestPlace $place) => (int) $place->winner_user_id > 0)
+            ->keyBy(fn (ContestPlace $place) => (int) $place->winner_user_id);
+
+        $submissionByUserId = $contest->submissions->keyBy('user_id');
+
+        return view('admin.contests.EnrolledUsersPage', compact(
+            'contest',
+            'participants',
+            'placeByUserId',
+            'submissionByUserId',
+        ));
+    }
+
     public function teams(Request $request): View
     {
         $teams = ContestTeam::query()

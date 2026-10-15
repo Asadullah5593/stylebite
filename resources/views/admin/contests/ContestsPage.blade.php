@@ -177,6 +177,9 @@
                                             Winner not set
                                         @endif
                                     </div>
+                                    <a href="{{ route('admin.contests.enrolled', $contest) }}" class="btn btn-sm btn-outline-dynamic rounded-3">
+                                        <i class="bi bi-people me-1"></i>Enrolled users
+                                    </a>
                                     <div class="d-flex gap-2">
                                         <form method="POST" action="{{ route('admin.contests.recalculate', $contest) }}" class="flex-fill">
                                             @csrf

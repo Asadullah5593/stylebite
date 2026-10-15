@@ -215,6 +215,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::match(['post', 'patch'], '/{contest}/workflow', [ContestController::class, 'updateContestWorkflow'])->name('workflow.update');
         Route::post('/{contest}/recalculate', [ContestController::class, 'recalculateContest'])->name('recalculate');
         Route::post('/{contest}/leaderboard-snapshot', [ContestController::class, 'regenerateLeaderboardSnapshot'])->name('leaderboards.regenerate');
+        Route::get('/{contest}/enrolled', [ContestController::class, 'enrolled'])->name('enrolled');
         Route::delete('/{contest}', [ContestController::class, 'destroyContest'])->name('destroy');
         Route::get('/{contest}/edit', [ContestController::class, 'editContest'])->name('edit');
         Route::get('/{contest}', [ContestController::class, 'editContest'])->name('show');
