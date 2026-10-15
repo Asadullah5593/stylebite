@@ -15,6 +15,7 @@ use App\Models\PostMedia;
 use App\Models\Tag;
 use App\Models\User;
 use App\Models\UserFollow;
+use App\Support\ContestResults;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -877,6 +878,10 @@ class ContestController extends Controller
     private function finalizeContestIfEnded(Contest $contest): void
     {
         if ($contest->status === 'completed') {
+            if (ContestResults::resultsMissing($contest)) {
+                ContestResults::finish($contest);
+            }
+
             return;
         }
 
@@ -886,19 +891,7 @@ class ContestController extends Controller
             return;
         }
 
-        $this->refreshContestScores($contest->id);
-
-        $winnerSubmission = $this->liveSubmissionsQuery($contest->id)
-            ->orderByDesc('final_score')
-            ->orderBy('id')
-            ->first();
-
-        $contest->update([
-            'status' => 'completed',
-            'result_at' => now(),
-            'winner_user_id' => $winnerSubmission?->user_id,
-            'winner_team_id' => null,
-        ]);
+        ContestResults::finish($contest);
     }
 
     private function paginationPayload($paginator): array

@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Contest;
-use App\Models\ContestSubmission;
+use App\Support\ContestResults;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -50,21 +50,6 @@ class RefreshContestStatusesCommand extends Command
 
     private function completeContest(Contest $contest, Carbon $now): void
     {
-        $winnerUserId = $contest->winner_user_id;
-
-        if ($winnerUserId === null) {
-            $winnerUserId = ContestSubmission::query()
-                ->where('contest_id', $contest->id)
-                ->where('submission_status', 'approved')
-                ->orderByDesc('final_score')
-                ->orderBy('id')
-                ->value('user_id');
-        }
-
-        $contest->forceFill([
-            'status' => 'completed',
-            'result_at' => $contest->result_at ?? $now,
-            'winner_user_id' => $winnerUserId,
-        ])->save();
+        ContestResults::finish($contest);
     }
 }

@@ -16,6 +16,7 @@ use App\Models\ContestTeamMember;
 use App\Models\ContestVote;
 use App\Models\User;
 use App\Support\ContestNotifications;
+use App\Support\ContestResults;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
@@ -580,8 +581,8 @@ class ContestController extends Controller
             $winnerLabel .= ' Everyone will get a new-contest notification.';
         }
 
-        if (ContestNotifications::announceWinners($contest)) {
-            $winnerLabel .= ' Win notifications are going out.';
+        if ($contest->status === 'completed' && ContestResults::finish($contest)) {
+            $winnerLabel .= ' Places follow the ratings. Win notifications are going out.';
         }
 
         $this->logActivity('contest_workflow_updated', 'contest', $contest->id, [
@@ -789,6 +790,17 @@ class ContestController extends Controller
             'team_count' => $contest->teams->count(),
             'ranking_rule' => 'submission final score = jury score + average community vote; participant/team totals are sums of approved submission final scores',
         ]);
+
+        ContestResults::refreshScores($contest);
+        $contest->save();
+
+        if ($contest->status === 'completed' && ContestResults::resultsMissing($contest)) {
+            ContestResults::assignOpenPlaces($contest);
+            $contest->save();
+            if (ContestNotifications::announceWinners($contest->fresh())) {
+                return back()->with('status', 'Scores were recalculated for "'.$contest->title.'". Places follow the ratings and win notifications are going out.');
+            }
+        }
 
         return back()->with('status', 'Scores and ranks were recalculated for "'.$contest->title.'".');
     }
