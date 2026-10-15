@@ -7,13 +7,13 @@
         <i class="bi bi-chevron-right small"></i>
         <a href="{{ route('admin.contests.contests') }}" class="text-decoration-none text-reset fw-bold">Contests</a>
         <i class="bi bi-chevron-right small"></i>
-        <span class="fw-bold opacity-50">Enrolled users</span>
+        <span class="fw-bold opacity-50">Detail</span>
     </nav>
 
     <div class="mb-4 d-flex align-items-start justify-content-between flex-wrap gap-3">
         <div>
             <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">{{ $contest->title }}</h1>
-            <p class="text-muted small mb-0">Enrolled users for this contest</p>
+            <p class="text-muted small mb-0">Winners, enrolled users, and ratings</p>
         </div>
         <a href="{{ route('admin.contests.contests') }}" class="btn btn-outline-dynamic rounded-3 px-3">
             <i class="bi bi-arrow-left me-1"></i>Back to contests

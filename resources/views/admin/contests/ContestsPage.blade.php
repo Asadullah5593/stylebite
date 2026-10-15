@@ -67,7 +67,7 @@
                         <th class="text-muted small fw-bold text-uppercase py-3">Stats</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Status</th>
                         <th class="text-muted small fw-bold text-uppercase py-3">Created</th>
-                        <th class="text-muted small fw-bold text-uppercase py-3 text-end">Workflow</th>
+                        <th class="text-muted small fw-bold text-uppercase py-3 text-end">Detail</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -107,8 +107,10 @@
                             <td><span class="text-muted small">{{ number_format($contest->participant_count) }} participants · {{ number_format($contest->submission_count) }} submissions</span></td>
                             <td><span class="badge {{ in_array($contest->status, ['active', 'completed'], true) ? 'bg-success-soft text-success' : ($contest->status === 'upcoming' ? 'bg-info-soft text-info' : ($contest->status === 'cancelled' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning')) }} rounded-pill">{{ str($contest->status)->title() }}</span></td>
                             <td><span class="text-muted small">{{ $contest->created_at instanceof \DateTimeInterface ? $contest->created_at->format('M d, Y H:i') : '' }}</span></td>
-                            <td class="pe-4" style="min-width: 280px;">
-                                @include('admin.contests.partials.workflow', ['showEnrolledLink' => true])
+                            <td class="pe-4 text-end">
+                                <a href="{{ route('admin.contests.enrolled', $contest) }}" class="btn btn-sm btn-primary rounded-3 px-3">
+                                    <i class="bi bi-eye me-1"></i>Detail
+                                </a>
                             </td>
                         </tr>
                     @empty
