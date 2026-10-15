@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Comment;
+use App\Support\ContestResults;
 use App\Models\CommentLike;
 use App\Models\CommentReply;
 use App\Models\Post;
@@ -189,6 +190,12 @@ class FeedController extends Controller
 
             return true;
         });
+
+        try {
+            ContestResults::refreshPost((int) $post->id);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
 
         return response()->json([
             'status_code' => 1,

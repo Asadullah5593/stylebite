@@ -841,38 +841,13 @@ class ContestController extends Controller
 
     private function refreshContestScores(int $contestId): void
     {
-        $submissions = $this->liveSubmissionsQuery($contestId)->pluck('id');
-
-        foreach ($submissions as $submissionId) {
-            $avg = ContestVote::query()->where('submission_id', $submissionId)->avg('score');
-            ContestSubmission::query()->where('id', $submissionId)->update([
-                'community_score' => $avg,
-                'final_score' => $avg,
-            ]);
+        $contest = Contest::query()->find($contestId);
+        if (! $contest) {
+            return;
         }
 
-        Contest::query()->where('id', $contestId)->update([
-            'total_vote_count' => ContestVote::query()->where('contest_id', $contestId)->count(),
-        ]);
-
-        $ranked = $this->liveSubmissionsQuery($contestId)
-            ->orderByDesc('final_score')
-            ->orderBy('id')
-            ->get();
-
-        foreach ($ranked as $index => $submission) {
-            ContestSubmission::query()->where('id', $submission->id)->update([
-                'rank_position' => $index + 1,
-            ]);
-
-            ContestParticipant::query()
-                ->where('contest_id', $contestId)
-                ->where('user_id', $submission->user_id)
-                ->update([
-                    'rank_position' => $index + 1,
-                    'total_score' => $submission->final_score,
-                ]);
-        }
+        ContestResults::refreshScores($contest);
+        $contest->save();
     }
 
     private function finalizeContestIfEnded(Contest $contest): void

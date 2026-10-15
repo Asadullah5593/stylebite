@@ -771,6 +771,7 @@ class ContestController extends Controller
             'participants',
             'teams',
             'submissions.votes',
+            'submissions.post:id,like_count',
         ]);
 
         $approvedSubmissions = $contest->submissions
@@ -779,12 +780,7 @@ class ContestController extends Controller
 
         $rankedSubmissions = $approvedSubmissions
             ->map(function (ContestSubmission $submission) {
-                $communityScore = round((float) $submission->votes->avg('score'), 2);
-                $juryScore = (float) ($submission->jury_score ?? 0);
-                $finalScore = round($juryScore + $communityScore, 2);
-
-                $submission->community_score = $communityScore;
-                $submission->final_score = $finalScore;
+                ContestResults::applyScore($submission);
 
                 return $submission;
             })
@@ -850,7 +846,7 @@ class ContestController extends Controller
             'approved_submission_count' => $approvedSubmissions->count(),
             'participant_count' => $contest->participant_count,
             'team_count' => $contest->teams->count(),
-            'ranking_rule' => 'submission final score = jury score + average community vote; participant/team totals are sums of approved submission final scores',
+            'ranking_rule' => 'final score = (average rating x 70) + (total likes x 0.3)',
         ]);
 
         ContestResults::refreshScores($contest);

@@ -60,6 +60,42 @@ class ContestResults
         return $places->every(fn (ContestPlace $place) => $place->winner_user_id === null);
     }
 
+    public static function scoreFrom(float $averageRating, int $totalLikes): float
+    {
+        return round(($averageRating * 70) + ($totalLikes * 0.3), 2);
+    }
+
+    public static function applyScore(ContestSubmission $submission): void
+    {
+        $submission->loadMissing(['votes', 'post:id,like_count']);
+
+        $average = $submission->votes->isEmpty()
+            ? 0.0
+            : (float) $submission->votes->avg('score');
+        $likes = max(0, (int) ($submission->post->like_count ?? 0));
+
+        $submission->community_score = round($average, 2);
+        $submission->final_score = self::scoreFrom($average, $likes);
+    }
+
+    public static function refreshPost(int $postId): void
+    {
+        $contestIds = ContestSubmission::query()
+            ->where('post_id', $postId)
+            ->pluck('contest_id')
+            ->unique();
+
+        foreach ($contestIds as $contestId) {
+            $contest = Contest::query()->find($contestId);
+            if (! $contest) {
+                continue;
+            }
+
+            self::refreshScores($contest);
+            $contest->save();
+        }
+    }
+
     public static function refreshScores(Contest $contest): void
     {
         $submissions = self::rankedSubmissions($contest);
@@ -165,7 +201,7 @@ class ContestResults
     private static function rankedSubmissions(Contest $contest)
     {
         return ContestSubmission::query()
-            ->with('votes')
+            ->with(['votes', 'post:id,like_count'])
             ->where('contest_id', $contest->id)
             ->whereNotIn('submission_status', ['rejected', 'disqualified'])
             ->whereHas('post', function ($query): void {
@@ -178,11 +214,7 @@ class ContestResults
             })
             ->get()
             ->map(function (ContestSubmission $submission) {
-                $community = $submission->votes->isEmpty()
-                    ? 0.0
-                    : round((float) $submission->votes->avg('score'), 2);
-                $submission->community_score = $community;
-                $submission->final_score = round((float) ($submission->jury_score ?? 0) + $community, 2);
+                self::applyScore($submission);
 
                 return $submission;
             })
