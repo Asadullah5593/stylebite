@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Comment;
+use App\Models\ContestPlace;
+use App\Models\ContestSubmission;
 use App\Support\ContestResults;
 use App\Models\CommentLike;
 use App\Models\CommentReply;
@@ -1035,12 +1037,54 @@ class FeedController extends Controller
      * feed card needs, and serves the mobile-optimized media rendition (a
      * compressed image or <=720p video) with a poster for smooth scrolling.
      */
+    private function latestWinningFeedPost(int $viewerUserId, string $postType): ?Post
+    {
+        $place = ContestPlace::query()
+            ->where('place', 1)
+            ->whereNotNull('winner_user_id')
+            ->whereHas('contest', fn (Builder $query) => $query->where('status', 'completed'))
+            ->with('contest:id,status,result_at')
+            ->get()
+            ->sortByDesc(fn (ContestPlace $place) => $place->contest?->result_at?->getTimestamp() ?? 0)
+            ->first();
+
+        if (! $place) {
+            return null;
+        }
+
+        $postId = ContestSubmission::query()
+            ->where('contest_id', $place->contest_id)
+            ->where('user_id', $place->winner_user_id)
+            ->whereNotIn('submission_status', ['rejected', 'disqualified'])
+            ->whereHas('post', fn (Builder $query) => $query->where('post_type', $postType))
+            ->orderByDesc('final_score')
+            ->orderByDesc('id')
+            ->value('post_id');
+
+        if (! $postId) {
+            return null;
+        }
+
+        return Post::query()
+            ->with([
+                'user.profile',
+                'media' => fn ($query) => $query->orderBy('sort_order'),
+                'tags',
+            ])
+            ->withContestState()
+            ->whereKey($postId)
+            ->tap(fn (Builder $query) => $this->applyFeedVisibilityScope($query, $viewerUserId))
+            ->tap(fn (Builder $query) => $this->applyUserBlockScope($query, $viewerUserId))
+            ->first();
+    }
+
     private function feedListPayload(
         Post $post,
         bool $isLiked,
         bool $isSaved,
         ?int $viewerRating,
         bool $isFollowingAuthor,
+        bool $isContestWinner = false,
     ): array {
         $profile = $post->user?->profile;
         $media = $post->media->sortBy('sort_order')->values();
@@ -1100,6 +1144,7 @@ class FeedController extends Controller
             'rating_enabled' => $this->canVoteOnPost($post),
             'in_contest' => $this->canVoteOnPost($post),
             'contest' => $post->contestBadge(),
+            'is_contest_winner' => $isContestWinner,
             'posted_at' => optional($post->posted_at)->toDateTimeString(),
         ];
     }
@@ -1422,10 +1467,21 @@ class FeedController extends Controller
             $query->latest('published_at')->latest('id');
         }
 
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $winnerPost = ! $videoOnly && ! $wantsNearby && $page === 1
+            ? $this->latestWinningFeedPost((int) $user->id, $requestedType)
+            : null;
+        if ($winnerPost) {
+            $query->where('id', '!=', $winnerPost->id);
+        }
 
-        $postIds = $paginator->getCollection()->pluck('id');
-        $authorIds = $paginator->getCollection()->pluck('user_id')->unique()->values();
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $posts = $paginator->getCollection();
+        if ($winnerPost) {
+            $posts->prepend($winnerPost);
+        }
+
+        $postIds = $posts->pluck('id');
+        $authorIds = $posts->pluck('user_id')->unique()->values();
 
         $likedPostIds = $user->postLikes()
             ->whereIn('post_id', $postIds)
@@ -1455,12 +1511,13 @@ class FeedController extends Controller
             'discover_type' => $wantsNearby ? 'nearby' : 'for_you',
             'nearby_radius_km' => $nearbyRadiusKm,
             'location_source' => $wantsNearby ? $locationSource : null,
-            $payloadKey => $paginator->getCollection()->map(fn (Post $post) => $this->feedListPayload(
+            $payloadKey => $posts->map(fn (Post $post) => $this->feedListPayload(
                 $post,
                 $likedPostIds->contains($post->id),
                 $savedPostIds->contains($post->id),
                 $postRatings->get($post->id)?->rating_value,
                 $followingAuthorIds->contains($post->user_id),
+                $winnerPost !== null && (int) $post->id === (int) $winnerPost->id,
             )),
             'pagination' => [
                 'current_page' => $paginator->currentPage(),
