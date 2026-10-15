@@ -609,8 +609,8 @@ class ProfileController extends Controller
         $profile = $user->profile;
         $wallet = $user->earningsWallet;
         $isSelf = $viewerUserId === (int) $user->id;
-        $contestEntries = $profile?->contest_entries ?? $user->contestSubmissions()->count();
-        $contestWins = $profile?->contest_wins ?? $user->contestSubmissions()->where('rank_position', 1)->count();
+        $contestEntries = \App\Support\ContestResults::entryCount((int) $user->id);
+        $contestWins = \App\Support\ContestResults::winCount((int) $user->id);
         $isFollowing = ! $isSelf && UserFollow::query()
             ->where('follower_user_id', $viewerUserId)
             ->where('following_user_id', $user->id)
@@ -734,8 +734,8 @@ class ProfileController extends Controller
             'style_points' => (int) ($profile?->style_points ?? 0),
             'current_streak_days' => (int) ($profile?->current_streak_days ?? 0),
             'current_streak_label' => $profile?->current_streak_label,
-            'contest_wins' => (int) ($profile?->contest_wins ?? 0),
-            'contest_entries' => (int) ($profile?->contest_entries ?? 0),
+            'contest_wins' => \App\Support\ContestResults::winCount((int) $user->id),
+            'contest_entries' => \App\Support\ContestResults::entryCount((int) $user->id),
             'battle_wins' => (int) ($profile?->battle_wins ?? 0),
             'battle_rank_label' => $profile?->battle_rank_label,
             'memory_count' => $memoryCount,

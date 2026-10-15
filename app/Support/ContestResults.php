@@ -6,6 +6,7 @@ use App\Models\Contest;
 use App\Models\ContestParticipant;
 use App\Models\ContestPlace;
 use App\Models\ContestSubmission;
+use App\Models\Profile;
 
 class ContestResults
 {
@@ -16,8 +17,36 @@ class ContestResults
         self::refreshScores($contest);
         self::assignOpenPlaces($contest);
         $contest->save();
+        self::syncProfiles($contest);
 
         return ContestNotifications::announceWinners($contest->fresh());
+    }
+
+    public static function winCount(int $userId): int
+    {
+        $fromPlaces = ContestPlace::query()
+            ->where('place', 1)
+            ->where('winner_user_id', $userId)
+            ->whereHas('contest', fn ($query) => $query->where('status', 'completed'))
+            ->distinct()
+            ->count('contest_id');
+
+        $fromLegacy = Contest::query()
+            ->where('status', 'completed')
+            ->where('winner_user_id', $userId)
+            ->whereDoesntHave('places', fn ($query) => $query->where('place', 1)->whereNotNull('winner_user_id'))
+            ->count();
+
+        return $fromPlaces + $fromLegacy;
+    }
+
+    public static function entryCount(int $userId): int
+    {
+        return (int) ContestSubmission::query()
+            ->where('user_id', $userId)
+            ->whereNotIn('submission_status', ['rejected', 'disqualified'])
+            ->distinct()
+            ->count('contest_id');
     }
 
     public static function resultsMissing(Contest $contest): bool
@@ -109,6 +138,27 @@ class ContestResults
         if ($firstWinner) {
             $contest->winner_user_id = $firstWinner;
             $contest->winner_team_id = null;
+        }
+    }
+
+    private static function syncProfiles(Contest $contest): void
+    {
+        $userIds = ContestParticipant::query()
+            ->where('contest_id', $contest->id)
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->push((int) $contest->winner_user_id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        foreach ($userIds as $userId) {
+            Profile::query()
+                ->where('user_id', $userId)
+                ->update([
+                    'contest_wins' => self::winCount($userId),
+                    'contest_entries' => self::entryCount($userId),
+                ]);
         }
     }
 

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
-use App\Models\Profile;
 use App\Models\User;
 use App\Models\WithdrawalRequest;
 use Illuminate\Http\JsonResponse;
@@ -199,13 +198,7 @@ class EarningsController extends Controller
 
     private function contestWins(User $user): int
     {
-        $profile = $user->profile ?? Profile::query()->where('user_id', $user->id)->first();
-
-        if ($profile && $profile->contest_wins !== null) {
-            return (int) $profile->contest_wins;
-        }
-
-        return $user->contestSubmissions()->where('rank_position', 1)->count();
+        return \App\Support\ContestResults::winCount((int) $user->id);
     }
 
     private function lastMonthIncomeChange(User $user): array
