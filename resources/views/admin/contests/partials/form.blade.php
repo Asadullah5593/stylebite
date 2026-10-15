@@ -107,10 +107,12 @@
     <div class="col-md-6">
         <label class="form-label small text-muted">Start At</label>
         <input type="datetime-local" name="start_at" value="{{ old('start_at', $fieldDate('start_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <div class="form-text text-muted">Singapore time (GMT+8).</div>
     </div>
     <div class="col-md-6">
         <label class="form-label small text-muted">End At</label>
         <input type="datetime-local" name="end_at" value="{{ old('end_at', $fieldDate('end_at')) }}" class="form-control border-0 bg-dark-soft rounded-3">
+        <div class="form-text text-muted">Singapore time (GMT+8).</div>
     </div>
     <div class="col-md-6">
         <label class="form-label small text-muted">Cover Image</label>

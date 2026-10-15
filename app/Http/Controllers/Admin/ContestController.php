@@ -1052,8 +1052,8 @@ class ContestController extends Controller
                 'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
                 'country' => $validated['country'] ?? null,
-                'start_at' => isset($validated['start_at']) ? Carbon::parse($validated['start_at']) : null,
-                'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at']) : null,
+                'start_at' => isset($validated['start_at']) ? Carbon::parse($validated['start_at'], 'Asia/Singapore') : null,
+                'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at'], 'Asia/Singapore') : null,
             ])->save();
 
             $coverImageUrl = $contest->cover_image_url;
