@@ -11,7 +11,9 @@ use App\Models\ContestSubmission;
 use App\Models\ContestVote;
 use App\Models\MediaUpload;
 use App\Models\Post;
+use App\Models\PostLike;
 use App\Models\PostMedia;
+use App\Models\SavedPost;
 use App\Models\Tag;
 use App\Models\User;
 use App\Models\UserFollow;
@@ -678,13 +680,45 @@ class ContestController extends Controller
                 'rank_position' => $myParticipant->rank_position !== null ? (int) $myParticipant->rank_position : null,
             ] : null,
             'submissions' => $includeDetails
-                ? $submissions->map(fn (ContestSubmission $submission) => $this->submissionPayload($submission, $viewerUserId))->values()
+                ? $this->mapSubmissionPayloads($submissions, $viewerUserId)
                 : [],
         ];
     }
 
-    private function submissionPayload(ContestSubmission $submission, ?int $viewerUserId): array
+    private function mapSubmissionPayloads($submissions, ?int $viewerUserId)
     {
+        $postIds = $submissions->pluck('post_id')->filter()->unique()->values();
+        $likedPostIds = collect();
+        $savedPostIds = collect();
+        if ($viewerUserId !== null && $postIds->isNotEmpty()) {
+            $likedPostIds = PostLike::query()
+                ->where('user_id', $viewerUserId)
+                ->whereIn('post_id', $postIds)
+                ->pluck('post_id')
+                ->map(fn ($id) => (int) $id);
+            $savedPostIds = SavedPost::query()
+                ->where('user_id', $viewerUserId)
+                ->whereIn('post_id', $postIds)
+                ->pluck('post_id')
+                ->map(fn ($id) => (int) $id);
+        }
+
+        return $submissions->map(function (ContestSubmission $submission) use ($viewerUserId, $likedPostIds, $savedPostIds) {
+            return $this->submissionPayload(
+                $submission,
+                $viewerUserId,
+                $likedPostIds->contains((int) $submission->post_id),
+                $savedPostIds->contains((int) $submission->post_id),
+            );
+        })->values();
+    }
+
+    private function submissionPayload(
+        ContestSubmission $submission,
+        ?int $viewerUserId,
+        bool $isLiked = false,
+        bool $isSaved = false,
+    ): array {
         $media = $submission->post?->media?->sortBy('sort_order')->first();
         $viewerVote = $viewerUserId === null
             ? null
@@ -706,7 +740,14 @@ class ContestController extends Controller
             'is_mine' => $viewerUserId !== null && (int) $submission->user_id === (int) $viewerUserId,
             'score' => $submission->final_score !== null ? (float) $submission->final_score : 0.0,
             'total_score' => $submission->final_score !== null ? (float) $submission->final_score : 0.0,
+            'rating_average' => $submission->votes->isEmpty()
+                ? 0.0
+                : round((float) $submission->votes->avg('score'), 2),
             'total_votes' => (int) $submission->votes->count(),
+            'like_count' => (int) ($submission->post?->like_count ?? 0),
+            'comment_count' => (int) ($submission->post?->comment_count ?? 0),
+            'is_liked' => $isLiked,
+            'is_saved' => $isSaved,
             // The viewer's own rating (1–5) so the client can show what they
             // gave instead of the aggregate. Null when they haven't voted.
             'viewer_score' => $viewerVote ? (float) $viewerVote->score : null,
