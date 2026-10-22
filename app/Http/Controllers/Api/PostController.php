@@ -526,6 +526,7 @@ class PostController extends Controller
     {
         $lat = array_key_exists('lat', $validated) ? (float) $validated['lat'] : null;
         $lng = array_key_exists('lng', $validated) ? (float) $validated['lng'] : null;
+        $providedName = trim((string) ($validated['location'] ?? ''));
 
         if ($lat === null || $lng === null) {
             return [
@@ -533,7 +534,20 @@ class PostController extends Controller
                 'lng' => null,
                 'city' => null,
                 'country' => null,
-                'location_name' => null,
+                'location_name' => $providedName !== '' ? $providedName : null,
+            ];
+        }
+
+        // The app already sends the place the user chose. Creating the post
+        // must not wait on Google or OpenStreetMap, which is what makes the
+        // request time out.
+        if ($providedName !== '') {
+            return [
+                'lat' => $lat,
+                'lng' => $lng,
+                'city' => null,
+                'country' => null,
+                'location_name' => $providedName,
             ];
         }
 
@@ -551,12 +565,16 @@ class PostController extends Controller
             return $this->resolveLocationWithOpenStreetMap($lat, $lng, $fallback);
         }
 
-        $response = Http::timeout(10)
-            ->get(config('services.google_maps.geocode_url'), [
-                'latlng' => $lat.','.$lng,
-                'key' => $apiKey,
-                'language' => 'en',
-            ]);
+        try {
+            $response = Http::timeout(8)
+                ->get(config('services.google_maps.geocode_url'), [
+                    'latlng' => $lat.','.$lng,
+                    'key' => $apiKey,
+                    'language' => 'en',
+                ]);
+        } catch (\Throwable $e) {
+            return $fallback;
+        }
 
         if (! $response->successful()) {
             return $this->resolveLocationWithOpenStreetMap($lat, $lng, $fallback);
@@ -623,16 +641,20 @@ class PostController extends Controller
 
     private function resolveLocationWithOpenStreetMap(float $lat, float $lng, array $fallback): array
     {
-        $response = Http::timeout(10)
-            ->withHeaders([
-                'User-Agent' => config('app.name', 'Stylebite').'/1.0',
-            ])
-            ->get(config('services.openstreetmap.reverse_geocode_url'), [
-                'lat' => $lat,
-                'lon' => $lng,
-                'format' => 'jsonv2',
-                'accept-language' => 'en',
-            ]);
+        try {
+            $response = Http::timeout(8)
+                ->withHeaders([
+                    'User-Agent' => config('app.name', 'Stylebite').'/1.0',
+                ])
+                ->get(config('services.openstreetmap.reverse_geocode_url'), [
+                    'lat' => $lat,
+                    'lon' => $lng,
+                    'format' => 'jsonv2',
+                    'accept-language' => 'en',
+                ]);
+        } catch (\Throwable $e) {
+            return $fallback;
+        }
 
         if (! $response->successful()) {
             return $fallback;
