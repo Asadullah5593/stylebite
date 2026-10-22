@@ -27,20 +27,19 @@ class ProfileController extends Controller
 
     public function overview(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $request->validate([
+            'outfit_page' => ['nullable', 'integer', 'min:1'],
             'outfits_page' => ['nullable', 'integer', 'min:1'],
             'food_page' => ['nullable', 'integer', 'min:1'],
             'saved_page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
         ]);
 
         $user = User::query()
             ->with(['profile'])
             ->findOrFail($request->user()->id);
 
-        $perPage = 10;
-        [$outfitPosts, $outfitPagination] = $this->postsPayload($user->id, $user, 'outfit', (int) ($validated['outfits_page'] ?? 1), $perPage);
-        [$foodPosts, $foodPagination] = $this->postsPayload($user->id, $user, 'food', (int) ($validated['food_page'] ?? 1), $perPage);
-        [$savedPosts, $savedPagination] = $this->savedPostsPayload($user->id, $user, (int) ($validated['saved_page'] ?? 1), $perPage);
+        [$outfitPosts, $outfitPagination, $foodPosts, $foodPagination, $savedPosts, $savedPagination] = $this->overviewSectionsPayload($request, $user->id, $user, true);
 
         return response()->json([
             'status_code' => 1,
@@ -57,10 +56,12 @@ class ProfileController extends Controller
 
     public function publicOverview(Request $request, string $username): JsonResponse
     {
-        $validated = $request->validate([
+        $request->validate([
+            'outfit_page' => ['nullable', 'integer', 'min:1'],
             'outfits_page' => ['nullable', 'integer', 'min:1'],
             'food_page' => ['nullable', 'integer', 'min:1'],
             'saved_page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
         ]);
 
         $viewer = $request->user();
@@ -71,17 +72,12 @@ class ProfileController extends Controller
 
         $this->ensureProfileAccessible($viewer->id, $user, 'outfits', true);
 
-        $perPage = 10;
-        $isSelf = $viewer->id === (int) $user->id;
-        [$outfitPosts, $outfitPagination] = $this->postsPayload($viewer->id, $user, 'outfit', (int) ($validated['outfits_page'] ?? 1), $perPage);
-        [$foodPosts, $foodPagination] = $this->postsPayload($viewer->id, $user, 'food', (int) ($validated['food_page'] ?? 1), $perPage);
-
-        if ($isSelf) {
-            [$savedPosts, $savedPagination] = $this->savedPostsPayload($viewer->id, $user, (int) ($validated['saved_page'] ?? 1), $perPage);
-        } else {
-            $savedPosts = collect();
-            $savedPagination = $this->emptyPaginationPayload((int) ($validated['saved_page'] ?? 1), $perPage);
-        }
+        [$outfitPosts, $outfitPagination, $foodPosts, $foodPagination, $savedPosts, $savedPagination] = $this->overviewSectionsPayload(
+            $request,
+            $viewer->id,
+            $user,
+            $viewer->id === (int) $user->id,
+        );
 
         return response()->json([
             'status_code' => 1,
@@ -474,11 +470,18 @@ class ProfileController extends Controller
             ->latest('published_at')
             ->latest('id');
 
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $rows = $query->forPage($page, $perPage + 1)->get();
+        $hasMore = $rows->count() > $perPage;
+        $posts = $rows->take($perPage)->values();
+        $savedIds = $this->savedPostIdsFor(
+            $viewerUserId,
+            $posts->pluck('id')->all(),
+        );
 
         return [
-            $paginator->getCollection()->map(fn (Post $post) => [
+            $posts->map(fn (Post $post) => [
                 'id' => $post->id,
+                'is_saved' => in_array((int) $post->id, $savedIds, true),
                 'post_type' => $post->post_type,
                 'caption' => $post->caption,
                 'media_kind' => $post->media_kind,
@@ -511,8 +514,27 @@ class ProfileController extends Controller
                 'rating_enabled' => $post->isInContest(),
                 'contest' => $post->contestBadge(),
             ])->values(),
-            $this->paginationPayload($paginator),
+            $this->pageSlicePagination($page, $perPage, $hasMore),
         ];
+    }
+
+    /**
+     * @param  array<int, int|string>  $postIds
+     * @return array<int, int>
+     */
+    private function savedPostIdsFor(int $viewerUserId, array $postIds): array
+    {
+        $postIds = array_values(array_filter(array_map('intval', $postIds)));
+        if ($viewerUserId <= 0 || $postIds === []) {
+            return [];
+        }
+
+        return SavedPost::query()
+            ->where('user_id', $viewerUserId)
+            ->whereIn('post_id', $postIds)
+            ->pluck('post_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     private function savedPostsPayload(int $viewerUserId, User $targetUser, int $page, int $perPage): array
@@ -526,16 +548,18 @@ class ProfileController extends Controller
             ->where('user_id', $targetUser->id)
             ->latest('created_at');
 
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $rows = $query->forPage($page, $perPage + 1)->get();
+        $hasMore = $rows->count() > $perPage;
 
         return [
-            $paginator->getCollection()
+            $rows->take($perPage)
                 ->filter(fn (SavedPost $savedPost) => $savedPost->post !== null)
                 ->map(fn (SavedPost $savedPost) => [
                     'saved_post_id' => $savedPost->id,
                     'saved_at' => optional($savedPost->created_at)->toDateTimeString(),
                     'post' => [
                         'id' => $savedPost->post->id,
+                        'is_saved' => true,
                         'post_type' => $savedPost->post->post_type,
                         'caption' => $savedPost->post->caption,
                         'media_kind' => $savedPost->post->media_kind,
@@ -563,7 +587,7 @@ class ProfileController extends Controller
                             ->all(),
                     ],
                 ])->values(),
-            $this->paginationPayload($paginator),
+            $this->pageSlicePagination($page, $perPage, $hasMore),
         ];
     }
 
@@ -607,8 +631,12 @@ class ProfileController extends Controller
     private function profilePayload(int $viewerUserId, User $user, string $tab): array
     {
         $profile = $user->profile;
-        $wallet = $user->earningsWallet;
         $isSelf = $viewerUserId === (int) $user->id;
+        if ($isSelf) {
+            \App\Support\ContestResults::creditCompletedPrizes((int) $user->id);
+            $user->unsetRelation('earningsWallet');
+        }
+        $wallet = $user->earningsWallet;
         $contestEntries = \App\Support\ContestResults::entryCount((int) $user->id);
         $contestWins = \App\Support\ContestResults::winCount((int) $user->id);
         $isFollowing = ! $isSelf && UserFollow::query()
@@ -693,12 +721,6 @@ class ProfileController extends Controller
     private function overviewProfilePayload(User $user): array
     {
         $profile = $user->profile;
-        $memoryCount = $user->memories()->count();
-        $savedPostCount = $user->savedPosts()->count();
-        $totalPostLikes = (int) Post::query()
-            ->where('user_id', $user->id)
-            ->where('status', 'published')
-            ->sum('like_count');
 
         return [
             'profile_id' => $profile?->id,
@@ -738,9 +760,9 @@ class ProfileController extends Controller
             'contest_entries' => \App\Support\ContestResults::entryCount((int) $user->id),
             'battle_wins' => (int) ($profile?->battle_wins ?? 0),
             'battle_rank_label' => $profile?->battle_rank_label,
-            'memory_count' => $memoryCount,
-            'saved_post_count' => $savedPostCount,
-            'total_post_likes' => $totalPostLikes,
+            'memory_count' => (int) ($profile?->memory_count ?? 0),
+            'saved_post_count' => (int) ($profile?->saved_post_count ?? 0),
+            'total_post_likes' => (int) ($profile?->total_post_likes ?? 0),
             'created_at' => optional($profile?->created_at)->toDateTimeString(),
             'updated_at' => optional($profile?->updated_at)->toDateTimeString(),
         ];
@@ -831,6 +853,57 @@ class ProfileController extends Controller
                         });
                 });
         });
+    }
+
+    /**
+     * @return array{0: \Illuminate\Support\Collection, 1: array, 2: \Illuminate\Support\Collection, 3: array, 4: \Illuminate\Support\Collection, 5: array}
+     */
+    private function overviewSectionsPayload(Request $request, int $viewerUserId, User $user, bool $includeSaved): array
+    {
+        $outfit = $request->exists('outfit_page') || $request->exists('outfits_page');
+        $food = $request->exists('food_page');
+        $saved = $request->exists('saved_page');
+        if (! $outfit && ! $food && ! $saved) {
+            $outfit = true;
+            $food = true;
+            $saved = true;
+        }
+
+        $perPage = min(30, max(1, (int) $request->input('per_page', 10)));
+        $empty = fn () => [collect(), $this->emptyPaginationPayload(1, $perPage)];
+
+        [$outfitPosts, $outfitPagination] = $outfit
+            ? $this->postsPayload($viewerUserId, $user, 'outfit', $this->overviewPage($request, 'outfit_page', 'outfits_page'), $perPage)
+            : $empty();
+        [$foodPosts, $foodPagination] = $food
+            ? $this->postsPayload($viewerUserId, $user, 'food', $this->overviewPage($request, 'food_page'), $perPage)
+            : $empty();
+        [$savedPosts, $savedPagination] = $saved && $includeSaved
+            ? $this->savedPostsPayload($viewerUserId, $user, $this->overviewPage($request, 'saved_page'), $perPage)
+            : $empty();
+
+        return [$outfitPosts, $outfitPagination, $foodPosts, $foodPagination, $savedPosts, $savedPagination];
+    }
+
+    private function overviewPage(Request $request, string $key, ?string $alias = null): int
+    {
+        $value = $request->input($key);
+        if (($value === null || $value === '') && $alias !== null) {
+            $value = $request->input($alias);
+        }
+
+        return max(1, (int) $value);
+    }
+
+    private function pageSlicePagination(int $page, int $perPage, bool $hasMore): array
+    {
+        return [
+            'current_page' => $page,
+            'per_page' => $perPage,
+            'total' => 0,
+            'last_page' => $hasMore ? $page + 1 : max(1, $page),
+            'has_more_pages' => $hasMore,
+        ];
     }
 
     private function paginationPayload(LengthAwarePaginator $paginator): array
