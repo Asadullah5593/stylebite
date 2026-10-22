@@ -35,6 +35,10 @@ class FeedController extends Controller
 
     public function reels(Request $request): JsonResponse
     {
+        if ((int) $request->input('per_page', 15) > 15) {
+            $request->merge(['per_page' => 15]);
+        }
+
         return $this->listPosts($request, true);
     }
 
