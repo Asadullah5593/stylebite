@@ -470,9 +470,8 @@ class ProfileController extends Controller
             ->latest('published_at')
             ->latest('id');
 
-        $rows = $query->forPage($page, $perPage + 1)->get();
-        $hasMore = $rows->count() > $perPage;
-        $posts = $rows->take($perPage)->values();
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $posts = $paginator->getCollection();
         $savedIds = $this->savedPostIdsFor(
             $viewerUserId,
             $posts->pluck('id')->all(),
@@ -514,7 +513,7 @@ class ProfileController extends Controller
                 'rating_enabled' => $post->isInContest(),
                 'contest' => $post->contestBadge(),
             ])->values(),
-            $this->pageSlicePagination($page, $perPage, $hasMore),
+            $this->paginationPayload($paginator),
         ];
     }
 
@@ -548,11 +547,10 @@ class ProfileController extends Controller
             ->where('user_id', $targetUser->id)
             ->latest('created_at');
 
-        $rows = $query->forPage($page, $perPage + 1)->get();
-        $hasMore = $rows->count() > $perPage;
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
 
         return [
-            $rows->take($perPage)
+            $paginator->getCollection()
                 ->filter(fn (SavedPost $savedPost) => $savedPost->post !== null)
                 ->map(fn (SavedPost $savedPost) => [
                     'saved_post_id' => $savedPost->id,
@@ -587,7 +585,7 @@ class ProfileController extends Controller
                             ->all(),
                     ],
                 ])->values(),
-            $this->pageSlicePagination($page, $perPage, $hasMore),
+            $this->paginationPayload($paginator),
         ];
     }
 
@@ -721,6 +719,12 @@ class ProfileController extends Controller
     private function overviewProfilePayload(User $user): array
     {
         $profile = $user->profile;
+        $memoryCount = $user->memories()->count();
+        $savedPostCount = $user->savedPosts()->count();
+        $totalPostLikes = (int) Post::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'published')
+            ->sum('like_count');
 
         return [
             'profile_id' => $profile?->id,
@@ -760,9 +764,9 @@ class ProfileController extends Controller
             'contest_entries' => \App\Support\ContestResults::entryCount((int) $user->id),
             'battle_wins' => (int) ($profile?->battle_wins ?? 0),
             'battle_rank_label' => $profile?->battle_rank_label,
-            'memory_count' => (int) ($profile?->memory_count ?? 0),
-            'saved_post_count' => (int) ($profile?->saved_post_count ?? 0),
-            'total_post_likes' => (int) ($profile?->total_post_likes ?? 0),
+            'memory_count' => $memoryCount,
+            'saved_post_count' => $savedPostCount,
+            'total_post_likes' => $totalPostLikes,
             'created_at' => optional($profile?->created_at)->toDateTimeString(),
             'updated_at' => optional($profile?->updated_at)->toDateTimeString(),
         ];
@@ -893,17 +897,6 @@ class ProfileController extends Controller
         }
 
         return max(1, (int) $value);
-    }
-
-    private function pageSlicePagination(int $page, int $perPage, bool $hasMore): array
-    {
-        return [
-            'current_page' => $page,
-            'per_page' => $perPage,
-            'total' => 0,
-            'last_page' => $hasMore ? $page + 1 : max(1, $page),
-            'has_more_pages' => $hasMore,
-        ];
     }
 
     private function paginationPayload(LengthAwarePaginator $paginator): array
