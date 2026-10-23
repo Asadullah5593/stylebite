@@ -630,10 +630,6 @@ class ProfileController extends Controller
     {
         $profile = $user->profile;
         $isSelf = $viewerUserId === (int) $user->id;
-        if ($isSelf) {
-            \App\Support\ContestResults::creditCompletedPrizes((int) $user->id);
-            $user->unsetRelation('earningsWallet');
-        }
         $wallet = $user->earningsWallet;
         $contestEntries = \App\Support\ContestResults::entryCount((int) $user->id);
         $contestWins = \App\Support\ContestResults::winCount((int) $user->id);

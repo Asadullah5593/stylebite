@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\ContestPlace;
 use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
 use App\Models\WithdrawalRequest;
 use App\Services\CurrencyConverter;
+use App\Support\ContestResults;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -67,9 +69,20 @@ class EarningsController extends Controller
             ->whereIn('status', ['pending', 'processing'])
             ->sum('amount');
 
+        $pendingContestRewards = round((float) EarningTransaction::query()
+            ->where('wallet_id', $wallet->id)
+            ->where('source_type', 'contest_reward')
+            ->where('transaction_type', 'credit')
+            ->where('status', 'pending')
+            ->sum('amount'), 2);
+
         $walletAudit = [
             'reserved_withdrawals' => round($reservedWithdrawalTotal, 2),
-            'pending_balance_gap' => round((float) $wallet->pending_balance - $reservedWithdrawalTotal, 2),
+            'pending_contest_rewards' => $pendingContestRewards,
+            'pending_balance_gap' => round(
+                (float) $wallet->pending_balance - $reservedWithdrawalTotal - $pendingContestRewards,
+                2
+            ),
             'completed_credits' => round((float) EarningTransaction::query()
                 ->where('wallet_id', $wallet->id)
                 ->where('transaction_type', 'credit')
@@ -133,6 +146,112 @@ class EarningsController extends Controller
         ];
 
         return view('admin.earnings.TransactionsPage', compact('transactions', 'transactionStats'));
+    }
+
+    public function contestPrizes(Request $request): View
+    {
+        $prizes = EarningTransaction::query()
+            ->with('user:id,username,full_name,email,avatar_url', 'wallet:id,currency_code')
+            ->where('source_type', 'contest_reward')
+            ->where('transaction_type', 'credit')
+            ->when($request->filled('q'), function ($query) use ($request) {
+                $search = $request->string('q')->toString();
+                $query->where(function ($query) use ($search) {
+                    $query->where('note', 'like', "%{$search}%")
+                        ->orWhere('status', 'like', "%{$search}%")
+                        ->orWhereHas('user', fn ($query) => $query
+                            ->where('username', 'like', "%{$search}%")
+                            ->orWhere('full_name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%"));
+                });
+            })
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            ->latest('created_at')
+            ->paginate(10)
+            ->withQueryString();
+
+        $placeIds = $prizes->getCollection()
+            ->pluck('source_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $places = ContestPlace::query()
+            ->with('contest:id,title,status,result_at,updated_at')
+            ->whereIn('id', $placeIds)
+            ->get()
+            ->keyBy('id');
+
+        $prizeStats = [
+            'total' => EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('transaction_type', 'credit')
+                ->count(),
+            'pending' => EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('transaction_type', 'credit')
+                ->where('status', 'pending')
+                ->count(),
+            'approved' => EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('transaction_type', 'credit')
+                ->where('status', 'completed')
+                ->count(),
+            'pending_amount' => round((float) EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('transaction_type', 'credit')
+                ->where('status', 'pending')
+                ->sum('amount'), 2),
+        ];
+
+        return view('admin.earnings.ContestPrizesPage', compact('prizes', 'places', 'prizeStats'));
+    }
+
+    public function approveContestPrize(Request $request, EarningTransaction $transaction)
+    {
+        if (
+            $transaction->source_type !== 'contest_reward'
+            || $transaction->transaction_type !== 'credit'
+        ) {
+            return back()->with('status', 'Only contest reward credits can be approved here.');
+        }
+
+        if ($transaction->status === 'completed') {
+            return back()->with('status', 'This contest prize was already approved.');
+        }
+
+        if ($transaction->status !== 'pending') {
+            return back()->with('status', 'Only pending contest prizes can be approved.');
+        }
+
+        $adminId = (int) auth()->id();
+        if ($adminId <= 0) {
+            abort(403);
+        }
+
+        try {
+            $approved = ContestResults::approvePendingPrize((int) $transaction->id, $adminId);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return back()->with('status', 'Approval failed and was rolled back. '.$exception->getMessage());
+        }
+
+        if (! $approved) {
+            return back()->with('status', 'This contest prize is no longer pending (it may have been approved already).');
+        }
+
+        $this->logActivity('contest_prize_approved', 'earning_transaction', $approved->id, [
+            'user_id' => $approved->user_id,
+            'wallet_id' => $approved->wallet_id,
+            'source_id' => $approved->source_id,
+            'amount' => round((float) $approved->amount, 2),
+            'currency_code' => $approved->currency_code,
+            'approved_by_admin_id' => $adminId,
+        ]);
+
+        return back()->with('status', 'Contest prize approved and moved to available balance.');
     }
 
     public function withdrawals(Request $request): View
@@ -490,6 +609,10 @@ class EarningsController extends Controller
 
     public function reverseTransaction(EarningTransaction $transaction)
     {
+        if ($transaction->status === 'pending' && $transaction->source_type === 'contest_reward') {
+            return back()->with('status', 'Pending contest prizes cannot be reversed here. Approve them from Contest Prizes, or leave them pending.');
+        }
+
         if ($transaction->status !== 'completed' || $transaction->source_type === 'withdrawal') {
             return back()->with('status', 'This transaction cannot be reversed from the admin panel.');
         }
@@ -560,6 +683,11 @@ class EarningsController extends Controller
     {
         return [
             'wallets' => EarningsWallet::count(),
+            'contest_prizes' => EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('transaction_type', 'credit')
+                ->where('status', 'pending')
+                ->count(),
             'transactions' => EarningTransaction::count(),
             'withdrawals' => WithdrawalRequest::count(),
             'reconciliation' => EarningsWallet::count(),
@@ -667,7 +795,17 @@ class EarningsController extends Controller
                     ->where('status', 'completed')
                     ->sum('amount'), 2);
 
-                $pendingGap = round((float) $wallet->pending_balance - $reservedWithdrawals, 2);
+                $pendingContestRewards = round((float) EarningTransaction::query()
+                    ->where('wallet_id', $wallet->id)
+                    ->where('source_type', 'contest_reward')
+                    ->where('transaction_type', 'credit')
+                    ->where('status', 'pending')
+                    ->sum('amount'), 2);
+
+                $pendingGap = round(
+                    (float) $wallet->pending_balance - $reservedWithdrawals - $pendingContestRewards,
+                    2
+                );
 
                 $issues = [];
                 if ($pendingGap != 0.0) {
@@ -688,6 +826,7 @@ class EarningsController extends Controller
                     'available_balance' => round((float) $wallet->available_balance, 2),
                     'pending_balance' => round((float) $wallet->pending_balance, 2),
                     'reserved_withdrawals' => $reservedWithdrawals,
+                    'pending_contest_rewards' => $pendingContestRewards,
                     'pending_gap' => $pendingGap,
                     'missing_withdrawal_transactions' => $missingWithdrawalTransactions,
                     'completed_withdrawals' => $completedWithdrawals,

@@ -257,10 +257,24 @@ class EarningsController extends Controller
             'currency_code' => $transaction->currency_code,
             'amount' => $amount,
             'amount_display' => ($isCredit ? '+' : '-').' '.($transaction->currency_code ?? 'PKR').' '.number_format($amount, 0),
-            'amount_direction' => $isCredit ? 'credited' : 'debited',
+            'amount_direction' => $this->amountDirectionLabel($transaction),
             'processed_at' => optional($transaction->processed_at)->toDateTimeString(),
             'created_at' => optional($transaction->created_at)->toDateTimeString(),
+            'metadata' => is_array($transaction->metadata_json) ? $transaction->metadata_json : null,
         ];
+    }
+
+    private function amountDirectionLabel(EarningTransaction $transaction): string
+    {
+        if ($transaction->transaction_type !== 'credit') {
+            return 'debited';
+        }
+
+        if ($transaction->status === 'pending') {
+            return 'pending_approval';
+        }
+
+        return 'credited';
     }
 
     private function withdrawalPayload(WithdrawalRequest $withdrawal): array

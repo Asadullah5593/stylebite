@@ -225,6 +225,8 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
 
     Route::prefix('earnings')->name('earnings.')->group(function () {
         Route::get('/', [EarningsController::class, 'wallets'])->name('wallets');
+        Route::get('/contest-prizes', [EarningsController::class, 'contestPrizes'])->name('contest_prizes');
+        Route::post('/contest-prizes/{transaction}/approve', [EarningsController::class, 'approveContestPrize'])->name('contest_prizes.approve');
         Route::get('/transactions', [EarningsController::class, 'transactions'])->name('transactions');
         Route::get('/transactions/export', [EarningsController::class, 'exportTransactions'])->name('transactions.export');
         Route::post('/transactions/{transaction}/reverse', [EarningsController::class, 'reverseTransaction'])->name('transactions.reverse');

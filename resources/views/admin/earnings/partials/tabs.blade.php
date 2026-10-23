@@ -1,6 +1,9 @@
 @php
+    $earningsTabCounts = $earningsTabCounts
+        ?? \App\Http\Controllers\Admin\EarningsController::tabCounts();
     $tabs = [
         ['route' => 'admin.earnings.wallets', 'key' => 'wallets', 'label' => 'Wallets'],
+        ['route' => 'admin.earnings.contest_prizes', 'key' => 'contest_prizes', 'label' => 'Contest Prizes'],
         ['route' => 'admin.earnings.transactions', 'key' => 'transactions', 'label' => 'Transactions'],
         ['route' => 'admin.earnings.withdrawals', 'key' => 'withdrawals', 'label' => 'Withdrawals'],
         ['route' => 'admin.earnings.reconciliation', 'key' => 'reconciliation', 'label' => 'Reconciliation'],
