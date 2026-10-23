@@ -17,6 +17,8 @@
 
     @include('admin.earnings.partials.tabs')
 
+    @include('admin.earnings.partials.pending-prizes-alert')
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-xl-3">
             <div class="glass rounded-4 p-3 h-100">

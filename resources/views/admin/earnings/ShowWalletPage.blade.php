@@ -172,7 +172,19 @@
                                     <td><span class="fw-semibold">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency_code }}</span></td>
                                     <td><span class="badge {{ $transaction->status === 'completed' ? 'bg-success-soft text-success' : ($transaction->status === 'reversed' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning') }} rounded-pill">{{ str($transaction->status)->title() }}</span></td>
                                     <td class="text-end">
-                                        @if ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
+                                        @if (
+                                            $transaction->status === 'pending'
+                                            && $transaction->source_type === 'contest_reward'
+                                            && $transaction->transaction_type === 'credit'
+                                        )
+                                            <form method="POST" action="{{ route('admin.earnings.contest_prizes.approve', $transaction) }}"
+                                                  onsubmit="return confirm('Approve this contest prize and move it to Available Balance?');">
+                                                @csrf
+                                                <button type="submit" class="btn btn-sm btn-success rounded-3 px-3 fw-bold">
+                                                    <i class="bi bi-check2-circle me-1"></i>Approve Prize
+                                                </button>
+                                            </form>
+                                        @elseif ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
                                             <form method="POST" action="{{ route('admin.earnings.transactions.reverse', $transaction) }}">
                                                 @csrf
                                                 <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3">

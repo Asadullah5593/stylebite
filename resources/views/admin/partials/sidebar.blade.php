@@ -109,7 +109,11 @@
                 <i class="bi bi-trophy"></i> <span>Contests</span>
                 <span class="nav-count ms-auto">{{ $sidebarCounts['contests'] }}</span>
             </a>
-            <a href="{{ route('admin.earnings.transactions') }}" class="nav-link {{ request()->routeIs('admin.earnings*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+            <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'pending']) }}" class="nav-link {{ request()->routeIs('admin.earnings.contest_prizes*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+                <i class="bi bi-trophy-fill"></i> <span>Contest Prizes</span>
+                <span class="nav-count ms-auto">{{ $sidebarCounts['contest_prizes'] ?? (\App\Http\Controllers\Admin\EarningsController::tabCounts()['contest_prizes'] ?? 0) }}</span>
+            </a>
+            <a href="{{ route('admin.earnings.wallets') }}" class="nav-link {{ request()->routeIs('admin.earnings*') && ! request()->routeIs('admin.earnings.contest_prizes*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-wallet2"></i> <span>Earnings</span>
                 <span class="nav-count ms-auto">{{ $sidebarCounts['earnings'] }}</span>
             </a>

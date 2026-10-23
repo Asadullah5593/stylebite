@@ -21,6 +21,8 @@
         <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
     @endif
 
+    @include('admin.earnings.partials.pending-prizes-alert')
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-xl-2">
             <div class="glass rounded-4 p-3 h-100">
@@ -161,6 +163,19 @@
                                         <a href="{{ route('admin.earnings.show', $transaction->wallet) }}" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
                                             <i class="bi bi-wallet2 me-1"></i>Wallet
                                         </a>
+                                    @endif
+                                    @if (
+                                        $transaction->status === 'pending'
+                                        && $transaction->source_type === 'contest_reward'
+                                        && $transaction->transaction_type === 'credit'
+                                    )
+                                        <form method="POST" action="{{ route('admin.earnings.contest_prizes.approve', $transaction) }}"
+                                              onsubmit="return confirm('Approve this contest prize and move it to Available Balance?');">
+                                            @csrf
+                                            <button type="submit" class="btn btn-sm btn-success rounded-3 px-3 fw-bold">
+                                                <i class="bi bi-check2-circle me-1"></i>Approve Prize
+                                            </button>
+                                        </form>
                                     @endif
                                     @if ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
                                         <form method="POST" action="{{ route('admin.earnings.transactions.reverse', $transaction) }}">

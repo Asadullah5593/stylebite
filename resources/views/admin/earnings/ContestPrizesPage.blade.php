@@ -21,6 +21,10 @@
         <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
     @endif
 
+    @include('admin.earnings.partials.pending-prizes-alert', [
+        'pendingContestPrizeCount' => $prizeStats['pending'] ?? 0,
+    ])
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-xl-3">
             <div class="glass rounded-4 p-3 h-100">
@@ -57,7 +61,7 @@
         <select name="status" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Status</option>
             @foreach (['pending' => 'Pending Approval', 'completed' => 'Approved', 'failed' => 'Failed', 'reversed' => 'Reversed'] as $value => $label)
-                <option value="{{ $value }}" @selected(request('status') === $value)>{{ $label }}</option>
+                <option value="{{ $value }}" @selected(($statusFilter ?? request('status')) === $value)>{{ $label }}</option>
             @endforeach
         </select>
 
@@ -126,12 +130,14 @@
                             <td class="py-3 text-end pe-4">
                                 @if ($prize->status === 'pending')
                                     <form method="POST" action="{{ route('admin.earnings.contest_prizes.approve', $prize) }}" class="d-inline"
-                                          onsubmit="return confirm('Approve this contest prize and move it to available balance?');">
+                                          onsubmit="return confirm('Approve this contest prize and move it to Available Balance so the winner can withdraw?');">
                                         @csrf
-                                        <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3">Approve</button>
+                                        <button type="submit" class="btn btn-sm btn-success rounded-3 fw-bold px-3">
+                                            <i class="bi bi-check2-circle me-1"></i>Approve Prize
+                                        </button>
                                     </form>
                                 @else
-                                    <span class="small text-muted">—</span>
+                                    <span class="small text-muted">Approved</span>
                                 @endif
                             </td>
                         </tr>

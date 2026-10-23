@@ -150,6 +150,11 @@ class EarningsController extends Controller
 
     public function contestPrizes(Request $request): View
     {
+        // Default to pending prizes so admins land on items that need Approve.
+        $statusFilter = $request->has('status')
+            ? $request->string('status')->toString()
+            : 'pending';
+
         $prizes = EarningTransaction::query()
             ->with('user:id,username,full_name,email,avatar_url', 'wallet:id,currency_code')
             ->where('source_type', 'contest_reward')
@@ -165,7 +170,7 @@ class EarningsController extends Controller
                             ->orWhere('email', 'like', "%{$search}%"));
                 });
             })
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            ->when($statusFilter !== '', fn ($query) => $query->where('status', $statusFilter))
             ->latest('created_at')
             ->paginate(10)
             ->withQueryString();
@@ -205,7 +210,7 @@ class EarningsController extends Controller
                 ->sum('amount'), 2),
         ];
 
-        return view('admin.earnings.ContestPrizesPage', compact('prizes', 'places', 'prizeStats'));
+        return view('admin.earnings.ContestPrizesPage', compact('prizes', 'places', 'prizeStats', 'statusFilter'));
     }
 
     public function approveContestPrize(Request $request, EarningTransaction $transaction)
