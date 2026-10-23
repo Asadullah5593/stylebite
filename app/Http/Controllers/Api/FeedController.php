@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Comment;
 use App\Models\ContestPlace;
 use App\Models\ContestSubmission;
+use App\Models\ContestVote;
 use App\Support\ContestResults;
 use App\Models\CommentLike;
 use App\Models\CommentReply;
@@ -315,17 +316,21 @@ class FeedController extends Controller
             );
 
             $this->refreshPostRatingStats($post);
+            $this->mirrorContestVoteFromFeedRating($post, (int) $user->id, (int) $validated['rating_value']);
         });
 
-        $post = $post->fresh();
+        $post = $post->fresh()->load([
+            'latestContestSubmission' => fn ($query) => $query->withCount('votes'),
+        ]);
+        $rating = $this->displayRatingForPost($post, (int) $validated['rating_value']);
 
         return response()->json([
             'status_code' => 1,
             'message' => 'Vote submitted successfully.',
             'can_vote' => true,
-            'viewer_rating' => (int) $validated['rating_value'],
-            'rating_avg' => $post->rating_avg !== null ? (float) $post->rating_avg : null,
-            'rating_count' => (int) $post->rating_count,
+            'viewer_rating' => $rating['viewer_rating'],
+            'rating_avg' => $rating['rating_avg'],
+            'rating_count' => $rating['rating_count'],
         ]);
     }
 
@@ -1026,6 +1031,99 @@ class FeedController extends Controller
         ])->save();
     }
 
+    /**
+     * Keep contest ranking votes aligned when someone rates from the feed.
+     * Winner scoring still reads ContestVote; this only mirrors the feed rating.
+     */
+    private function mirrorContestVoteFromFeedRating(Post $post, int $voterUserId, int $ratingValue): void
+    {
+        if (! $post->isInContest()) {
+            return;
+        }
+
+        $submission = $post->relationLoaded('latestContestSubmission')
+            ? $post->latestContestSubmission
+            : $post->latestContestSubmission()->first();
+
+        if (! $submission || (int) $submission->user_id === $voterUserId) {
+            return;
+        }
+
+        ContestVote::query()->updateOrCreate(
+            [
+                'contest_id' => $submission->contest_id,
+                'submission_id' => $submission->id,
+                'voter_user_id' => $voterUserId,
+                'vote_type' => 'community',
+            ],
+            [
+                'score' => (float) $ratingValue,
+                'created_at' => now(),
+            ]
+        );
+
+        ContestResults::refreshPost((int) $post->id);
+    }
+
+    /**
+     * Contest cards should show the contest vote average when available.
+     * Ordinary posts keep posts.rating_avg / rating_count.
+     *
+     * @return array{rating_avg: ?float, rating_count: int, viewer_rating: ?int}
+     */
+    private function displayRatingForPost(Post $post, ?int $viewerRating = null): array
+    {
+        $fallbackAvg = $post->rating_avg !== null ? (float) $post->rating_avg : null;
+        $fallbackCount = (int) $post->rating_count;
+
+        if (! $post->isInContest()) {
+            return [
+                'rating_avg' => $fallbackAvg,
+                'rating_count' => $fallbackCount,
+                'viewer_rating' => $viewerRating,
+            ];
+        }
+
+        $submission = $post->relationLoaded('latestContestSubmission')
+            ? $post->latestContestSubmission
+            : $post->latestContestSubmission()->withCount('votes')->first();
+
+        if (! $submission) {
+            return [
+                'rating_avg' => $fallbackAvg,
+                'rating_count' => $fallbackCount,
+                'viewer_rating' => $viewerRating,
+            ];
+        }
+
+        $contestCount = array_key_exists('votes_count', $submission->getAttributes())
+            ? (int) $submission->votes_count
+            : (int) $submission->votes()->count();
+
+        $contestAvg = $submission->community_score !== null
+            ? (float) $submission->community_score
+            : null;
+
+        if ($contestAvg === null && $submission->relationLoaded('votes') && $submission->votes->isNotEmpty()) {
+            $contestAvg = round((float) $submission->votes->avg('score'), 2);
+            $contestCount = $submission->votes->count();
+        }
+
+        if ($contestCount <= 0 && ($contestAvg === null || $contestAvg <= 0)) {
+            return [
+                'rating_avg' => $fallbackAvg,
+                'rating_count' => $fallbackCount,
+                'viewer_rating' => $viewerRating,
+            ];
+        }
+
+        return [
+            'rating_avg' => $contestAvg ?? $fallbackAvg,
+            'rating_count' => $contestCount > 0 ? $contestCount : $fallbackCount,
+            'viewer_rating' => $viewerRating,
+        ];
+    }
+
     private function isFollowingUser(int $viewerUserId, int $authorUserId): bool
     {
         return UserFollow::query()
@@ -1093,6 +1191,7 @@ class FeedController extends Controller
         $profile = $post->user?->profile;
         $media = $post->media->sortBy('sort_order')->values();
         $primaryMedia = $media->first();
+        $rating = $this->displayRatingForPost($post, $viewerRating);
 
         return [
             'id' => $post->id,
@@ -1134,13 +1233,13 @@ class FeedController extends Controller
                 'share_count' => (int) $post->share_count,
                 'save_count' => (int) $post->save_count,
                 'view_count' => (int) $post->view_count,
-                'rating_avg' => $post->rating_avg !== null ? (float) $post->rating_avg : null,
-                'rating_count' => (int) $post->rating_count,
+                'rating_avg' => $rating['rating_avg'],
+                'rating_count' => $rating['rating_count'],
             ],
             'viewer_state' => [
                 'is_liked' => $isLiked,
                 'is_saved' => $isSaved,
-                'viewer_rating' => $viewerRating,
+                'viewer_rating' => $rating['viewer_rating'],
                 'can_vote' => $this->canVoteOnPost($post),
             ],
             'allow_comments' => $post->allow_comments,
@@ -1193,6 +1292,7 @@ class FeedController extends Controller
         $commentPreview = $post->relationLoaded('comments')
             ? $this->buildCommentCollectionPayload($post->comments, $viewerUserId)
             : collect();
+        $rating = $this->displayRatingForPost($post, $viewerRating);
 
         return [
             'id' => $post->id,
@@ -1247,8 +1347,8 @@ class FeedController extends Controller
                 'share_count' => (int) $post->share_count,
                 'save_count' => (int) $post->save_count,
                 'view_count' => (int) $post->view_count,
-                'rating_avg' => $post->rating_avg !== null ? (float) $post->rating_avg : null,
-                'rating_count' => (int) $post->rating_count,
+                'rating_avg' => $rating['rating_avg'],
+                'rating_count' => $rating['rating_count'],
                 'food_rating' => $post->food_rating,
                 'service_rating' => $post->service_rating,
                 'staff_rating' => $post->staff_rating,
@@ -1257,7 +1357,7 @@ class FeedController extends Controller
             'viewer_state' => [
                 'is_liked' => $isLiked,
                 'is_saved' => $isSaved,
-                'viewer_rating' => $viewerRating,
+                'viewer_rating' => $rating['viewer_rating'],
                 'can_vote' => $this->canVoteOnPost($post),
             ],
             'comment_preview' => $commentPreview->values(),

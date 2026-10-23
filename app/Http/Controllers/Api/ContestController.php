@@ -13,6 +13,7 @@ use App\Models\MediaUpload;
 use App\Models\Post;
 use App\Models\PostLike;
 use App\Models\PostMedia;
+use App\Models\PostRating;
 use App\Models\SavedPost;
 use App\Models\Tag;
 use App\Models\User;
@@ -139,6 +140,32 @@ class ContestController extends Controller
                     'created_at' => now(),
                 ]
             );
+
+            // Mirror onto post_ratings so Home Feed cards show the same 1–5
+            // average without changing ContestVote-based winner scoring.
+            if ((int) $submission->post_id > 0) {
+                PostRating::query()->updateOrCreate(
+                    [
+                        'post_id' => (int) $submission->post_id,
+                        'user_id' => (int) $voter->id,
+                    ],
+                    [
+                        'rating_value' => (int) round((float) $validated['score']),
+                    ]
+                );
+
+                $average = PostRating::query()
+                    ->where('post_id', (int) $submission->post_id)
+                    ->avg('rating_value');
+                $count = PostRating::query()
+                    ->where('post_id', (int) $submission->post_id)
+                    ->count();
+
+                Post::query()->whereKey((int) $submission->post_id)->update([
+                    'rating_avg' => $average,
+                    'rating_count' => $count,
+                ]);
+            }
 
             $this->refreshContestScores($contest->id);
         });

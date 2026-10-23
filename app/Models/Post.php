@@ -116,7 +116,11 @@ class Post extends StylebiteModel
     {
         return $query
             ->withExists('contestSubmissions')
-            ->with('latestContestSubmission.contest');
+            ->with([
+                'latestContestSubmission' => fn ($submission) => $submission
+                    ->with('contest')
+                    ->withCount('votes'),
+            ]);
     }
 
     /**
