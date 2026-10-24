@@ -7,6 +7,7 @@ use App\Models\Comment;
 use App\Models\ContestPlace;
 use App\Models\ContestSubmission;
 use App\Models\ContestVote;
+use App\Support\ApiDateTime;
 use App\Support\ContestResults;
 use App\Models\CommentLike;
 use App\Models\CommentReply;
@@ -924,7 +925,7 @@ class FeedController extends Controller
             'status' => $comment->status,
             'like_count' => (int) $comment->like_count,
             'reply_count' => (int) $comment->reply_count,
-            'created_at' => optional($comment->created_at)->toDateTimeString(),
+            'created_at' => ApiDateTime::iso($comment->created_at),
             'viewer_state' => [
                 'is_liked' => $commentLikedIds->contains($comment->id),
             ],
@@ -969,7 +970,7 @@ class FeedController extends Controller
             'status' => $reply->status,
             'like_count' => (int) $reply->like_count,
             'reply_count' => (int) $reply->reply_count,
-            'created_at' => optional($reply->created_at)->toDateTimeString(),
+            'created_at' => ApiDateTime::iso($reply->created_at),
             'viewer_state' => [
                 'is_liked' => ($replyLikedIds ?? collect())->contains($reply->id),
             ],
@@ -994,7 +995,7 @@ class FeedController extends Controller
         return [
             'id' => $share->id,
             'share_channel' => $share->share_channel,
-            'shared_at' => optional($share->created_at)->toDateTimeString(),
+            'shared_at' => ApiDateTime::iso($share->created_at),
             'shared_by' => [
                 'id' => $share->user?->id,
                 'username' => $share->user?->username,
@@ -1248,7 +1249,7 @@ class FeedController extends Controller
             'in_contest' => $this->canVoteOnPost($post),
             'contest' => $post->contestBadge(),
             'is_contest_winner' => $isContestWinner,
-            'posted_at' => optional($post->posted_at)->toDateTimeString(),
+            'posted_at' => ApiDateTime::iso($post->posted_at),
         ];
     }
 
@@ -1368,9 +1369,9 @@ class FeedController extends Controller
             'contest' => $post->contestBadge(),
             'dish_name' => $post->dish_name,
             'restaurant' => $post->restaurant,
-            'posted_at' => optional($post->posted_at)->toDateTimeString(),
-            'published_at' => optional($post->published_at)->toDateTimeString(),
-            'created_at' => optional($post->created_at)->toDateTimeString(),
+            'posted_at' => ApiDateTime::iso($post->posted_at),
+            'published_at' => ApiDateTime::iso($post->published_at),
+            'created_at' => ApiDateTime::iso($post->created_at),
         ];
     }
 

@@ -1052,8 +1052,14 @@ class ContestController extends Controller
                 'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
                 'country' => $validated['country'] ?? null,
-                'start_at' => isset($validated['start_at']) ? Carbon::parse($validated['start_at'], 'Asia/Singapore') : null,
-                'end_at' => isset($validated['end_at']) ? Carbon::parse($validated['end_at'], 'Asia/Singapore') : null,
+                // Admin datetime-local is Pakistan wall clock; convert to an absolute
+                // instant so the app can show each user's local time correctly.
+                'start_at' => isset($validated['start_at'])
+                    ? Carbon::parse($validated['start_at'], 'Asia/Karachi')
+                    : null,
+                'end_at' => isset($validated['end_at'])
+                    ? Carbon::parse($validated['end_at'], 'Asia/Karachi')
+                    : null,
             ])->save();
 
             $coverImageUrl = $contest->cover_image_url;

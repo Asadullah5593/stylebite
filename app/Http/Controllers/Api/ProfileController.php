@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ApiDateTime;
 use App\Models\Memory;
 use App\Models\Post;
 use App\Models\ProfileBadge;
@@ -508,7 +509,7 @@ class ProfileController extends Controller
                     ->filter()
                     ->values()
                     ->all(),
-                'created_at' => optional($post->created_at)->toDateTimeString(),
+                'created_at' => ApiDateTime::iso($post->created_at),
                 'in_contest' => $post->isInContest(),
                 'rating_enabled' => $post->isInContest(),
                 'contest' => $post->contestBadge(),
@@ -554,7 +555,7 @@ class ProfileController extends Controller
                 ->filter(fn (SavedPost $savedPost) => $savedPost->post !== null)
                 ->map(fn (SavedPost $savedPost) => [
                     'saved_post_id' => $savedPost->id,
-                    'saved_at' => optional($savedPost->created_at)->toDateTimeString(),
+                    'saved_at' => ApiDateTime::iso($savedPost->created_at),
                     'post' => [
                         'id' => $savedPost->post->id,
                         'is_saved' => true,
@@ -698,7 +699,7 @@ class ProfileController extends Controller
                 'title' => $badge->title,
                 'icon_key' => $badge->icon_key,
                 'status' => $badge->status,
-                'earned_at' => optional($badge->earned_at)->toDateTimeString(),
+                'earned_at' => ApiDateTime::iso($badge->earned_at),
             ])->values(),
             'contest' => [
                 'wins' => (int) $contestWins,

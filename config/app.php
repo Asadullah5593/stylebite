@@ -77,6 +77,9 @@ return [
     |
     */
 
+    // Matches DATETIME wall clocks already stored in production.
+    // Contest admin input is interpreted as Asia/Karachi and converted on save.
+    // API client timestamps use ISO-8601 with offset so apps show the user's local time.
     'timezone' => 'Asia/Singapore',
 
     /*

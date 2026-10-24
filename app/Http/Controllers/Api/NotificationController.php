@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Support\ApiDateTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -134,9 +135,9 @@ class NotificationController extends Controller
             'image_url' => stylebite_asset_url($notification->image_url),
             'action_url' => $notification->action_url,
             'is_read' => (bool) $notification->is_read,
-            'read_at' => optional($notification->read_at)?->toDateTimeString(),
+            'read_at' => ApiDateTime::iso($notification->read_at),
             'delivery_status' => $notification->delivery_status,
-            'created_at' => optional($notification->created_at)?->toDateTimeString(),
+            'created_at' => ApiDateTime::iso($notification->created_at),
             'actor' => $notification->actor ? [
                 'id' => $notification->actor->id,
                 'username' => $notification->actor->username,

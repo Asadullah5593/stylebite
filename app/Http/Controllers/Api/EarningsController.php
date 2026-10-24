@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ApiDateTime;
 use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
 use App\Models\User;
@@ -258,8 +259,8 @@ class EarningsController extends Controller
             'amount' => $amount,
             'amount_display' => ($isCredit ? '+' : '-').' '.($transaction->currency_code ?? 'PKR').' '.number_format($amount, 0),
             'amount_direction' => $this->amountDirectionLabel($transaction),
-            'processed_at' => optional($transaction->processed_at)->toDateTimeString(),
-            'created_at' => optional($transaction->created_at)->toDateTimeString(),
+            'processed_at' => ApiDateTime::iso($transaction->processed_at),
+            'created_at' => ApiDateTime::iso($transaction->created_at),
             'metadata' => is_array($transaction->metadata_json) ? $transaction->metadata_json : null,
         ];
     }
@@ -288,8 +289,8 @@ class EarningsController extends Controller
             'title' => 'Transfer to '.$this->withdrawalMethodLabel($withdrawal->method),
             'account_ref' => $withdrawal->account_ref,
             'status' => $withdrawal->status,
-            'requested_at' => optional($withdrawal->requested_at)->toDateTimeString(),
-            'processed_at' => optional($withdrawal->processed_at)->toDateTimeString(),
+            'requested_at' => ApiDateTime::iso($withdrawal->requested_at),
+            'processed_at' => ApiDateTime::iso($withdrawal->processed_at),
             'failure_reason' => $withdrawal->failure_reason,
         ];
     }
