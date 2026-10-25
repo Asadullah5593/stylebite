@@ -45,7 +45,8 @@ class PostController extends Controller
 
         $normalizedPostType = $this->normalizePostType($validated['post_type']);
         $isStory = $this->looksLikeStory($validated['caption'] ?? null, $validated['tags'] ?? null);
-        if (! $isStory) {
+        $isFlash = ! $isStory && $this->looksLikeFlash($validated['caption'] ?? null, $validated['tags'] ?? null);
+        if (! $isStory && ! $isFlash) {
             $this->validatePostTypeFields($request, $normalizedPostType);
         }
         $locationDetails = $this->resolveLocationDetails($validated);
@@ -54,13 +55,14 @@ class PostController extends Controller
         $files = $this->collectPostFiles($request);
         $mediaKind = $this->mediaKindFor($files);
 
-        $post = DB::transaction(function () use ($validated, $normalizedPostType, $user, $files, $mediaKind, $isStory, $locationDetails) {
+        $post = DB::transaction(function () use ($validated, $normalizedPostType, $user, $files, $mediaKind, $isStory, $isFlash, $locationDetails) {
             $post = Post::create([
                 'user_id' => $user->id,
                 'post_type' => $normalizedPostType,
                 'content_type' => $normalizedPostType === 'food' ? 'food' : 'fashion',
                 'media_kind' => $mediaKind,
                 'is_story' => $isStory,
+                'is_flash' => $isFlash,
                 'feed_type' => $normalizedPostType === 'food' ? 'bite' : 'style',
                 'caption' => $validated['caption'] ?? null,
                 'location_name' => $validated['location'] ?? $locationDetails['location_name'],
@@ -72,18 +74,18 @@ class PostController extends Controller
                 'restaurant' => $normalizedPostType === 'food' ? ($validated['restaurant'] ?? null) : null,
                 'visibility' => $validated['visibility'] ?? 'public',
                 'status' => 'published',
-                'rating_enabled' => $isStory
+                // Community star ratings are contest-only (feed uses isInContest).
+                // Never auto-enable on normal posts/reels — including food.
+                'rating_enabled' => ($isStory || $isFlash)
                     ? false
-                    : ($normalizedPostType === 'food'
-                        ? true
-                        : (bool) ($validated['rating_enabled'] ?? false)),
+                    : (bool) ($validated['rating_enabled'] ?? false),
                 'food_rating' => $normalizedPostType === 'food' ? ($validated['food_rating'] ?? null) : null,
                 'service_rating' => $normalizedPostType === 'food' ? ($validated['service_rating'] ?? null) : null,
                 'staff_rating' => $normalizedPostType === 'food' ? ($validated['staff_rating'] ?? null) : null,
                 'ambience_rating' => $normalizedPostType === 'food' ? ($validated['ambience_rating'] ?? null) : null,
                 'posted_at' => now(),
                 'published_at' => now(),
-                'expires_at' => $isStory ? now()->addHours(24) : null,
+                'expires_at' => ($isStory || $isFlash) ? now()->addHours(24) : null,
             ]);
 
             $this->attachOriginalMedia($post, $user->id, $files);
@@ -156,9 +158,9 @@ class PostController extends Controller
                     ? ($validated['restaurant'] ?? $post->restaurant)
                     : null,
                 'visibility' => $validated['visibility'] ?? $post->visibility,
-                'rating_enabled' => $normalizedPostType === 'food'
-                    ? true
-                    : (array_key_exists('rating_enabled', $validated) ? (bool) $validated['rating_enabled'] : $post->rating_enabled),
+                'rating_enabled' => array_key_exists('rating_enabled', $validated)
+                    ? (bool) $validated['rating_enabled']
+                    : $post->rating_enabled,
                 'food_rating' => $normalizedPostType === 'food'
                     ? ($validated['food_rating'] ?? $post->food_rating)
                     : null,
@@ -184,6 +186,7 @@ class PostController extends Controller
             }
 
             $this->syncStoryState($post);
+            $this->syncFlashState($post);
 
             return $post->fresh(['media', 'tags']);
         });
@@ -507,18 +510,58 @@ class PostController extends Controller
         return false;
     }
 
+    private function looksLikeFlash(?string $caption, ?string $tags): bool
+    {
+        if (str_contains(strtolower((string) $caption), '#sbflash')) {
+            return true;
+        }
+
+        foreach (preg_split('/\s*,\s*/', (string) $tags) ?: [] as $tag) {
+            $normalized = ltrim(strtolower(trim($tag)), '#');
+            if ($normalized === 'sbflash') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function syncStoryState(Post $post): void
     {
         $post->loadMissing('tags');
         $wasStory = (bool) $post->is_story;
         $existingExpiry = $post->expires_at;
         $isStory = $this->looksLikeStory($post->caption, $post->tags->pluck('name')->implode(','));
+        $isFlash = (bool) $post->is_flash || $this->looksLikeFlash(
+            $post->caption,
+            $post->tags->pluck('name')->implode(',')
+        );
 
         $post->forceFill([
             'is_story' => $isStory,
+            // Prefer story marker when both somehow appear; flashes keep expiry separately.
             'expires_at' => $isStory
                 ? ($wasStory && $existingExpiry !== null ? $existingExpiry : now()->addHours(24))
-                : null,
+                : ($isFlash ? $existingExpiry : null),
+        ])->save();
+    }
+
+    private function syncFlashState(Post $post): void
+    {
+        $post->loadMissing('tags');
+        $wasFlash = (bool) $post->is_flash;
+        $existingExpiry = $post->expires_at;
+        $isStory = $this->looksLikeStory($post->caption, $post->tags->pluck('name')->implode(','));
+        $isFlash = ! $isStory && $this->looksLikeFlash(
+            $post->caption,
+            $post->tags->pluck('name')->implode(',')
+        );
+
+        $post->forceFill([
+            'is_flash' => $isFlash,
+            'expires_at' => $isFlash
+                ? ($wasFlash && $existingExpiry !== null ? $existingExpiry : now()->addHours(24))
+                : ($isStory ? $existingExpiry : null),
         ])->save();
     }
 
@@ -743,6 +786,7 @@ class PostController extends Controller
             'ambience_rating' => $post->ambience_rating,
             'media_kind' => $post->media_kind,
             'is_story' => (bool) $post->is_story,
+            'is_flash' => (bool) $post->is_flash,
             'expires_at' => $post->expires_at?->toISOString(),
             'media' => $post->media->sortBy('sort_order')->values()->map(fn (PostMedia $media) => [
                 'id' => $media->id,

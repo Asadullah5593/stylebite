@@ -24,6 +24,7 @@ class Post extends StylebiteModel
             'is_reported' => 'boolean',
             'is_blocked' => 'boolean',
             'is_story' => 'boolean',
+            'is_flash' => 'boolean',
             'rating_avg' => 'decimal:2',
             'food_rating' => 'integer',
             'service_rating' => 'integer',

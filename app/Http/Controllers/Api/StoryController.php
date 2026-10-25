@@ -29,6 +29,7 @@ class StoryController extends Controller
             ->where('status', 'published')
             ->where('moderation_status', 'clean')
             ->where('is_blocked', false)
+            ->where('is_flash', false)
             ->where(function ($query) {
                 $query->where('is_story', true)
                     ->orWhere('caption', 'like', '%#sbstory%')
@@ -84,9 +85,15 @@ class StoryController extends Controller
             }
 
             $media = $post->media->sortBy('sort_order')->first();
+            $mediaUrl = stylebite_asset_url($media?->optimized_url ?? $media?->file_url);
+            if ($mediaUrl === null || $mediaUrl === '') {
+                // Client drops empty media_url — skip rather than emit a dead ring item.
+                continue;
+            }
             $groups[$key]['items'][] = [
                 'id' => $post->id,
-                'media_url' => stylebite_asset_url($media?->file_url),
+                'media_url' => $mediaUrl,
+                'poster_url' => stylebite_asset_url($media?->thumbnail_url),
                 'media_type' => $media?->media_type ?? 'image',
                 'caption' => $post->caption,
                 'post_type' => $post->post_type,
@@ -99,6 +106,9 @@ class StoryController extends Controller
         $mine = [];
         $others = [];
         foreach ($groups as $group) {
+            if (($group['items'] ?? []) === []) {
+                continue;
+            }
             if ($group['is_mine']) {
                 $mine[] = $group;
             } else {

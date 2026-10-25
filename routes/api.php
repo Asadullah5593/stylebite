@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RestaurantReviewController;
+use App\Http\Controllers\Api\FlashController;
 use App\Http\Controllers\Api\StoryController;
 use App\Http\Controllers\Api\UserBlockController;
 use App\Http\Controllers\Api\UserSearchController;
@@ -96,6 +97,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/profiles/{username}/following', [FollowController::class, 'following']);
     Route::get('/profiles/{username}/ratings-distribution', [ProfileController::class, 'ratingsDistribution']);
     Route::get('/stories', [StoryController::class, 'index']);
+    Route::get('/flashes', [FlashController::class, 'index']);
     Route::post('/posts', [PostController::class, 'store']);
     Route::match(['put', 'patch'], '/posts/{postId}', [PostController::class, 'update']);
     Route::delete('/posts/{postId}', [PostController::class, 'destroy']);
