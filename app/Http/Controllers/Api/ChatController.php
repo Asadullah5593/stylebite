@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\ConversationMember;
 use App\Models\Message;
+use App\Models\MessageReaction;
 use App\Models\MessageRead;
 use App\Models\User;
 use App\Models\UserBlock;
+use App\Support\ChatRealtime;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -206,7 +208,7 @@ class ChatController extends Controller
         $page = (int) ($validated['page'] ?? (intdiv($skip, $perPage) + 1));
 
         $baseQuery = Message::query()
-            ->with('sender.profile')
+            ->with(['sender.profile', 'reactions.user'])
             ->where('conversation_id', $conversation->id)
             ->where('is_deleted', false);
 
@@ -219,6 +221,13 @@ class ChatController extends Controller
             ->get()
             ->reverse()
             ->values();
+
+        if ($skip === 0) {
+            $latestId = (int) ($messages->max('id') ?? 0);
+            if ($latestId > 0) {
+                $this->rememberRead($conversation, (int) $viewer->id, $latestId);
+            }
+        }
 
         return response()->json([
             'status_code' => 1,
@@ -319,6 +328,10 @@ class ChatController extends Controller
             ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewer->id)?->user;
 
         if ($recipient) {
+            [$notifyBody, $notifyImage] = $this->notificationPreview(
+                (string) $message->body,
+                $viewer->avatar_url
+            );
             stylebite_notify_user(
                 $recipient->id,
                 $viewer->id,
@@ -326,9 +339,9 @@ class ChatController extends Controller
                 'message',
                 $conversation->id,
                 $viewer->full_name ?: $viewer->username,
-                (string) $message->body,
+                $notifyBody,
                 '/chat/'.$conversation->id,
-                $viewer->avatar_url
+                $notifyImage
             );
         }
 
@@ -337,8 +350,62 @@ class ChatController extends Controller
         return response()->json([
             'status_code' => 1,
             'message' => 'Message sent successfully.',
-            'message_data' => $this->messagePayload($viewer->id, $message->fresh('sender.profile'), $conversation),
+            'message_data' => $this->messagePayload(
+                $viewer->id,
+                $message->fresh(['sender.profile', 'reactions.user']),
+                $conversation
+            ),
             'chat' => $this->conversationPayload($viewer->id, $conversation),
+        ]);
+    }
+
+    public function toggleReaction(Request $request, int $conversationId, int $messageId): JsonResponse
+    {
+        $validated = $request->validate([
+            'emoji' => ['required', 'string', 'max:32'],
+        ]);
+
+        $emoji = trim($validated['emoji']);
+        if ($emoji === '') {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'Emoji is required.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $viewer = $request->user();
+        $conversation = $this->memberConversationOrFail($viewer->id, $conversationId);
+        $conversation->load(['members.user.profile', 'lastMessage']);
+
+        $message = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('is_deleted', false)
+            ->whereKey($messageId)
+            ->firstOrFail();
+
+        $existing = MessageReaction::query()
+            ->where('message_id', $message->id)
+            ->where('user_id', $viewer->id)
+            ->first();
+
+        if ($existing && $existing->emoji === $emoji) {
+            $existing->delete();
+        } elseif ($existing) {
+            $existing->forceFill(['emoji' => $emoji])->save();
+        } else {
+            MessageReaction::create([
+                'message_id' => $message->id,
+                'user_id' => $viewer->id,
+                'emoji' => $emoji,
+            ]);
+        }
+
+        $message->load(['sender.profile', 'reactions.user']);
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Reaction updated.',
+            'message_data' => $this->messagePayload($viewer->id, $message, $conversation),
         ]);
     }
 
@@ -367,40 +434,7 @@ class ChatController extends Controller
             ]);
         }
 
-        $now = now();
-        $messageIds = Message::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('is_deleted', false)
-            ->where('id', '<=', $upToMessageId)
-            ->where('sender_user_id', '!=', $viewer->id)
-            ->pluck('id');
-
-        DB::transaction(function () use ($conversation, $viewer, $upToMessageId, $messageIds, $now): void {
-            ConversationMember::query()
-                ->where('conversation_id', $conversation->id)
-                ->where('user_id', $viewer->id)
-                ->update([
-                    'last_read_message_id' => $upToMessageId,
-                    'last_read_at' => $now,
-                ]);
-
-            Message::query()
-                ->whereIn('id', $messageIds)
-                ->whereNull('delivered_at')
-                ->update(['delivered_at' => $now]);
-
-            foreach ($messageIds as $messageId) {
-                MessageRead::query()->updateOrCreate(
-                    [
-                        'message_id' => $messageId,
-                        'user_id' => $viewer->id,
-                    ],
-                    [
-                        'read_at' => $now,
-                    ]
-                );
-            }
-        });
+        $this->rememberRead($conversation, (int) $viewer->id, $upToMessageId);
 
         return response()->json([
             'status_code' => 1,
@@ -421,7 +455,7 @@ class ChatController extends Controller
         $conversation->load(['members.user.profile', 'lastMessage']);
 
         $messages = Message::query()
-            ->with('sender.profile')
+            ->with(['sender.profile', 'reactions.user'])
             ->where('conversation_id', $conversation->id)
             ->where('is_deleted', false)
             ->where('id', '>', (int) $validated['after_message_id'])
@@ -631,6 +665,28 @@ class ChatController extends Controller
             $status = 'delivered';
         }
 
+        $message->loadMissing('reactions.user');
+        $reactionGroups = [];
+        $myReaction = null;
+        foreach ($message->reactions as $reaction) {
+            $emoji = (string) $reaction->emoji;
+            if ($emoji === '') {
+                continue;
+            }
+            if (! isset($reactionGroups[$emoji])) {
+                $reactionGroups[$emoji] = [
+                    'emoji' => $emoji,
+                    'count' => 0,
+                    'user_ids' => [],
+                ];
+            }
+            $reactionGroups[$emoji]['count']++;
+            $reactionGroups[$emoji]['user_ids'][] = (int) $reaction->user_id;
+            if ((int) $reaction->user_id === (int) $viewerUserId) {
+                $myReaction = $emoji;
+            }
+        }
+
         return [
             'id' => $message->id,
             'conversation_id' => $message->conversation_id,
@@ -645,6 +701,8 @@ class ChatController extends Controller
             'delivery_status' => $status,
             'is_seen' => $isSeen,
             'delivered_at' => optional($message->delivered_at)?->toIso8601String(),
+            'my_reaction' => $myReaction,
+            'reactions' => array_values($reactionGroups),
             'sender' => [
                 'id' => $message->sender?->id,
                 'username' => $message->sender?->username,
@@ -793,6 +851,122 @@ class ChatController extends Controller
         return $flags;
     }
 
+    private function rememberRead(Conversation $conversation, int $viewerUserId, int $upToMessageId): bool
+    {
+        if ($upToMessageId <= 0) {
+            return false;
+        }
+
+        $previous = (int) (ConversationMember::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('user_id', $viewerUserId)
+            ->value('last_read_message_id') ?? 0);
+
+        if ($upToMessageId <= $previous) {
+            return false;
+        }
+
+        $now = now();
+        $updated = ConversationMember::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('user_id', $viewerUserId)
+            ->where(function (Builder $query) use ($upToMessageId): void {
+                $query->whereNull('last_read_message_id')
+                    ->orWhere('last_read_message_id', '<', $upToMessageId);
+            })
+            ->update([
+                'last_read_message_id' => $upToMessageId,
+                'last_read_at' => $now,
+            ]);
+
+        if ($updated === 0) {
+            return false;
+        }
+
+        Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('is_deleted', false)
+            ->where('sender_user_id', '!=', $viewerUserId)
+            ->where('id', '>', $previous)
+            ->where('id', '<=', $upToMessageId)
+            ->whereNull('delivered_at')
+            ->update(['delivered_at' => $now]);
+
+        try {
+            $messageIds = Message::query()
+                ->where('conversation_id', $conversation->id)
+                ->where('is_deleted', false)
+                ->where('sender_user_id', '!=', $viewerUserId)
+                ->where('id', '>', $previous)
+                ->where('id', '<=', $upToMessageId)
+                ->pluck('id');
+
+            foreach ($messageIds->chunk(100) as $chunk) {
+                MessageRead::query()->insertOrIgnore($chunk->map(fn ($messageId) => [
+                    'message_id' => (int) $messageId,
+                    'user_id' => $viewerUserId,
+                    'read_at' => $now->toDateTimeString(),
+                ])->all());
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        $this->broadcastRead($conversation, $viewerUserId, $upToMessageId, $now->toIso8601String());
+
+        return true;
+    }
+
+    private function broadcastRead(
+        Conversation $conversation,
+        int $readerUserId,
+        int $lastReadMessageId,
+        string $readAt,
+    ): void {
+        $conversation->unsetRelation('members');
+        $conversation->load(['members.user.profile', 'lastMessage']);
+
+        $updates = [];
+        foreach ($conversation->members as $member) {
+            $userId = (int) $member->user_id;
+            if ($userId <= 0) {
+                continue;
+            }
+
+            $updates[] = [
+                'channel' => 'private-user.'.$userId,
+                'payload' => [
+                    'chat' => $this->conversationPayload($userId, $conversation),
+                    'total_unread_count' => $this->totalUnreadCount($userId),
+                ],
+            ];
+        }
+
+        $conversationId = (int) $conversation->id;
+        $readPayload = [
+            'reader_user_id' => $readerUserId,
+            'last_read_message_id' => $lastReadMessageId,
+            'message_ids' => [],
+            'read_at' => $readAt,
+        ];
+
+        app()->terminating(function () use ($conversationId, $readPayload, $updates): void {
+            ChatRealtime::trigger(
+                ['presence-conversation.'.$conversationId],
+                'messages.read',
+                $readPayload,
+            );
+
+            foreach ($updates as $update) {
+                ChatRealtime::trigger(
+                    [$update['channel']],
+                    'chat.updated',
+                    $update['payload'],
+                );
+            }
+        });
+    }
+
     private function otherUserId(Conversation $conversation, int $viewerUserId): int
     {
         return (int) ($conversation->members
@@ -834,5 +1008,25 @@ class ChatController extends Controller
             'is_blocked_by_me' => $flags['me'],
             'is_blocked_by_other' => $flags['other'],
         ], Response::HTTP_FORBIDDEN);
+    }
+
+    /**
+     * @return array{0: string, 1: ?string}
+     */
+    private function notificationPreview(string $body, ?string $avatarUrl): array
+    {
+        $prefix = 'sbshare:v1:';
+        if (! str_starts_with($body, $prefix)) {
+            return [$body, $avatarUrl];
+        }
+
+        $decoded = json_decode(substr($body, strlen($prefix)), true);
+        $kind = is_array($decoded) ? (string) ($decoded['kind'] ?? 'post') : 'post';
+        $preview = is_array($decoded) ? trim((string) ($decoded['preview'] ?? '')) : '';
+
+        return [
+            $kind === 'reel' ? 'Shared a reel' : 'Shared a post',
+            $preview !== '' ? $preview : $avatarUrl,
+        ];
     }
 }

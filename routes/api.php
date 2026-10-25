@@ -114,6 +114,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::post('/chats/initialize', [ChatController::class, 'initialize']);
     Route::get('/chats/{username}/messages', [ChatController::class, 'messages']);
     Route::post('/chats/{conversationId}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/chats/{conversationId}/messages/{messageId}/reactions', [ChatController::class, 'toggleReaction']);
     Route::post('/chats/{conversationId}/read', [ChatController::class, 'markRead']);
     Route::get('/chats/{conversationId}/sync', [ChatController::class, 'sync']);
     Route::post('/chats/{conversationId}/accept', [ChatController::class, 'acceptRequest']);

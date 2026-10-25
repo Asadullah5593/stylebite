@@ -205,6 +205,10 @@ class FeedController extends Controller
             report($exception);
         }
 
+        if ($isLiked) {
+            $this->sendLikeNotification($post, $user);
+        }
+
         return response()->json([
             'status_code' => 1,
             'message' => $isLiked ? 'Post liked successfully.' : 'Post unliked successfully.',
@@ -394,6 +398,34 @@ class FeedController extends Controller
             entityId: (int) $comment->id,
             title: 'New comment on your post',
             body: $actorName.' commented: '.Str::limit($comment->body, 120),
+            actionUrl: '/posts/'.$post->id,
+            image: $postImage,
+        );
+    }
+
+    private function sendLikeNotification(Post $post, $actor): void
+    {
+        $recipientUserId = (int) $post->user_id;
+
+        if ($recipientUserId === (int) $actor->id) {
+            return;
+        }
+
+        $post->loadMissing(['media' => fn ($query) => $query->orderBy('sort_order')]);
+
+        $postImage = $post->media->first()?->thumbnail_url ?? $post->media->first()?->file_url;
+        $actorName = $actor->full_name ?: $actor->username;
+        $isReel = strtolower((string) $post->media_kind) === 'video'
+            || strtolower((string) ($post->content_type ?? '')) === 'reel';
+
+        stylebite_notify_user(
+            recipientUserId: $recipientUserId,
+            actorUserId: (int) $actor->id,
+            type: 'like',
+            entityType: 'post',
+            entityId: (int) $post->id,
+            title: $isReel ? 'New like on your reel' : 'New like on your post',
+            body: $actorName.($isReel ? ' liked your reel' : ' liked your post'),
             actionUrl: '/posts/'.$post->id,
             image: $postImage,
         );

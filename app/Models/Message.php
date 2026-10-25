@@ -48,4 +48,9 @@ class Message extends StylebiteModel
     {
         return $this->hasMany(MessageRead::class);
     }
+
+    public function reactions(): HasMany
+    {
+        return $this->hasMany(MessageReaction::class);
+    }
 }
