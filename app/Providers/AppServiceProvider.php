@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\ContestController;
 use App\Http\Controllers\Admin\EarningsController;
 use App\Http\Controllers\Admin\EngagementController;
 use App\Models\Notification;
+use App\Models\Profile;
 use App\Models\PushNotificationLog;
 use App\Models\Report;
 use App\Models\WithdrawalRequest;
@@ -129,6 +130,13 @@ class AppServiceProvider extends ServiceProvider
                     'title' => 'open reports awaiting review',
                     'time' => 'Moderation queue',
                     'route' => route('admin.moderation.reports'),
+                    'kind' => 'ops',
+                ],
+                [
+                    'count' => Profile::where('verification_status', 'pending')->count(),
+                    'title' => 'verification requests awaiting review',
+                    'time' => 'Users queue',
+                    'route' => route('admin.users.verification_requests', ['status' => 'pending']),
                     'kind' => 'ops',
                 ],
                 [

@@ -14,6 +14,8 @@ class Profile extends StylebiteModel
         return [
             'birth_date' => 'date',
             'is_verified_badge' => 'boolean',
+            'verification_requested_at' => 'datetime',
+            'verification_reviewed_at' => 'datetime',
             'is_private' => 'boolean',
             'style_points' => 'integer',
             'current_streak_days' => 'integer',

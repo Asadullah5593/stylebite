@@ -72,7 +72,11 @@ class PostController extends Controller
                 'country' => $locationDetails['country'],
                 'dish_name' => $normalizedPostType === 'food' ? ($validated['dish_name'] ?? null) : null,
                 'restaurant' => $normalizedPostType === 'food' ? ($validated['restaurant'] ?? null) : null,
-                'visibility' => $validated['visibility'] ?? 'public',
+                // Stories are followers-only (like Snapchat Friends / WhatsApp
+                // Status). Flashes stay on the requested visibility.
+                'visibility' => $isStory
+                    ? 'followers_only'
+                    : ($validated['visibility'] ?? 'public'),
                 'status' => 'published',
                 // Community star ratings are contest-only (feed uses isInContest).
                 // Never auto-enable on normal posts/reels — including food.
@@ -537,13 +541,18 @@ class PostController extends Controller
             $post->tags->pluck('name')->implode(',')
         );
 
-        $post->forceFill([
+        $storyState = [
             'is_story' => $isStory,
             // Prefer story marker when both somehow appear; flashes keep expiry separately.
             'expires_at' => $isStory
                 ? ($wasStory && $existingExpiry !== null ? $existingExpiry : now()->addHours(24))
                 : ($isFlash ? $existingExpiry : null),
-        ])->save();
+        ];
+        // Keep story audience followers-only even if client sent public.
+        if ($isStory) {
+            $storyState['visibility'] = 'followers_only';
+        }
+        $post->forceFill($storyState)->save();
     }
 
     private function syncFlashState(Post $post): void

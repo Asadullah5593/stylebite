@@ -333,7 +333,7 @@ class ProfileApiTest extends TestCase
         ]);
     }
 
-    public function test_profile_verify_grants_verification_badge_to_verified_user(): void
+    public function test_profile_verify_submits_pending_request_without_granting_badge(): void
     {
         [$user, $token] = $this->authenticatedUser();
 
@@ -347,17 +347,18 @@ class ProfileApiTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('user.is_verified_badge', true);
+            ->assertJsonPath('user.is_verified_badge', false)
+            ->assertJsonPath('user.verification_status', 'pending');
 
         $this->assertDatabaseHas('profiles', [
             'user_id' => $user->id,
-            'is_verified_badge' => true,
+            'is_verified_badge' => false,
+            'verification_status' => 'pending',
         ]);
 
-        $this->assertDatabaseHas('profile_badges', [
+        $this->assertDatabaseMissing('profile_badges', [
             'user_id' => $user->id,
             'badge_key' => 'verified_user',
-            'title' => 'Verified User',
         ]);
     }
 

@@ -57,6 +57,10 @@ class FollowController extends Controller
 
         $target->load('profile');
 
+        if ($created) {
+            $this->sendFollowNotification($viewer, $target);
+        }
+
         return response()->json([
             'status_code' => 1,
             'message' => $created ? 'User followed successfully.' : 'You are already following this user.',
@@ -292,5 +296,34 @@ class FollowController extends Controller
             'last_page' => $paginator->lastPage(),
             'has_more_pages' => $paginator->hasMorePages(),
         ];
+    }
+
+    private function sendFollowNotification(User $actor, User $recipient): void
+    {
+        if ((int) $actor->id === (int) $recipient->id) {
+            return;
+        }
+
+        $actor->loadMissing('profile');
+        $actorName = $actor->profile?->display_name
+            ?: $actor->full_name
+            ?: $actor->username
+            ?: 'Someone';
+        $username = trim((string) ($actor->username ?? ''));
+        $body = $username !== ''
+            ? $actorName.' (@'.$username.') started following you'
+            : $actorName.' started following you';
+
+        stylebite_notify_user(
+            recipientUserId: (int) $recipient->id,
+            actorUserId: (int) $actor->id,
+            type: 'follow',
+            entityType: 'user',
+            entityId: (int) $actor->id,
+            title: 'New follower',
+            body: $body,
+            actionUrl: $username !== '' ? '/profiles/'.$username : null,
+            image: $actor->avatar_url,
+        );
     }
 }

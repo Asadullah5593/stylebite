@@ -39,9 +39,13 @@
         <!-- Community Section -->
         <div class="mb-4">
             <div class="sidebar-section-title">Community</div>
-            <a href="{{ route('admin.users.all_users') }}" class="nav-link {{ request()->routeIs('admin.users*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+            <a href="{{ route('admin.users.all_users') }}" class="nav-link {{ request()->routeIs('admin.users*') && ! request()->routeIs('admin.users.verification_requests') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-people"></i> <span>Users</span>
                 <span class="nav-count ms-auto">{{ $sidebarCounts['users'] }}</span>
+            </a>
+            <a href="{{ route('admin.users.verification_requests', ['status' => 'pending']) }}" class="nav-link {{ request()->routeIs('admin.users.verification_requests') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+                <i class="bi bi-patch-check"></i> <span>Verification</span>
+                <span class="nav-count ms-auto">{{ $sidebarCounts['verification_requests'] ?? (\App\Http\Controllers\Admin\UserController::tabCounts()['verification_requests'] ?? 0) }}</span>
             </a>
             <a href="{{ route('admin.social.follows') }}" class="nav-link {{ request()->routeIs('admin.social*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                 <i class="bi bi-diagram-3"></i> <span>Social Graph</span>

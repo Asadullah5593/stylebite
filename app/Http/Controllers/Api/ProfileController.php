@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Support\ApiDateTime;
 use App\Models\Memory;
 use App\Models\Post;
-use App\Models\ProfileBadge;
 use App\Models\SavedPost;
 use App\Models\User;
 use App\Models\UserFollow;
@@ -212,29 +211,34 @@ class ProfileController extends Controller
 
         $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
 
-        DB::transaction(function () use ($profile, $user): void {
-            $profile->forceFill([
-                'is_verified_badge' => true,
-            ])->save();
+        if ($profile->is_verified_badge || $profile->verification_status === 'approved') {
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'Your profile is already verified.',
+                'user' => $this->overviewProfilePayload($user->fresh(['profile'])),
+            ]);
+        }
 
-            ProfileBadge::query()->updateOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'badge_key' => 'verified_user',
-                ],
-                [
-                    'title' => 'Verified User',
-                    'icon_key' => 'verified_badge',
-                    'status' => 'earned',
-                    'sort_order' => 0,
-                    'earned_at' => now(),
-                ]
-            );
-        });
+        if ($profile->verification_status === 'pending') {
+            return response()->json([
+                'status_code' => 1,
+                'message' => 'Your verification request is already pending admin review.',
+                'user' => $this->overviewProfilePayload($user->fresh(['profile'])),
+            ]);
+        }
+
+        $profile->forceFill([
+            'is_verified_badge' => false,
+            'verification_status' => 'pending',
+            'verification_requested_at' => now(),
+            'verification_reviewed_at' => null,
+            'verification_reviewed_by' => null,
+            'verification_admin_note' => null,
+        ])->save();
 
         return response()->json([
             'status_code' => 1,
-            'message' => 'Verification badge granted successfully.',
+            'message' => 'Verification request submitted. An admin will review it shortly.',
             'user' => $this->overviewProfilePayload($user->fresh(['profile'])),
         ]);
     }
@@ -660,6 +664,7 @@ class ProfileController extends Controller
             'city' => $profile?->city,
             'country' => $profile?->country,
             'is_verified_badge' => (bool) ($profile?->is_verified_badge ?? false),
+            'verification_status' => $profile?->verification_status ?? 'none',
             'is_self' => $isSelf,
             'can_edit' => $isSelf,
             'relationship' => [
@@ -747,6 +752,8 @@ class ProfileController extends Controller
             'visibility' => $profile?->visibility ?? 'public',
             'is_private' => (bool) ($profile?->is_private ?? false),
             'is_verified_badge' => (bool) ($profile?->is_verified_badge ?? false),
+            'verification_status' => $profile?->verification_status ?? 'none',
+            'verification_requested_at' => optional($profile?->verification_requested_at)?->toDateTimeString(),
             'email_verified_at' => optional($user->email_verified_at)?->toDateTimeString(),
             'phone_verified_at' => optional($user->phone_verified_at)?->toDateTimeString(),
             'vibe_count' => (int) ($profile?->vibe_count ?? 0),

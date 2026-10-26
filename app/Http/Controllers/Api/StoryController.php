@@ -47,17 +47,15 @@ class StoryController extends Controller
                             });
                     });
             })
+            // Stories match Snapchat Friends / WhatsApp Status / IG private
+            // Stories: only the author and accepted followers see them —
+            // never a global public broadcast to the whole app.
             ->where(function ($query) use ($viewer, $followingIds) {
-                $query->where('user_id', $viewer->id)
-                    ->orWhere('visibility', 'public')
-                    ->orWhere(function ($followers) use ($followingIds) {
-                        $followers->where('visibility', 'followers_only');
-                        if ($followingIds->isEmpty()) {
-                            $followers->whereRaw('0 = 1');
-                        } else {
-                            $followers->whereIn('user_id', $followingIds->all());
-                        }
-                    });
+                $query->where('user_id', $viewer->id);
+                if ($followingIds->isEmpty()) {
+                    return;
+                }
+                $query->orWhereIn('user_id', $followingIds->all());
             })
             ->whereDoesntHave('user.blockedUsersEntries', fn ($query) => $query->where('blocked_user_id', $viewer->id))
             ->whereDoesntHave('user.blockedByEntries', fn ($query) => $query->where('blocker_user_id', $viewer->id))

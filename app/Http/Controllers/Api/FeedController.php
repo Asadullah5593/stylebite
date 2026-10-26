@@ -171,6 +171,101 @@ class FeedController extends Controller
         return $this->comments($request, $postId);
     }
 
+    public function likes(Request $request, int $postId): JsonResponse
+    {
+        $viewerUserId = (int) $request->user()->id;
+        $post = $this->findAccessiblePost($viewerUserId, $postId);
+        $page = max(1, (int) $request->integer('page', 1));
+        $perPage = min(50, max(1, (int) $request->integer('per_page', 20)));
+
+        $paginator = PostLike::query()
+            ->with('user.profile')
+            ->where('post_id', $post->id)
+            ->whereHas('user')
+            ->latest('created_at')
+            ->latest('id')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $userIds = $paginator->getCollection()
+            ->map(fn (PostLike $like) => (int) $like->user_id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        $followingIds = $userIds->isEmpty()
+            ? collect()
+            : UserFollow::query()
+                ->where('follower_user_id', $viewerUserId)
+                ->whereIn('following_user_id', $userIds)
+                ->where('status', 'accepted')
+                ->whereNull('deleted_at')
+                ->pluck('following_user_id')
+                ->map(fn ($id) => (int) $id);
+
+        $followerIds = $userIds->isEmpty()
+            ? collect()
+            : UserFollow::query()
+                ->where('following_user_id', $viewerUserId)
+                ->whereIn('follower_user_id', $userIds)
+                ->where('status', 'accepted')
+                ->whereNull('deleted_at')
+                ->pluck('follower_user_id')
+                ->map(fn ($id) => (int) $id);
+
+        $likes = $paginator->getCollection()->map(function (PostLike $like) use (
+            $viewerUserId,
+            $followingIds,
+            $followerIds,
+        ) {
+            $user = $like->user;
+            $userId = (int) ($user?->id ?? $like->user_id);
+            $isSelf = $userId === $viewerUserId;
+            $isFollowing = ! $isSelf && $followingIds->contains($userId);
+            $followsYou = ! $isSelf && $followerIds->contains($userId);
+
+            return [
+                'id' => $userId,
+                'username' => $user?->username,
+                'display_name' => $user?->profile?->display_name ?? $user?->full_name,
+                'full_name' => $user?->full_name,
+                'avatar_url' => stylebite_asset_url($user?->avatar_url),
+                'is_verified_badge' => (bool) ($user?->profile?->is_verified_badge ?? false),
+                'is_self' => $isSelf,
+                'is_following' => $isFollowing,
+                'follows_you' => $followsYou,
+                'is_mutual_follow' => $isFollowing && $followsYou,
+                'relationship' => [
+                    'is_following' => $isFollowing,
+                    'follows_you' => $followsYou,
+                    'is_mutual_follow' => $isFollowing && $followsYou,
+                ],
+                'liked_at' => ApiDateTime::iso($like->created_at),
+            ];
+        })->values();
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Post likes fetched successfully.',
+            'like_count' => max(0, (int) $post->like_count),
+            'likes' => $likes,
+            'likers' => $likes,
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'has_more_pages' => $paginator->hasMorePages(),
+            ],
+        ]);
+    }
+
+    public function reelLikes(Request $request, int $postId): JsonResponse
+    {
+        $post = $this->findAccessiblePost($request->user()->id, $postId);
+        $this->ensureVideoPost($post);
+
+        return $this->likes($request, $postId);
+    }
+
     public function toggleLike(Request $request, int $postId): JsonResponse
     {
         $user = $request->user();
@@ -414,9 +509,18 @@ class FeedController extends Controller
         $post->loadMissing(['media' => fn ($query) => $query->orderBy('sort_order')]);
 
         $postImage = $post->media->first()?->thumbnail_url ?? $post->media->first()?->file_url;
-        $actorName = $actor->full_name ?: $actor->username;
+        $actor->loadMissing('profile');
+        $actorName = $actor->profile?->display_name
+            ?: $actor->full_name
+            ?: $actor->username
+            ?: 'Someone';
+        $username = trim((string) ($actor->username ?? ''));
         $isReel = strtolower((string) $post->media_kind) === 'video'
             || strtolower((string) ($post->content_type ?? '')) === 'reel';
+        $action = $isReel ? ' liked your reel' : ' liked your post';
+        $body = $username !== ''
+            ? $actorName.' (@'.$username.')'.$action
+            : $actorName.$action;
 
         stylebite_notify_user(
             recipientUserId: $recipientUserId,
@@ -425,7 +529,7 @@ class FeedController extends Controller
             entityType: 'post',
             entityId: (int) $post->id,
             title: $isReel ? 'New like on your reel' : 'New like on your post',
-            body: $actorName.($isReel ? ' liked your reel' : ' liked your post'),
+            body: $body,
             actionUrl: '/posts/'.$post->id,
             image: $postImage,
         );

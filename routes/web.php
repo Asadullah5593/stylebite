@@ -88,7 +88,8 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/auth-providers', [UserController::class, 'authProviders'])->name('auth_providers');
         Route::get('/sessions', [UserController::class, 'sessions'])->name('sessions'); 
         Route::get('/devices', [UserController::class, 'devices'])->name('devices'); 
-        Route::get('/password-resets', [UserController::class, 'passwordResets'])->name('password_resets'); 
+        Route::get('/password-resets', [UserController::class, 'passwordResets'])->name('password_resets');
+        Route::get('/verification-requests', [UserController::class, 'verificationRequests'])->name('verification_requests');
         Route::get('/{user}', [UserController::class, 'show'])->withTrashed()->name('show');
         Route::get('/{user}/edit', [UserController::class, 'edit'])->withTrashed()->name('edit');
         Route::put('/{user}', [UserController::class, 'update'])->withTrashed()->name('update');
@@ -97,6 +98,8 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::patch('/{user}/restore', [UserController::class, 'restore'])->withTrashed()->name('restore');
         Route::patch('/{user}/badges', [UserController::class, 'updateBadge'])->withTrashed()->name('badges.update');
         Route::patch('/{user}/badge/verified', [UserController::class, 'toggleVerifiedBadge'])->withTrashed()->name('badge.verified');
+        Route::patch('/{user}/verification/approve', [UserController::class, 'approveVerification'])->withTrashed()->name('verification.approve');
+        Route::patch('/{user}/verification/reject', [UserController::class, 'rejectVerification'])->withTrashed()->name('verification.reject');
         Route::patch('/{user}/sessions/{session}/revoke', [UserController::class, 'revokeSession'])->withTrashed()->name('sessions.revoke');
         Route::patch('/{user}/devices/{device}/toggle', [UserController::class, 'toggleDevice'])->withTrashed()->name('devices.toggle');
         Route::patch('/{user}/password-resets/{passwordReset}/expire', [UserController::class, 'expirePasswordReset'])->withTrashed()->name('password_resets.expire');

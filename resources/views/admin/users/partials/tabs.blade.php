@@ -2,6 +2,7 @@
     $tabs = [
         ['route' => 'admin.users.all_users', 'key' => 'all_users', 'label' => 'All Users'],
         ['route' => 'admin.users.profiles', 'key' => 'profiles', 'label' => 'Profiles'],
+        ['route' => 'admin.users.verification_requests', 'key' => 'verification_requests', 'label' => 'Verification'],
         ['route' => 'admin.users.settings', 'key' => 'settings', 'label' => 'Settings'],
         ['route' => 'admin.users.auth_providers', 'key' => 'auth_providers', 'label' => 'Auth Providers'],
         ['route' => 'admin.users.sessions', 'key' => 'sessions', 'label' => 'Sessions', 'class' => 'd-none d-lg-block'],

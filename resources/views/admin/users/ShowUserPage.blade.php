@@ -6,7 +6,9 @@
     $avatar = $user->avatar_url;
     $avatarUrl = $avatar ? (str_starts_with($avatar, 'http') || str_starts_with($avatar, '/') ? $avatar : asset($avatar)) : null;
     $statusLabel = $user->status === 'inactive' ? 'Suspended' : str($user->status)->title();
-    $hasVerifiedBadge = $user->profileBadges->contains(fn ($badge) => $badge->badge_key === 'verified_user');
+    $hasVerifiedBadge = (bool) ($user->profile?->is_verified_badge)
+        || $user->profileBadges->contains(fn ($badge) => $badge->badge_key === 'verified_user');
+    $verificationStatus = $user->profile?->verification_status ?? 'none';
     $assignedBadgeKeys = $user->profileBadges->pluck('badge_key')->all();
 @endphp
 
@@ -50,6 +52,22 @@
                     </button>
                 </form>
             @else
+                @if ($verificationStatus === 'pending')
+                    <form method="POST" action="{{ route('admin.users.verification.approve', $user) }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-outline-success rounded-3" type="submit">
+                            <i class="bi bi-patch-check me-2"></i>Approve Verification
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ route('admin.users.verification.reject', $user) }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-outline-danger rounded-3" type="submit">
+                            <i class="bi bi-x-circle me-2"></i>Reject Verification
+                        </button>
+                    </form>
+                @endif
                 <form method="POST" action="{{ route('admin.users.badge.verified', $user) }}">
                     @csrf
                     @method('PATCH')
@@ -152,6 +170,10 @@
                     <div class="d-flex justify-content-between align-items-center border-bottom border-white-05 pb-2">
                         <span>Verified Badge</span>
                         <span class="badge {{ $hasVerifiedBadge ? 'bg-info-soft text-info' : 'bg-secondary-soft text-muted' }} rounded-pill">{{ $hasVerifiedBadge ? 'Enabled' : 'Not set' }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom border-white-05">
+                        <span>Verification Request</span>
+                        <span class="badge {{ $verificationStatus === 'pending' ? 'bg-warning-soft text-warning' : ($verificationStatus === 'approved' ? 'bg-success-soft text-success' : ($verificationStatus === 'rejected' ? 'bg-danger-soft text-danger' : 'bg-secondary-soft text-muted')) }} rounded-pill">{{ str($verificationStatus)->title() }}</span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center border-bottom border-white-05 pb-2">
                         <span>Total Badges</span>

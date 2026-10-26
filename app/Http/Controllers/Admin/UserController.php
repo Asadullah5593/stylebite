@@ -177,6 +177,123 @@ class UserController extends Controller
         return view('admin.users.PasswordResetsPage', compact('passwordResets'));
     }
 
+    public function verificationRequests(Request $request): View
+    {
+        $statusFilter = $request->string('status')->toString();
+        if ($statusFilter === '') {
+            $statusFilter = 'pending';
+        }
+
+        $requests = Profile::query()
+            ->with(['user:id,username,email,full_name,avatar_url,email_verified_at,phone_verified_at'])
+            ->whereIn('verification_status', ['pending', 'approved', 'rejected'])
+            ->when($statusFilter !== 'all', fn ($query) => $query->where('verification_status', $statusFilter))
+            ->when($request->filled('q'), function ($query) use ($request) {
+                $search = $request->string('q')->toString();
+
+                $query->where(function ($query) use ($search) {
+                    $query->where('display_name', 'like', "%{$search}%")
+                        ->orWhereHas('user', fn ($query) => $query
+                            ->where('username', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                            ->orWhere('full_name', 'like', "%{$search}%"));
+                });
+            })
+            ->orderByRaw("CASE verification_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END")
+            ->orderByDesc('verification_requested_at')
+            ->paginate(10)
+            ->withQueryString();
+
+        $verificationStats = [
+            'pending' => Profile::where('verification_status', 'pending')->count(),
+            'approved' => Profile::where('verification_status', 'approved')->count(),
+            'rejected' => Profile::where('verification_status', 'rejected')->count(),
+            'total' => Profile::whereIn('verification_status', ['pending', 'approved', 'rejected'])->count(),
+        ];
+
+        return view('admin.users.VerificationRequestsPage', compact(
+            'requests',
+            'verificationStats',
+            'statusFilter'
+        ));
+    }
+
+    public function approveVerification(Request $request, User $user): RedirectResponse
+    {
+        $validated = $request->validate([
+            'admin_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        if ($profile->is_verified_badge && $profile->verification_status === 'approved') {
+            return back()->with('status', 'User is already verified.');
+        }
+
+        $this->grantVerifiedBadge($user, $validated['admin_note'] ?? null);
+
+        $this->logActivity('verification_request_approved', 'user', $user->id, [
+            'username' => $user->username,
+            'admin_note' => $validated['admin_note'] ?? null,
+        ]);
+
+        if (function_exists('stylebite_notify_user')) {
+            stylebite_notify_user(
+                (int) $user->id,
+                auth()->id(),
+                'verification_approved',
+                'user',
+                (int) $user->id,
+                'Verification approved',
+                'Your StyleBite verification badge is now active.',
+                null,
+                null
+            );
+        }
+
+        return back()->with('status', 'Verification approved. Badge granted to @'.$user->username.'.');
+    }
+
+    public function rejectVerification(Request $request, User $user): RedirectResponse
+    {
+        $validated = $request->validate([
+            'admin_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'is_verified_badge' => false,
+            'verification_status' => 'rejected',
+            'verification_reviewed_at' => now(),
+            'verification_reviewed_by' => auth()->id(),
+            'verification_admin_note' => $validated['admin_note'] ?? null,
+        ])->save();
+
+        $user->profileBadges()->where('badge_key', 'verified_user')->delete();
+
+        $this->logActivity('verification_request_rejected', 'user', $user->id, [
+            'username' => $user->username,
+            'admin_note' => $validated['admin_note'] ?? null,
+        ]);
+
+        if (function_exists('stylebite_notify_user')) {
+            stylebite_notify_user(
+                (int) $user->id,
+                auth()->id(),
+                'verification_rejected',
+                'user',
+                (int) $user->id,
+                'Verification not approved',
+                'Your verification request was not approved. You can update your profile and request again.',
+                null,
+                null
+            );
+        }
+
+        return back()->with('status', 'Verification request rejected for @'.$user->username.'.');
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -344,10 +461,12 @@ class UserController extends Controller
 
     public function toggleVerifiedBadge(User $user): RedirectResponse
     {
-        $badge = $user->profileBadges()->where('badge_key', 'verified_user')->first();
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+        $hasBadge = $profile->is_verified_badge
+            || $user->profileBadges()->where('badge_key', 'verified_user')->exists();
 
-        if ($badge) {
-            $badge->delete();
+        if ($hasBadge) {
+            $this->revokeVerifiedBadge($user);
 
             $this->logActivity('verified_badge_removed', 'user', $user->id, [
                 'badge_key' => 'verified_user',
@@ -356,15 +475,7 @@ class UserController extends Controller
             return back()->with('status', 'Verified badge removed successfully.');
         }
 
-        ProfileBadge::create([
-            'user_id' => $user->id,
-            'badge_key' => 'verified_user',
-            'title' => 'Verified User',
-            'icon_key' => 'verified_badge',
-            'status' => 'earned',
-            'sort_order' => 0,
-            'earned_at' => now(),
-        ]);
+        $this->grantVerifiedBadge($user);
 
         $this->logActivity('verified_badge_added', 'user', $user->id, [
             'badge_key' => 'verified_user',
@@ -386,11 +497,15 @@ class UserController extends Controller
         $existingBadge = $user->profileBadges()->where('badge_key', $badgeKey)->first();
 
         if ($action === 'remove') {
-            if (! $existingBadge) {
+            if (! $existingBadge && $badgeKey !== 'verified_user') {
                 return back()->with('status', 'Selected badge is not assigned to this user.');
             }
 
-            $existingBadge->delete();
+            if ($badgeKey === 'verified_user') {
+                $this->revokeVerifiedBadge($user);
+            } else {
+                $existingBadge?->delete();
+            }
 
             $this->logActivity('user_badge_removed', 'user', $user->id, [
                 'badge_key' => $badgeKey,
@@ -400,19 +515,23 @@ class UserController extends Controller
             return back()->with('status', $badgeDefinition['title'].' removed successfully.');
         }
 
-        if ($existingBadge) {
+        if ($existingBadge || ($badgeKey === 'verified_user' && (bool) ($user->profile?->is_verified_badge))) {
             return back()->with('status', 'Selected badge is already assigned to this user.');
         }
 
-        ProfileBadge::create([
-            'user_id' => $user->id,
-            'badge_key' => $badgeKey,
-            'title' => $badgeDefinition['title'],
-            'icon_key' => $badgeDefinition['icon_key'],
-            'status' => 'earned',
-            'sort_order' => $user->profileBadges()->count(),
-            'earned_at' => now(),
-        ]);
+        if ($badgeKey === 'verified_user') {
+            $this->grantVerifiedBadge($user);
+        } else {
+            ProfileBadge::create([
+                'user_id' => $user->id,
+                'badge_key' => $badgeKey,
+                'title' => $badgeDefinition['title'],
+                'icon_key' => $badgeDefinition['icon_key'],
+                'status' => 'earned',
+                'sort_order' => $user->profileBadges()->count(),
+                'earned_at' => now(),
+            ]);
+        }
 
         $this->logActivity('user_badge_added', 'user', $user->id, [
             'badge_key' => $badgeKey,
@@ -467,12 +586,56 @@ class UserController extends Controller
         return [
             'all_users' => User::withTrashed()->count(),
             'profiles' => Profile::count(),
+            'verification_requests' => Profile::where('verification_status', 'pending')->count(),
             'settings' => User::whereHas('settings')->count(),
             'auth_providers' => UserAuthProvider::count(),
             'sessions' => UserSession::count(),
             'devices' => DeviceToken::count(),
             'password_resets' => PasswordReset::count(),
         ];
+    }
+
+    private function grantVerifiedBadge(User $user, ?string $adminNote = null): void
+    {
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'is_verified_badge' => true,
+            'verification_status' => 'approved',
+            'verification_requested_at' => $profile->verification_requested_at ?? now(),
+            'verification_reviewed_at' => now(),
+            'verification_reviewed_by' => auth()->id(),
+            'verification_admin_note' => $adminNote,
+        ])->save();
+
+        ProfileBadge::query()->updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'badge_key' => 'verified_user',
+            ],
+            [
+                'title' => 'Verified User',
+                'icon_key' => 'verified_badge',
+                'status' => 'earned',
+                'sort_order' => 0,
+                'earned_at' => now(),
+            ]
+        );
+    }
+
+    private function revokeVerifiedBadge(User $user): void
+    {
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'is_verified_badge' => false,
+            'verification_status' => 'none',
+            'verification_reviewed_at' => now(),
+            'verification_reviewed_by' => auth()->id(),
+            'verification_admin_note' => null,
+        ])->save();
+
+        $user->profileBadges()->where('badge_key', 'verified_user')->delete();
     }
 
     private function logActivity(string $eventName, ?string $entityType, ?int $entityId, array $metadata = []): void
