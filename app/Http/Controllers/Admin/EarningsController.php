@@ -153,7 +153,7 @@ class EarningsController extends Controller
         // Default to pending prizes so admins land on items that need Approve.
         $statusFilter = $request->has('status')
             ? $request->string('status')->toString()
-            : 'pending';
+            : 'completed';
 
         $prizes = EarningTransaction::query()
             ->with('user:id,username,full_name,email,avatar_url', 'wallet:id,currency_code')
@@ -256,7 +256,7 @@ class EarningsController extends Controller
             'approved_by_admin_id' => $adminId,
         ]);
 
-        return back()->with('status', 'Contest prize approved and moved to available balance.');
+        return back()->with('status', 'Legacy contest prize released to available balance.');
     }
 
     public function withdrawals(Request $request): View
@@ -269,6 +269,8 @@ class EarningsController extends Controller
                 $query->where(function ($query) use ($search) {
                     $query->where('currency_code', 'like', "%{$search}%")
                         ->orWhere('account_ref', 'like', "%{$search}%")
+                        ->orWhere('bank_name', 'like', "%{$search}%")
+                        ->orWhere('bank_account_number', 'like', "%{$search}%")
                         ->orWhere('failure_reason', 'like', "%{$search}%")
                         ->orWhere('method', 'like', "%{$search}%")
                         ->orWhereHas('user', fn ($query) => $query
@@ -361,7 +363,7 @@ class EarningsController extends Controller
 
         return response()->streamDownload(function () use ($withdrawals) {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['ID', 'User', 'Wallet', 'Amount', 'Currency', 'Method', 'Account Ref', 'Status', 'Failure Reason', 'Requested At', 'Processed At']);
+            fputcsv($handle, ['ID', 'User', 'Wallet', 'Amount', 'Currency', 'Method', 'Bank Name', 'Bank Account Number', 'Account Ref', 'Status', 'Failure Reason', 'Requested At', 'Processed At']);
 
             foreach ($withdrawals as $withdrawal) {
                 fputcsv($handle, [
@@ -371,6 +373,8 @@ class EarningsController extends Controller
                     $withdrawal->amount,
                     $withdrawal->currency_code,
                     $withdrawal->method,
+                    $withdrawal->bank_name,
+                    $withdrawal->bank_account_number,
                     $withdrawal->account_ref,
                     $withdrawal->status,
                     $withdrawal->failure_reason,
@@ -741,6 +745,8 @@ class EarningsController extends Controller
                 $query->where(function ($query) use ($search) {
                     $query->where('currency_code', 'like', "%{$search}%")
                         ->orWhere('account_ref', 'like', "%{$search}%")
+                        ->orWhere('bank_name', 'like', "%{$search}%")
+                        ->orWhere('bank_account_number', 'like', "%{$search}%")
                         ->orWhere('failure_reason', 'like', "%{$search}%")
                         ->orWhere('method', 'like', "%{$search}%")
                         ->orWhereHas('user', fn ($query) => $query

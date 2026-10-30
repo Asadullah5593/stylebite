@@ -184,7 +184,8 @@ class ContestResults
 
     /**
      * Credit every unfinished prize place for one user. Intended for an
-     * approved reconciliation pass — not for normal My Earnings / profile reads.
+     * explicit reconciliation pass — not for normal My Earnings / profile reads.
+     * Credits go straight to available (withdrawable) balance.
      */
     public static function creditCompletedPrizes(int $userId): void
     {
@@ -300,8 +301,9 @@ class ContestResults
                     return;
                 }
 
-                // Pending only — available_balance and lifetime_earned move on admin approval.
-                $wallet->pending_balance = round((float) $wallet->pending_balance + $amount, 2);
+                // Contest wins credit available balance immediately (withdrawable).
+                $wallet->available_balance = round((float) $wallet->available_balance + $amount, 2);
+                $wallet->lifetime_earned = round((float) $wallet->lifetime_earned + $amount, 2);
                 $wallet->updated_balance_at = now();
                 $wallet->save();
 
@@ -314,16 +316,16 @@ class ContestResults
                     'source_id' => $place->id,
                     'amount' => $amount,
                     'currency_code' => $wallet->currency_code,
-                    'status' => 'pending',
+                    'status' => 'completed',
                     'note' => $placeLabel.' in '.$contest->title,
                     'metadata_json' => [
                         'title' => $placeLabel.' · '.$contest->title,
                         'reason' => 'Contest Win',
                         'contest_id' => $contest->id,
                         'place' => (int) $place->place,
-                        'prize_status' => 'pending_approval',
+                        'prize_status' => 'available',
                     ],
-                    'processed_at' => null,
+                    'processed_at' => now(),
                 ]);
             });
         } catch (\Illuminate\Database\UniqueConstraintViolationException) {
@@ -332,7 +334,9 @@ class ContestResults
     }
 
     /**
-     * Move one pending contest_reward from pending_balance into available_balance.
+     * Legacy helper: move a leftover pending contest_reward into available_balance.
+     * New prizes are credited as available on contest finish; this remains for
+     * any rows still stuck in the old pending-approval flow.
      * Returns the updated transaction, or null when nothing was eligible.
      */
     public static function approvePendingPrize(int $transactionId, int $adminUserId): ?EarningTransaction

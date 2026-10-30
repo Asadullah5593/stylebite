@@ -205,7 +205,8 @@ class EarningsApiTest extends TestCase
             ->postJson('/api/earnings/withdrawals', [
                 'amount' => 12000,
                 'method' => 'bank_transfer',
-                'account_ref' => '****4201',
+                'bank_name' => 'Meezan Bank',
+                'bank_account_number' => '****4201',
             ]);
 
         $response
@@ -214,12 +215,16 @@ class EarningsApiTest extends TestCase
             ->assertJsonPath('wallet.available_balance', 30850)
             ->assertJsonPath('wallet.pending_balance', 12000)
             ->assertJsonPath('withdrawal.status', 'pending')
+            ->assertJsonPath('withdrawal.bank_name', 'Meezan Bank')
+            ->assertJsonPath('withdrawal.bank_account_number', '****4201')
             ->assertJsonPath('transaction.transaction_type', 'debit');
 
         $this->assertDatabaseHas('withdrawal_requests', [
             'wallet_id' => $wallet->id,
             'user_id' => $user->id,
             'amount' => 12000,
+            'bank_name' => 'Meezan Bank',
+            'bank_account_number' => '****4201',
             'status' => 'pending',
         ]);
 

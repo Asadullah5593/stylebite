@@ -12,7 +12,7 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Contest Prizes</h1>
-        <p class="text-muted small mb-0">Pending contest winnings await admin approval before becoming withdrawable</p>
+        <p class="text-muted small mb-0">Contest wins credit available balance automatically. Legacy pending rows (if any) can still be released here.</p>
     </div>
 
     @include('admin.earnings.partials.tabs')
@@ -34,19 +34,19 @@
         </div>
         <div class="col-6 col-xl-3">
             <div class="glass rounded-4 p-3 h-100">
-                <div class="text-muted small">Pending Approval</div>
+                <div class="text-muted small">Legacy Pending</div>
                 <div class="fs-5 fw-bold">{{ number_format($prizeStats['pending'] ?? 0) }}</div>
             </div>
         </div>
         <div class="col-6 col-xl-3">
             <div class="glass rounded-4 p-3 h-100">
-                <div class="text-muted small">Approved</div>
+                <div class="text-muted small">Credited (Available)</div>
                 <div class="fs-5 fw-bold">{{ number_format($prizeStats['approved'] ?? 0) }}</div>
             </div>
         </div>
         <div class="col-6 col-xl-3">
             <div class="glass rounded-4 p-3 h-100">
-                <div class="text-muted small">Pending Amount</div>
+                <div class="text-muted small">Legacy Pending Amount</div>
                 <div class="fs-5 fw-bold">{{ number_format($prizeStats['pending_amount'] ?? 0, 2) }}</div>
             </div>
         </div>
@@ -60,14 +60,14 @@
 
         <select name="status" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Status</option>
-            @foreach (['pending' => 'Pending Approval', 'completed' => 'Approved', 'failed' => 'Failed', 'reversed' => 'Reversed'] as $value => $label)
+            @foreach (['completed' => 'Credited (Available)', 'pending' => 'Legacy Pending', 'failed' => 'Failed', 'reversed' => 'Reversed'] as $value => $label)
                 <option value="{{ $value }}" @selected(($statusFilter ?? request('status')) === $value)>{{ $label }}</option>
             @endforeach
         </select>
 
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
-        <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'pending']) }}" class="btn btn-outline-dynamic rounded-3 px-3">Pending only</a>
-        <a href="{{ route('admin.earnings.contest_prizes') }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
+        <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'pending']) }}" class="btn btn-outline-dynamic rounded-3 px-3">Legacy pending</a>
+        <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'completed']) }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
     </form>
 
     <div class="glass rounded-4 overflow-hidden border-white-05">
@@ -114,14 +114,14 @@
                             </td>
                             <td class="py-3">
                                 @if ($prize->status === 'pending')
-                                    <span class="badge bg-warning-subtle">Pending Approval</span>
+                                    <span class="badge bg-warning-subtle">Legacy Pending</span>
                                 @elseif ($prize->status === 'completed')
-                                    <span class="badge bg-success-subtle">Approved</span>
+                                    <span class="badge bg-success-subtle">Available</span>
                                 @else
                                     <span class="badge bg-info-subtle">{{ ucfirst($prize->status) }}</span>
                                 @endif
                                 @if (!empty($metadata['approved_by_admin_id']))
-                                    <div class="small text-muted mt-1">Admin #{{ $metadata['approved_by_admin_id'] }}</div>
+                                    <div class="small text-muted mt-1">Released by admin #{{ $metadata['approved_by_admin_id'] }}</div>
                                 @endif
                             </td>
                             <td class="py-3 small text-muted">
@@ -130,14 +130,14 @@
                             <td class="py-3 text-end pe-4">
                                 @if ($prize->status === 'pending')
                                     <form method="POST" action="{{ route('admin.earnings.contest_prizes.approve', $prize) }}" class="d-inline"
-                                          onsubmit="return confirm('Approve this contest prize and move it to Available Balance so the winner can withdraw?');">
+                                          onsubmit="return confirm('Release this legacy pending prize to Available Balance?');">
                                         @csrf
                                         <button type="submit" class="btn btn-sm btn-success rounded-3 fw-bold px-3">
-                                            <i class="bi bi-check2-circle me-1"></i>Approve Prize
+                                            <i class="bi bi-check2-circle me-1"></i>Release to Available
                                         </button>
                                     </form>
                                 @else
-                                    <span class="small text-muted">Approved</span>
+                                    <span class="small text-muted">In available balance</span>
                                 @endif
                             </td>
                         </tr>

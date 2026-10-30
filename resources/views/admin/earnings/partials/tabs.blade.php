@@ -3,7 +3,7 @@
         ?? \App\Http\Controllers\Admin\EarningsController::tabCounts();
     $tabs = [
         ['route' => 'admin.earnings.wallets', 'params' => [], 'key' => 'wallets', 'label' => 'Wallets'],
-        ['route' => 'admin.earnings.contest_prizes', 'params' => ['status' => 'pending'], 'key' => 'contest_prizes', 'label' => 'Contest Prizes'],
+        ['route' => 'admin.earnings.contest_prizes', 'params' => ['status' => 'completed'], 'key' => 'contest_prizes', 'label' => 'Contest Prizes'],
         ['route' => 'admin.earnings.transactions', 'params' => [], 'key' => 'transactions', 'label' => 'Transactions'],
         ['route' => 'admin.earnings.withdrawals', 'params' => [], 'key' => 'withdrawals', 'label' => 'Withdrawals'],
         ['route' => 'admin.earnings.reconciliation', 'params' => [], 'key' => 'reconciliation', 'label' => 'Reconciliation'],

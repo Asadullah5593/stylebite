@@ -11,7 +11,7 @@ class ReportMissingContestPrizeCreditsCommand extends Command
                             {--user= : Limit the report to one winner user id}
                             {--execute : Credit the missing prizes after review (off by default)}';
 
-    protected $description = 'List completed contest prizes that have no earnings ledger row; optionally create pending (non-withdrawable) prize credits after approval.';
+    protected $description = 'List completed contest prizes that have no earnings ledger row; optionally create available (withdrawable) prize credits.';
 
     public function handle(): int
     {
@@ -38,7 +38,7 @@ class ReportMissingContestPrizeCreditsCommand extends Command
         );
 
         if (! $this->option('execute')) {
-            $this->warn('Dry run only. Re-run with --execute after explicit approval to create PENDING (non-withdrawable) prize credits.');
+            $this->warn('Dry run only. Re-run with --execute to credit missing prizes straight to available balance.');
 
             return self::SUCCESS;
         }
@@ -49,7 +49,7 @@ class ReportMissingContestPrizeCreditsCommand extends Command
         }
 
         $remaining = ContestResults::missingPrizeCredits($userId !== null && $userId > 0 ? $userId : null);
-        $this->info('Created pending prize credits for '.$userIds->count().' user(s). Remaining missing rows: '.count($remaining).'. Admin approval is still required before available balance increases.');
+        $this->info('Credited available prize balances for '.$userIds->count().' user(s). Remaining missing rows: '.count($remaining).'.');
 
         return self::SUCCESS;
     }

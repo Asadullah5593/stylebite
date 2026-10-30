@@ -181,7 +181,7 @@
                                                   onsubmit="return confirm('Approve this contest prize and move it to Available Balance?');">
                                                 @csrf
                                                 <button type="submit" class="btn btn-sm btn-success rounded-3 px-3 fw-bold">
-                                                    <i class="bi bi-check2-circle me-1"></i>Approve Prize
+                                                    <i class="bi bi-check2-circle me-1"></i>Release to Available
                                                 </button>
                                             </form>
                                         @elseif ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')

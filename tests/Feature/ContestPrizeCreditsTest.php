@@ -19,7 +19,7 @@ class ContestPrizeCreditsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_finishing_a_contest_creates_pending_prize_not_available(): void
+    public function test_finishing_a_contest_credits_available_balance_immediately(): void
     {
         [$winner] = $this->authenticatedUser('winner_one');
         [$other] = $this->authenticatedUser('other_one');
@@ -47,22 +47,23 @@ class ContestPrizeCreditsTest extends TestCase
             ->where('source_id', $place->id)
             ->first();
         $this->assertNotNull($credit);
-        $this->assertSame('pending', $credit->status);
+        $this->assertSame('completed', $credit->status);
         $this->assertSame(5000.0, (float) $credit->amount);
+        $this->assertSame('available', $credit->metadata_json['prize_status'] ?? null);
 
         $wallet = EarningsWallet::query()->where('user_id', $winner->id)->first();
         $this->assertNotNull($wallet);
-        $this->assertSame(5000.0, (float) $wallet->pending_balance);
-        $this->assertSame(0.0, (float) $wallet->available_balance);
-        $this->assertSame(0.0, (float) $wallet->lifetime_earned);
+        $this->assertSame(0.0, (float) $wallet->pending_balance);
+        $this->assertSame(5000.0, (float) $wallet->available_balance);
+        $this->assertSame(5000.0, (float) $wallet->lifetime_earned);
 
         ContestResults::finish($contest->fresh());
         $this->assertSame(1, EarningTransaction::query()
             ->where('source_type', 'contest_reward')
             ->where('source_id', $place->id)
             ->count());
-        $this->assertSame(5000.0, (float) $wallet->fresh()->pending_balance);
-        $this->assertSame(0.0, (float) $wallet->fresh()->available_balance);
+        $this->assertSame(0.0, (float) $wallet->fresh()->pending_balance);
+        $this->assertSame(5000.0, (float) $wallet->fresh()->available_balance);
 
         $this->assertSame(0, EarningTransaction::query()
             ->where('user_id', $other->id)
@@ -70,7 +71,7 @@ class ContestPrizeCreditsTest extends TestCase
             ->count());
     }
 
-    public function test_earnings_overview_shows_pending_prize_and_blocks_withdrawal(): void
+    public function test_earnings_overview_shows_available_prize_and_allows_withdrawal(): void
     {
         [$winner, $token] = $this->authenticatedUser('winner_two');
 
@@ -89,20 +90,23 @@ class ContestPrizeCreditsTest extends TestCase
             ->getJson('/api/earnings/overview')
             ->assertOk()
             ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('summary.available_balance', 0)
-            ->assertJsonPath('summary.pending_balance', 5000)
+            ->assertJsonPath('summary.available_balance', 5000)
+            ->assertJsonPath('summary.pending_balance', 0)
             ->assertJsonPath('earning_breakdown_preview.0.amount', 5000)
-            ->assertJsonPath('earning_breakdown_preview.0.status', 'pending')
-            ->assertJsonPath('earning_breakdown_preview.0.amount_direction', 'pending_approval');
+            ->assertJsonPath('earning_breakdown_preview.0.status', 'completed')
+            ->assertJsonPath('earning_breakdown_preview.0.amount_direction', 'credited');
 
         $this->withHeaders($this->headers($token))
             ->postJson('/api/earnings/withdrawals', [
                 'amount' => 100,
                 'method' => 'bank_transfer',
-                'account_ref' => 'TEST-ACC-1',
+                'bank_name' => 'HBL',
+                'bank_account_number' => 'PK00TESTACCOUNT001',
             ])
-            ->assertStatus(422)
-            ->assertJsonPath('status_code', 0);
+            ->assertCreated()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('withdrawal.bank_name', 'HBL')
+            ->assertJsonPath('withdrawal.bank_account_number', 'PK00TESTACCOUNT001');
 
         $this->assertSame(
             1,
@@ -111,35 +115,45 @@ class ContestPrizeCreditsTest extends TestCase
                 ->where('source_id', $place->id)
                 ->count()
         );
+
+        $wallet = EarningsWallet::query()->where('user_id', $winner->id)->firstOrFail();
+        $this->assertSame(4900.0, (float) $wallet->available_balance);
+        $this->assertSame(100.0, (float) $wallet->pending_balance);
     }
 
-    public function test_admin_approval_moves_pending_to_available_once(): void
+    public function test_legacy_pending_prize_can_still_be_released_by_admin(): void
     {
         [$winner] = $this->authenticatedUser('winner_three');
         $admin = $this->makeAdmin('admin_one');
 
-        $contest = $this->makeContest();
-        ContestPlace::query()->create([
-            'contest_id' => $contest->id,
-            'place' => 1,
-            'prize_title' => '1st place',
-            'prize_amount' => 5000,
-            'winner_user_id' => $winner->id,
+        $wallet = EarningsWallet::query()->create([
+            'user_id' => $winner->id,
+            'currency_code' => 'PKR',
+            'available_balance' => 0,
+            'pending_balance' => 5000,
+            'lifetime_earned' => 0,
+            'lifetime_withdrawn' => 0,
         ]);
-        $this->submit($contest, $winner, 5, 350, 1);
-        ContestResults::finish($contest->fresh());
 
-        $transaction = EarningTransaction::query()
-            ->where('user_id', $winner->id)
-            ->where('source_type', 'contest_reward')
-            ->where('status', 'pending')
-            ->firstOrFail();
+        $transaction = EarningTransaction::query()->create([
+            'wallet_id' => $wallet->id,
+            'user_id' => $winner->id,
+            'transaction_type' => 'credit',
+            'source_type' => 'contest_reward',
+            'source_id' => 9001,
+            'amount' => 5000,
+            'currency_code' => 'PKR',
+            'status' => 'pending',
+            'note' => 'Legacy pending prize',
+            'metadata_json' => ['prize_status' => 'pending_approval'],
+            'processed_at' => null,
+        ]);
 
         $this->actingAs($admin)
             ->post(route('admin.earnings.contest_prizes.approve', $transaction))
             ->assertRedirect();
 
-        $wallet = EarningsWallet::query()->where('user_id', $winner->id)->firstOrFail();
+        $wallet->refresh();
         $this->assertSame(0.0, (float) $wallet->pending_balance);
         $this->assertSame(5000.0, (float) $wallet->available_balance);
         $this->assertSame(5000.0, (float) $wallet->lifetime_earned);
@@ -152,32 +166,30 @@ class ContestPrizeCreditsTest extends TestCase
         $this->assertSame(0.0, (float) $wallet->fresh()->pending_balance);
         $this->assertSame(5000.0, (float) $wallet->fresh()->available_balance);
         $this->assertSame(5000.0, (float) $wallet->fresh()->lifetime_earned);
-        $this->assertSame(
-            1,
-            EarningTransaction::query()
-                ->where('source_type', 'contest_reward')
-                ->where('source_id', $transaction->source_id)
-                ->count()
-        );
     }
 
-    public function test_guest_cannot_approve_contest_prize(): void
+    public function test_guest_cannot_release_legacy_contest_prize(): void
     {
         [$winner] = $this->authenticatedUser('winner_four');
-        $contest = $this->makeContest();
-        ContestPlace::query()->create([
-            'contest_id' => $contest->id,
-            'place' => 1,
-            'prize_title' => '1st place',
-            'prize_amount' => 1000,
-            'winner_user_id' => $winner->id,
+        $wallet = EarningsWallet::query()->create([
+            'user_id' => $winner->id,
+            'currency_code' => 'PKR',
+            'available_balance' => 0,
+            'pending_balance' => 1000,
+            'lifetime_earned' => 0,
+            'lifetime_withdrawn' => 0,
         ]);
-        $this->submit($contest, $winner, 4, 280, 1);
-        ContestResults::finish($contest->fresh());
-
-        $transaction = EarningTransaction::query()
-            ->where('source_type', 'contest_reward')
-            ->firstOrFail();
+        $transaction = EarningTransaction::query()->create([
+            'wallet_id' => $wallet->id,
+            'user_id' => $winner->id,
+            'transaction_type' => 'credit',
+            'source_type' => 'contest_reward',
+            'source_id' => 9002,
+            'amount' => 1000,
+            'currency_code' => 'PKR',
+            'status' => 'pending',
+            'metadata_json' => ['prize_status' => 'pending_approval'],
+        ]);
 
         $this->post(route('admin.earnings.contest_prizes.approve', $transaction))
             ->assertRedirect();
@@ -187,26 +199,30 @@ class ContestPrizeCreditsTest extends TestCase
         $this->assertSame(0.0, (float) EarningsWallet::query()->where('user_id', $winner->id)->value('available_balance'));
     }
 
-    public function test_normal_user_cannot_approve_contest_prize(): void
+    public function test_normal_user_cannot_release_legacy_contest_prize(): void
     {
         [$winner] = $this->authenticatedUser('winner_authz');
         [$user] = $this->authenticatedUser('normal_user');
 
-        $contest = $this->makeContest();
-        ContestPlace::query()->create([
-            'contest_id' => $contest->id,
-            'place' => 1,
-            'prize_title' => '1st place',
-            'prize_amount' => 1200,
-            'winner_user_id' => $winner->id,
+        $wallet = EarningsWallet::query()->create([
+            'user_id' => $winner->id,
+            'currency_code' => 'PKR',
+            'available_balance' => 0,
+            'pending_balance' => 1200,
+            'lifetime_earned' => 0,
+            'lifetime_withdrawn' => 0,
         ]);
-        $this->submit($contest, $winner, 4, 280, 1);
-        ContestResults::finish($contest->fresh());
-
-        $transaction = EarningTransaction::query()
-            ->where('source_type', 'contest_reward')
-            ->where('status', 'pending')
-            ->firstOrFail();
+        $transaction = EarningTransaction::query()->create([
+            'wallet_id' => $wallet->id,
+            'user_id' => $winner->id,
+            'transaction_type' => 'credit',
+            'source_type' => 'contest_reward',
+            'source_id' => 9003,
+            'amount' => 1200,
+            'currency_code' => 'PKR',
+            'status' => 'pending',
+            'metadata_json' => ['prize_status' => 'pending_approval'],
+        ]);
 
         // EnsureAdminUser logs out non-admins and redirects to the admin login.
         $this->actingAs($user)
@@ -217,7 +233,7 @@ class ContestPrizeCreditsTest extends TestCase
         $this->assertSame(0.0, (float) EarningsWallet::query()->where('user_id', $winner->id)->value('available_balance'));
     }
 
-    public function test_multiple_winners_receive_independent_pending_prizes(): void
+    public function test_multiple_winners_receive_independent_available_prizes(): void
     {
         [$first] = $this->authenticatedUser('place_one');
         [$second] = $this->authenticatedUser('place_two');
@@ -242,34 +258,38 @@ class ContestPrizeCreditsTest extends TestCase
         $this->submit($contest, $second, 4, 280, 2);
         ContestResults::finish($contest->fresh());
 
-        $this->assertSame(5000.0, (float) EarningsWallet::query()->where('user_id', $first->id)->value('pending_balance'));
-        $this->assertSame(3000.0, (float) EarningsWallet::query()->where('user_id', $second->id)->value('pending_balance'));
-        $this->assertSame(0.0, (float) EarningsWallet::query()->where('user_id', $first->id)->value('available_balance'));
-        $this->assertSame(0.0, (float) EarningsWallet::query()->where('user_id', $second->id)->value('available_balance'));
-        $this->assertSame(2, EarningTransaction::query()->where('source_type', 'contest_reward')->where('status', 'pending')->count());
+        $this->assertSame(0.0, (float) EarningsWallet::query()->where('user_id', $first->id)->value('pending_balance'));
+        $this->assertSame(0.0, (float) EarningsWallet::query()->where('user_id', $second->id)->value('pending_balance'));
+        $this->assertSame(5000.0, (float) EarningsWallet::query()->where('user_id', $first->id)->value('available_balance'));
+        $this->assertSame(3000.0, (float) EarningsWallet::query()->where('user_id', $second->id)->value('available_balance'));
+        $this->assertSame(2, EarningTransaction::query()->where('source_type', 'contest_reward')->where('status', 'completed')->count());
     }
 
-    public function test_concurrent_approvals_do_not_double_credit(): void
+    public function test_concurrent_legacy_releases_do_not_double_credit(): void
     {
         [$winner] = $this->authenticatedUser('winner_race');
         $adminA = $this->makeAdmin('admin_race_a');
         $adminB = $this->makeAdmin('admin_race_b');
 
-        $contest = $this->makeContest();
-        ContestPlace::query()->create([
-            'contest_id' => $contest->id,
-            'place' => 1,
-            'prize_title' => '1st place',
-            'prize_amount' => 5000,
-            'winner_user_id' => $winner->id,
+        $wallet = EarningsWallet::query()->create([
+            'user_id' => $winner->id,
+            'currency_code' => 'PKR',
+            'available_balance' => 0,
+            'pending_balance' => 5000,
+            'lifetime_earned' => 0,
+            'lifetime_withdrawn' => 0,
         ]);
-        $this->submit($contest, $winner, 5, 350, 1);
-        ContestResults::finish($contest->fresh());
-
-        $transaction = EarningTransaction::query()
-            ->where('source_type', 'contest_reward')
-            ->where('status', 'pending')
-            ->firstOrFail();
+        $transaction = EarningTransaction::query()->create([
+            'wallet_id' => $wallet->id,
+            'user_id' => $winner->id,
+            'transaction_type' => 'credit',
+            'source_type' => 'contest_reward',
+            'source_id' => 9004,
+            'amount' => 5000,
+            'currency_code' => 'PKR',
+            'status' => 'pending',
+            'metadata_json' => ['prize_status' => 'pending_approval'],
+        ]);
 
         $first = ContestResults::approvePendingPrize((int) $transaction->id, (int) $adminA->id);
         $second = ContestResults::approvePendingPrize((int) $transaction->id, (int) $adminB->id);
@@ -277,14 +297,14 @@ class ContestPrizeCreditsTest extends TestCase
         $this->assertNotNull($first);
         $this->assertNull($second);
 
-        $wallet = EarningsWallet::query()->where('user_id', $winner->id)->firstOrFail();
+        $wallet->refresh();
         $this->assertSame(0.0, (float) $wallet->pending_balance);
         $this->assertSame(5000.0, (float) $wallet->available_balance);
         $this->assertSame(5000.0, (float) $wallet->lifetime_earned);
         $this->assertSame((int) $adminA->id, (int) ($transaction->fresh()->metadata_json['approved_by_admin_id'] ?? 0));
     }
 
-    public function test_other_earnings_preserved_when_contest_prize_pending(): void
+    public function test_other_earnings_preserved_when_contest_prize_credited(): void
     {
         [$winner] = $this->authenticatedUser('winner_preserve');
         $wallet = EarningsWallet::query()->create([
@@ -308,9 +328,9 @@ class ContestPrizeCreditsTest extends TestCase
         ContestResults::finish($contest->fresh());
 
         $wallet->refresh();
-        $this->assertSame(250.0, (float) $wallet->available_balance);
-        $this->assertSame(5000.0, (float) $wallet->pending_balance);
-        $this->assertSame(250.0, (float) $wallet->lifetime_earned);
+        $this->assertSame(5250.0, (float) $wallet->available_balance);
+        $this->assertSame(0.0, (float) $wallet->pending_balance);
+        $this->assertSame(5250.0, (float) $wallet->lifetime_earned);
     }
 
     public function test_missing_prize_report_lists_uncradited_places_without_writing(): void

@@ -112,12 +112,22 @@ class EarningsController extends Controller
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:1'],
             'method' => ['required', 'string', 'in:bank_transfer,paypal,stripe,wallet'],
+            'bank_name' => ['required_if:method,bank_transfer', 'nullable', 'string', 'max:255'],
+            'bank_account_number' => ['required_if:method,bank_transfer', 'nullable', 'string', 'max:255'],
             'account_ref' => ['nullable', 'string', 'max:255'],
         ]);
 
         $user = $request->user();
         $wallet = $this->walletForUser($user);
         $amount = round((float) $validated['amount'], 2);
+        $bankName = isset($validated['bank_name']) ? trim((string) $validated['bank_name']) : null;
+        $bankAccountNumber = isset($validated['bank_account_number'])
+            ? trim((string) $validated['bank_account_number'])
+            : null;
+        $accountRef = isset($validated['account_ref']) ? trim((string) $validated['account_ref']) : null;
+        if (($accountRef === null || $accountRef === '') && $bankAccountNumber) {
+            $accountRef = $bankAccountNumber;
+        }
 
         if ($amount > (float) $wallet->available_balance) {
             return response()->json([
@@ -126,7 +136,15 @@ class EarningsController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        [$wallet, $withdrawal, $transaction] = DB::transaction(function () use ($wallet, $user, $validated, $amount) {
+        [$wallet, $withdrawal, $transaction] = DB::transaction(function () use (
+            $wallet,
+            $user,
+            $validated,
+            $amount,
+            $bankName,
+            $bankAccountNumber,
+            $accountRef
+        ) {
             $wallet->available_balance = (float) $wallet->available_balance - $amount;
             $wallet->pending_balance = (float) $wallet->pending_balance + $amount;
             $wallet->updated_balance_at = now();
@@ -138,7 +156,9 @@ class EarningsController extends Controller
                 'amount' => $amount,
                 'currency_code' => $wallet->currency_code,
                 'method' => $validated['method'],
-                'account_ref' => $validated['account_ref'] ?? null,
+                'account_ref' => $accountRef !== '' ? $accountRef : null,
+                'bank_name' => $bankName !== '' ? $bankName : null,
+                'bank_account_number' => $bankAccountNumber !== '' ? $bankAccountNumber : null,
                 'status' => 'pending',
                 'requested_at' => now(),
             ]);
@@ -156,7 +176,9 @@ class EarningsController extends Controller
                 'metadata_json' => [
                     'title' => 'Transfer to '.ucwords(str_replace('_', ' ', $validated['method'])),
                     'reason' => 'Withdrawal Request',
-                    'account_ref' => $validated['account_ref'] ?? null,
+                    'account_ref' => $accountRef !== '' ? $accountRef : null,
+                    'bank_name' => $bankName !== '' ? $bankName : null,
+                    'bank_account_number' => $bankAccountNumber !== '' ? $bankAccountNumber : null,
                 ],
                 'processed_at' => now(),
             ]);
@@ -288,6 +310,8 @@ class EarningsController extends Controller
             'method' => $withdrawal->method,
             'title' => 'Transfer to '.$this->withdrawalMethodLabel($withdrawal->method),
             'account_ref' => $withdrawal->account_ref,
+            'bank_name' => $withdrawal->bank_name,
+            'bank_account_number' => $withdrawal->bank_account_number,
             'status' => $withdrawal->status,
             'requested_at' => ApiDateTime::iso($withdrawal->requested_at),
             'processed_at' => ApiDateTime::iso($withdrawal->processed_at),

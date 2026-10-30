@@ -12,7 +12,7 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Earnings</h1>
-        <p class="text-muted small mb-0">Withdrawal requests with payout review controls and account references</p>
+        <p class="text-muted small mb-0">Withdrawal requests with bank details and payout review controls</p>
     </div>
 
     @include('admin.earnings.partials.tabs')
@@ -69,7 +69,7 @@
     <form method="GET" action="{{ route('admin.earnings.withdrawals') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
         <div class="position-relative flex-grow-1" style="min-width: 250px;">
             <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-            <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search user, account ref, failure reason...">
+            <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search user, bank name, account number...">
         </div>
 
         <select name="status" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
@@ -111,7 +111,13 @@
                         <tr class="border-white-05">
                             <td class="ps-4">
                                 <div class="small fw-semibold">#{{ $withdrawal->id }}</div>
-                                <div class="text-muted extra-small">{{ $withdrawal->account_ref ?: 'No account ref' }}</div>
+                                <div class="text-muted extra-small">
+                                    @if ($withdrawal->bank_name || $withdrawal->bank_account_number)
+                                        {{ $withdrawal->bank_name ?: 'Bank' }} · {{ $withdrawal->bank_account_number ?: ($withdrawal->account_ref ?: '—') }}
+                                    @else
+                                        {{ $withdrawal->account_ref ?: 'No bank details' }}
+                                    @endif
+                                </div>
                                 @if ($withdrawal->failure_reason)
                                     <button class="btn btn-link btn-sm text-danger p-0 mt-1 text-decoration-none" type="button" data-bs-toggle="modal" data-bs-target="#withdrawalReason{{ $withdrawal->id }}">
                                         View failure note
@@ -172,7 +178,11 @@
                                                     <div class="col-md-4"><div class="small text-muted">Wallet Pending</div><div>{{ number_format((float) ($withdrawal->wallet?->pending_balance ?? 0), 2) }}</div></div>
                                                     <div class="col-md-6"><div class="small text-muted">Linked Transaction</div><div>{{ $withdrawal->payoutTransaction ? '#'.$withdrawal->payoutTransaction->id.' ('.str($withdrawal->payoutTransaction->status)->title().')' : 'Missing linked withdrawal transaction' }}</div></div>
                                                     <div class="col-md-6"><div class="small text-muted">Processed</div><div>{{ $withdrawal->processed_at?->format('M d, Y H:i') ?? 'Not processed yet' }}</div></div>
-                                                    <div class="col-12"><div class="small text-muted">Account Reference</div><div>{{ $withdrawal->account_ref ?: 'No account reference provided' }}</div></div>
+                                                    <div class="col-md-6"><div class="small text-muted">Bank Name</div><div>{{ $withdrawal->bank_name ?: '—' }}</div></div>
+                                                    <div class="col-md-6"><div class="small text-muted">Bank Account Number</div><div>{{ $withdrawal->bank_account_number ?: ($withdrawal->account_ref ?: '—') }}</div></div>
+                                                    @if ($withdrawal->account_ref && $withdrawal->account_ref !== $withdrawal->bank_account_number)
+                                                        <div class="col-12"><div class="small text-muted">Account Reference</div><div>{{ $withdrawal->account_ref }}</div></div>
+                                                    @endif
                                                 </div>
                                                 <form method="POST" action="{{ route('admin.earnings.withdrawals.update', $withdrawal) }}" class="d-grid gap-3">
                                                     @csrf
