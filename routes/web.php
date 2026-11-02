@@ -236,6 +236,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/withdrawals', [EarningsController::class, 'withdrawals'])->name('withdrawals');
         Route::get('/withdrawals/export', [EarningsController::class, 'exportWithdrawals'])->name('withdrawals.export');
         Route::patch('/withdrawals/{withdrawal}', [EarningsController::class, 'updateWithdrawal'])->name('withdrawals.update');
+        Route::post('/withdrawals/{withdrawal}/complete', [EarningsController::class, 'completeWithdrawal'])->name('withdrawals.complete');
         Route::get('/reconciliation', [EarningsController::class, 'reconciliation'])->name('reconciliation');
         Route::get('/reconciliation/export', [EarningsController::class, 'exportReconciliation'])->name('reconciliation.export');
         Route::get('/{wallet}', [EarningsController::class, 'showWallet'])->name('show');

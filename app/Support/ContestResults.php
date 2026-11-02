@@ -70,17 +70,34 @@ class ContestResults
         return round(($averageRating * 70) + ($totalLikes * 0.3), 2);
     }
 
+    /** Minimum distinct raters a submission needs before it can win a place. */
+    public static function minRatingVoters(): int
+    {
+        return max(1, (int) stylebite_app_config('contests.min_rating_voters', 10));
+    }
+
+    public static function isEligibleToWin(ContestSubmission $submission): bool
+    {
+        $submission->loadMissing('votes');
+
+        return $submission->votes->count() >= self::minRatingVoters();
+    }
+
     public static function applyScore(ContestSubmission $submission): void
     {
         $submission->loadMissing(['votes', 'post:id,like_count']);
 
-        $average = $submission->votes->isEmpty()
+        $voteCount = $submission->votes->count();
+        $average = $voteCount === 0
             ? 0.0
             : (float) $submission->votes->avg('score');
         $likes = max(0, (int) ($submission->post->like_count ?? 0));
 
         $submission->community_score = round($average, 2);
-        $submission->final_score = self::scoreFrom($average, $likes);
+        // Below the rater floor the post stays visible but cannot win.
+        $submission->final_score = $voteCount < self::minRatingVoters()
+            ? 0.0
+            : self::scoreFrom($average, $likes);
     }
 
     public static function refreshPost(int $postId): void
@@ -138,6 +155,9 @@ class ContestResults
         $places = $contest->places()->orderBy('place')->get();
         $rankedUserIds = [];
         foreach (self::rankedSubmissions($contest) as $submission) {
+            if (! self::isEligibleToWin($submission)) {
+                continue;
+            }
             $userId = (int) $submission->user_id;
             if ($userId > 0 && ! in_array($userId, $rankedUserIds, true)) {
                 $rankedUserIds[] = $userId;
@@ -434,10 +454,20 @@ class ContestResults
 
                 return $submission;
             })
-            ->sortBy([
-                ['final_score', 'desc'],
-                ['id', 'asc'],
-            ])
+            ->sort(function (ContestSubmission $left, ContestSubmission $right) {
+                $leftEligible = self::isEligibleToWin($left);
+                $rightEligible = self::isEligibleToWin($right);
+                if ($leftEligible !== $rightEligible) {
+                    return $leftEligible ? -1 : 1;
+                }
+
+                $byScore = ((float) $right->final_score) <=> ((float) $left->final_score);
+                if ($byScore !== 0) {
+                    return $byScore;
+                }
+
+                return ((int) $left->id) <=> ((int) $right->id);
+            })
             ->values();
     }
 }

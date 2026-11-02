@@ -422,6 +422,24 @@ class EarningsController extends Controller
         }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
+    /**
+     * One-tap "Done" after a manual bank / EasyPaisa / JazzCash transfer.
+     * Marks the withdrawal completed and notifies the user.
+     */
+    public function completeWithdrawal(WithdrawalRequest $withdrawal)
+    {
+        if (! in_array($withdrawal->status, ['pending', 'processing'], true)) {
+            return back()->with('status', 'Only pending or processing withdrawals can be marked as paid.');
+        }
+
+        $request = request()->merge([
+            'status' => 'completed',
+            'failure_reason' => null,
+        ]);
+
+        return $this->updateWithdrawal($request, $withdrawal);
+    }
+
     public function updateWithdrawal(Request $request, WithdrawalRequest $withdrawal)
     {
         $validated = $request->validate([
@@ -434,6 +452,7 @@ class EarningsController extends Controller
         }
 
         $original = [];
+        $previousStatus = (string) $withdrawal->status;
 
         DB::transaction(function () use ($withdrawal, $validated, &$original) {
             $withdrawal = WithdrawalRequest::query()
@@ -536,7 +555,43 @@ class EarningsController extends Controller
             ],
         ]);
 
-        return back()->with('status', 'Withdrawal updated successfully.');
+        $becameCompleted = $previousStatus !== 'completed' && $validated['status'] === 'completed';
+        if ($becameCompleted) {
+            $withdrawal->refresh();
+            $this->notifyWithdrawalPaid($withdrawal);
+        }
+
+        return back()->with(
+            'status',
+            $becameCompleted
+                ? 'Marked as paid. The user was notified that the money was transferred.'
+                : 'Withdrawal updated successfully.'
+        );
+    }
+
+    private function notifyWithdrawalPaid(WithdrawalRequest $withdrawal): void
+    {
+        $userId = (int) $withdrawal->user_id;
+        if ($userId <= 0) {
+            return;
+        }
+
+        $amount = number_format((float) $withdrawal->amount, 2).' '.$withdrawal->currency_code;
+        $account = trim((string) ($withdrawal->bank_account_number ?: $withdrawal->account_ref));
+        $body = $account !== ''
+            ? $amount.' has been transferred to your account ('.$account.').'
+            : $amount.' has been transferred to your payout account.';
+
+        stylebite_notify_user(
+            $userId,
+            auth()->id() ? (int) auth()->id() : null,
+            'withdrawal',
+            'withdrawal_request',
+            (int) $withdrawal->id,
+            'Money transferred',
+            $body,
+            '/my-earnings'
+        );
     }
 
     public function storeAdjustment(Request $request, EarningsWallet $wallet, CurrencyConverter $converter)

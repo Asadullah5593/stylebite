@@ -157,7 +157,15 @@
                                 <div class="text-muted small">{{ $withdrawal->requested_at?->format('M d, Y H:i') }}</div>
                                 <div class="text-muted extra-small">{{ $withdrawal->processed_at?->format('M d, Y H:i') ? 'Processed '.$withdrawal->processed_at->format('M d, Y H:i') : 'Not processed yet' }}</div>
                             </td>
-                            <td class="text-end" style="min-width: 280px;">
+                            <td class="text-end" style="min-width: 320px;">
+                                @if (in_array($withdrawal->status, ['pending', 'processing'], true))
+                                    <form method="POST" action="{{ route('admin.earnings.withdrawals.complete', $withdrawal) }}" class="d-inline" onsubmit="return confirm('Confirm you already sent {{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }} to this user\'s account. The user will be notified.');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-success rounded-3 px-3 me-1">
+                                            <i class="bi bi-check2-circle me-1"></i>Done
+                                        </button>
+                                    </form>
+                                @endif
                                 <button class="btn btn-sm btn-outline-dynamic rounded-3 px-3" type="button" data-bs-toggle="modal" data-bs-target="#{{ $auditModalId }}">
                                     <i class="bi bi-cash-coin me-1"></i>Audit
                                 </button>
@@ -199,11 +207,19 @@
                                                         <label class="form-label small text-muted">Failure or Rejection Reason</label>
                                                         <textarea name="failure_reason" rows="3" class="form-control border-0 bg-dark-soft rounded-3 text-muted" placeholder="Required for failed or rejected requests">{{ $withdrawal->failure_reason }}</textarea>
                                                     </div>
-                                                    <div class="d-flex justify-content-end gap-2">
+                                                    <div class="d-flex justify-content-end gap-2 flex-wrap">
                                                         <button type="button" class="btn btn-outline-light rounded-3 px-3" data-bs-dismiss="modal">Close</button>
                                                         <button type="submit" class="btn btn-primary rounded-3 px-3"><i class="bi bi-check2-circle me-1"></i>Save Update</button>
                                                     </div>
                                                 </form>
+                                                @if (in_array($withdrawal->status, ['pending', 'processing'], true))
+                                                    <form method="POST" action="{{ route('admin.earnings.withdrawals.complete', $withdrawal) }}" class="mt-3" onsubmit="return confirm('Confirm you already sent the money to this user\'s account. The user will be notified.');">
+                                                        @csrf
+                                                        <button type="submit" class="btn btn-success w-100 rounded-3">
+                                                            <i class="bi bi-check2-circle me-1"></i>Done — money sent, notify user
+                                                        </button>
+                                                    </form>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>

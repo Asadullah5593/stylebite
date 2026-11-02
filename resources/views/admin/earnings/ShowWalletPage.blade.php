@@ -215,6 +215,7 @@
                                 <th class="ps-4 text-muted small fw-bold text-uppercase py-3">Request</th>
                                 <th class="text-muted small fw-bold text-uppercase py-3">Amount</th>
                                 <th class="text-muted small fw-bold text-uppercase py-3">Status</th>
+                                <th class="text-muted small fw-bold text-uppercase py-3 text-end">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -227,9 +228,21 @@
                                     </td>
                                     <td><span class="fw-semibold">{{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }}</span></td>
                                     <td><span class="badge {{ $withdrawal->status === 'completed' ? 'bg-success-soft text-success' : ($withdrawal->status === 'processing' ? 'bg-info-soft text-info' : ($withdrawal->status === 'pending' ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger')) }} rounded-pill">{{ str($withdrawal->status)->title() }}</span></td>
+                                    <td class="text-end pe-3">
+                                        @if (in_array($withdrawal->status, ['pending', 'processing'], true))
+                                            <form method="POST" action="{{ route('admin.earnings.withdrawals.complete', $withdrawal) }}" onsubmit="return confirm('Confirm you already sent {{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }} to this user\'s account. The user will be notified.');">
+                                                @csrf
+                                                <button type="submit" class="btn btn-sm btn-success rounded-3 px-3">
+                                                    <i class="bi bi-check2-circle me-1"></i>Done
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="text-muted extra-small">—</span>
+                                        @endif
+                                    </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="3" class="text-center py-5 text-muted">No recent withdrawals found.</td></tr>
+                                <tr><td colspan="4" class="text-center py-5 text-muted">No recent withdrawals found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

@@ -598,6 +598,7 @@ class SettingsController extends Controller
                 'fields' => [
                     'contests.min_participants' => ['label' => 'Minimum Participants Allowed', 'type' => 'number', 'placeholder' => '2'],
                     'contests.max_participants' => ['label' => 'Maximum Participants Allowed', 'type' => 'number', 'placeholder' => '100000'],
+                    'contests.min_rating_voters' => ['label' => 'Minimum Raters To Win A Place', 'type' => 'number', 'placeholder' => '10'],
                 ],
             ],
             'earnings' => [
