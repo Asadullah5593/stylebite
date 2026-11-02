@@ -128,7 +128,7 @@ class Post extends StylebiteModel
      * Small badge payload for feed/profile cards: which contest this post
      * is entered in. Null when the post is not in any contest.
      *
-     * @return array{id:int,title:string,status:string}|null
+     * @return array{id:int,title:string,status:string,voting_end_at:?string,can_vote:bool}|null
      */
     public function contestBadge(): ?array
     {
@@ -149,6 +149,8 @@ class Post extends StylebiteModel
             'id' => (int) $contest->id,
             'title' => (string) $contest->title,
             'status' => (string) $contest->status,
+            'voting_end_at' => $contest->voting_end_at?->toIso8601String(),
+            'can_vote' => $this->canReceiveContestVotes(),
         ];
     }
 
@@ -163,5 +165,36 @@ class Post extends StylebiteModel
         }
 
         return $this->contestSubmissions()->exists();
+    }
+
+    /**
+     * True while this post is in a contest that still accepts community votes.
+     * Ended / completed contests keep the trophy badge but close the 1–5 bar.
+     */
+    public function canReceiveContestVotes(): bool
+    {
+        if (! $this->isInContest()) {
+            return false;
+        }
+
+        $submission = $this->relationLoaded('latestContestSubmission')
+            ? $this->latestContestSubmission
+            : $this->latestContestSubmission()->with('contest')->first();
+        $contest = $submission?->contest;
+
+        if (! $contest) {
+            return false;
+        }
+
+        $status = strtolower(trim((string) $contest->status));
+        if (in_array($status, ['completed', 'ended', 'closed', 'cancelled', 'canceled'], true)) {
+            return false;
+        }
+
+        if ($contest->voting_end_at !== null && now()->greaterThan($contest->voting_end_at)) {
+            return false;
+        }
+
+        return true;
     }
 }

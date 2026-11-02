@@ -266,6 +266,104 @@ class FeedController extends Controller
         return $this->likes($request, $postId);
     }
 
+    public function ratings(Request $request, int $postId): JsonResponse
+    {
+        $viewerUserId = (int) $request->user()->id;
+        $post = $this->findAccessiblePost($viewerUserId, $postId);
+        $page = max(1, (int) $request->integer('page', 1));
+        $perPage = min(50, max(1, (int) $request->integer('per_page', 20)));
+
+        $paginator = PostRating::query()
+            ->with('user.profile')
+            ->where('post_id', $post->id)
+            ->whereHas('user')
+            ->orderByDesc('created_at')
+            ->orderByDesc('rating_value')
+            ->orderByDesc('id')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $userIds = $paginator->getCollection()
+            ->map(fn (PostRating $rating) => (int) $rating->user_id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        $followingIds = $userIds->isEmpty()
+            ? collect()
+            : UserFollow::query()
+                ->where('follower_user_id', $viewerUserId)
+                ->whereIn('following_user_id', $userIds)
+                ->where('status', 'accepted')
+                ->whereNull('deleted_at')
+                ->pluck('following_user_id')
+                ->map(fn ($id) => (int) $id);
+
+        $followerIds = $userIds->isEmpty()
+            ? collect()
+            : UserFollow::query()
+                ->where('following_user_id', $viewerUserId)
+                ->whereIn('follower_user_id', $userIds)
+                ->where('status', 'accepted')
+                ->whereNull('deleted_at')
+                ->pluck('follower_user_id')
+                ->map(fn ($id) => (int) $id);
+
+        $ratings = $paginator->getCollection()->map(function (PostRating $rating) use (
+            $viewerUserId,
+            $followingIds,
+            $followerIds,
+        ) {
+            $user = $rating->user;
+            $userId = (int) ($user?->id ?? $rating->user_id);
+            $isSelf = $userId === $viewerUserId;
+            $isFollowing = ! $isSelf && $followingIds->contains($userId);
+            $followsYou = ! $isSelf && $followerIds->contains($userId);
+
+            return [
+                'id' => $userId,
+                'username' => $user?->username,
+                'display_name' => $user?->profile?->display_name ?? $user?->full_name,
+                'full_name' => $user?->full_name,
+                'avatar_url' => stylebite_asset_url($user?->avatar_url),
+                'is_verified_badge' => (bool) ($user?->profile?->is_verified_badge ?? false),
+                'is_self' => $isSelf,
+                'is_following' => $isFollowing,
+                'follows_you' => $followsYou,
+                'is_mutual_follow' => $isFollowing && $followsYou,
+                'relationship' => [
+                    'is_following' => $isFollowing,
+                    'follows_you' => $followsYou,
+                    'is_mutual_follow' => $isFollowing && $followsYou,
+                ],
+                'rating_value' => max(1, min(5, (int) $rating->rating_value)),
+                'rated_at' => ApiDateTime::iso($rating->created_at),
+            ];
+        })->values();
+
+        return response()->json([
+            'status_code' => 1,
+            'message' => 'Post ratings fetched successfully.',
+            'rating_count' => max(0, (int) $post->rating_count),
+            'rating_avg' => round((float) ($post->rating_avg ?? 0), 1),
+            'ratings' => $ratings,
+            'raters' => $ratings,
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'has_more_pages' => $paginator->hasMorePages(),
+            ],
+        ]);
+    }
+
+    public function reelRatings(Request $request, int $postId): JsonResponse
+    {
+        $post = $this->findAccessiblePost($request->user()->id, $postId);
+        $this->ensureVideoPost($post);
+
+        return $this->ratings($request, $postId);
+    }
+
     public function toggleLike(Request $request, int $postId): JsonResponse
     {
         $user = $request->user();
@@ -1149,7 +1247,7 @@ class FeedController extends Controller
 
     private function canVoteOnPost(Post $post): bool
     {
-        return $post->isInContest();
+        return $post->canReceiveContestVotes();
     }
 
     private function refreshPostRatingStats(Post $post): void
@@ -1382,7 +1480,7 @@ class FeedController extends Controller
             'allow_comments' => $post->allow_comments,
             'allow_shares' => $post->allow_shares,
             'rating_enabled' => $this->canVoteOnPost($post),
-            'in_contest' => $this->canVoteOnPost($post),
+            'in_contest' => $post->isInContest(),
             'contest' => $post->contestBadge(),
             'is_contest_winner' => $isContestWinner,
             'posted_at' => ApiDateTime::iso($post->posted_at),
@@ -1501,7 +1599,7 @@ class FeedController extends Controller
             'allow_comments' => $post->allow_comments,
             'allow_shares' => $post->allow_shares,
             'rating_enabled' => $this->canVoteOnPost($post),
-            'in_contest' => $this->canVoteOnPost($post),
+            'in_contest' => $post->isInContest(),
             'contest' => $post->contestBadge(),
             'dish_name' => $post->dish_name,
             'restaurant' => $post->restaurant,

@@ -515,7 +515,7 @@ class ProfileController extends Controller
                     ->all(),
                 'created_at' => ApiDateTime::iso($post->created_at),
                 'in_contest' => $post->isInContest(),
-                'rating_enabled' => $post->isInContest(),
+                'rating_enabled' => $post->canReceiveContestVotes(),
                 'contest' => $post->contestBadge(),
             ])->values(),
             $this->paginationPayload($paginator),
@@ -573,7 +573,7 @@ class ProfileController extends Controller
                         'share_count' => (int) $savedPost->post->share_count,
                         'save_count' => (int) $savedPost->post->save_count,
                         'in_contest' => $savedPost->post->isInContest(),
-                        'rating_enabled' => $savedPost->post->isInContest(),
+                        'rating_enabled' => $savedPost->post->canReceiveContestVotes(),
                         'contest' => $savedPost->post->contestBadge(),
                         'media' => $savedPost->post->media->map(fn ($media) => [
                             'id' => $media->id,

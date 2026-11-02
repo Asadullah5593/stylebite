@@ -57,6 +57,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/feed/posts/{postId}', [FeedController::class, 'show']);
     Route::get('/feed/posts/{postId}/comments', [FeedController::class, 'comments']);
     Route::get('/feed/posts/{postId}/likes', [FeedController::class, 'likes']);
+    Route::get('/feed/posts/{postId}/ratings', [FeedController::class, 'ratings']);
     Route::post('/feed/posts/{postId}/like', [FeedController::class, 'toggleLike']);
     Route::post('/feed/posts/{postId}/save', [FeedController::class, 'toggleSave']);
     Route::post('/feed/posts/{postId}/share', [FeedController::class, 'share']);
@@ -72,6 +73,7 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/reels/{postId}', [FeedController::class, 'reelShow']);
     Route::get('/reels/{postId}/comments', [FeedController::class, 'reelComments']);
     Route::get('/reels/{postId}/likes', [FeedController::class, 'reelLikes']);
+    Route::get('/reels/{postId}/ratings', [FeedController::class, 'reelRatings']);
     Route::post('/reels/{postId}/like', [FeedController::class, 'toggleLike']);
     Route::post('/reels/{postId}/save', [FeedController::class, 'toggleSave']);
     Route::post('/reels/{postId}/share', [FeedController::class, 'share']);
