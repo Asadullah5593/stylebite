@@ -556,15 +556,25 @@ class EarningsController extends Controller
         ]);
 
         $becameCompleted = $previousStatus !== 'completed' && $validated['status'] === 'completed';
+        $notified = false;
         if ($becameCompleted) {
             $withdrawal->refresh();
-            $this->notifyWithdrawalPaid($withdrawal);
+            // Notify after the wallet write commits. Never fail the payout if
+            // push/notification insert blows up.
+            try {
+                $this->notifyWithdrawalPaid($withdrawal);
+                $notified = true;
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
         }
 
         return back()->with(
             'status',
             $becameCompleted
-                ? 'Marked as paid. The user was notified that the money was transferred.'
+                ? ($notified
+                    ? 'Marked as paid. The user was notified that the money was transferred.'
+                    : 'Marked as paid. Notification could not be sent — check logs.')
                 : 'Withdrawal updated successfully.'
         );
     }
@@ -582,14 +592,16 @@ class EarningsController extends Controller
             ? $amount.' has been transferred to your account ('.$account.').'
             : $amount.' has been transferred to your payout account.';
 
+        // notifications.type / entity_type are MySQL enums — only `system`
+        // (not `withdrawal`) is allowed. Title/body/action_url carry meaning.
         stylebite_notify_user(
             $userId,
-            auth()->id() ? (int) auth()->id() : null,
-            'withdrawal',
-            'withdrawal_request',
+            null,
+            'system',
+            'system',
             (int) $withdrawal->id,
             'Money transferred',
-            $body,
+            \Illuminate\Support\Str::limit($body, 500, ''),
             '/my-earnings'
         );
     }
