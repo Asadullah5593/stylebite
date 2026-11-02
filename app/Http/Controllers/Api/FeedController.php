@@ -1741,6 +1741,9 @@ class FeedController extends Controller
             'type' => ['nullable', 'string', 'in:outfit,food'],
             'tab' => ['nullable', 'string', 'in:style,bite'],
             'discover_type' => ['nullable', 'string', 'in:for_you,nearby'],
+            // Client session seed — same seed keeps pagination stable; a new
+            // seed on each app open rotates which posts appear first.
+            'feed_seed' => ['nullable', 'integer', 'min:1', 'max:2147483647'],
             'lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:lng'],
             'lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:lat'],
         ], [
@@ -1803,10 +1806,22 @@ class FeedController extends Controller
 
             $this->applyNearbyScope($query, $viewerCoords[0], $viewerCoords[1], $nearbyRadiusKm);
         } else {
-            $query->latest('published_at')->latest('id');
+            $feedSeed = (int) ($validated['feed_seed'] ?? 0);
+            if ($feedSeed > 0) {
+                // Deterministic shuffle for this session (page 2/3 stay consistent).
+                $query->orderByRaw(
+                    'CRC32(CONCAT(posts.id, ?)) ASC',
+                    [(string) $feedSeed]
+                )->orderByDesc('posts.id');
+            } else {
+                $query->latest('published_at')->latest('id');
+            }
         }
 
-        $winnerPost = ! $videoOnly && ! $wantsNearby && $page === 1
+        $feedSeed = (int) ($validated['feed_seed'] ?? 0); // also read when nearby
+        // When the client sends a session seed, do not force the same contest
+        // winner onto every cold start — that is what made the top feel stuck.
+        $winnerPost = ! $videoOnly && ! $wantsNearby && $page === 1 && $feedSeed <= 0
             ? $this->latestWinningFeedPost((int) $user->id, $requestedType)
             : null;
         if ($winnerPost) {
