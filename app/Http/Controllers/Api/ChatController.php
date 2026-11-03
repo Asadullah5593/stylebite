@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\ConversationMember;
+use App\Models\MediaUpload;
 use App\Models\Message;
+use App\Models\MessageAttachment;
 use App\Models\MessageReaction;
 use App\Models\MessageRead;
 use App\Models\User;
@@ -208,7 +210,7 @@ class ChatController extends Controller
         $page = (int) ($validated['page'] ?? (intdiv($skip, $perPage) + 1));
 
         $baseQuery = Message::query()
-            ->with(['sender.profile', 'reactions.user'])
+            ->with(['sender.profile', 'reactions.user', 'attachments'])
             ->where('conversation_id', $conversation->id)
             ->where('is_deleted', false);
 
@@ -247,9 +249,40 @@ class ChatController extends Controller
 
     public function sendMessage(Request $request, int $conversationId): JsonResponse
     {
+        $hasMedia = $request->hasFile('media') || $request->hasFile('image') || $request->hasFile('video');
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:5000'],
+            'body' => [$hasMedia ? 'nullable' : 'required', 'string', 'max:5000'],
+            'media' => [
+                'nullable',
+                'file',
+                'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,mkv,webm,m4v',
+                'max:81920',
+            ],
+            'image' => [
+                'nullable',
+                'file',
+                'mimes:jpg,jpeg,png,webp,gif,mp4,mov,avi,mkv,webm,m4v',
+                'max:81920',
+            ],
+            'video' => [
+                'nullable',
+                'file',
+                'mimes:mp4,mov,avi,mkv,webm,m4v',
+                'max:81920',
+            ],
         ]);
+
+        $body = trim((string) ($validated['body'] ?? ''));
+        $mediaFile = $request->file('media')
+            ?? $request->file('image')
+            ?? $request->file('video');
+
+        if ($mediaFile === null && $body === '') {
+            return response()->json([
+                'status_code' => 0,
+                'message' => 'Message body is required.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         $viewer = $request->user();
         $conversation = $this->memberConversationOrFail($viewer->id, $conversationId);
@@ -293,20 +326,60 @@ class ChatController extends Controller
             }
         }
 
-        $message = DB::transaction(function () use ($conversation, $viewer, $validated, $isPending, $isRequester): Message {
+        $message = DB::transaction(function () use ($conversation, $viewer, $body, $isPending, $isRequester, $mediaFile): Message {
             if ($isPending && ! $isRequester) {
                 $conversation->forceFill([
                     'request_status' => 'accepted',
                 ])->save();
             }
 
+            $mediaType = 'image';
+            $messageType = 'text';
+            if ($mediaFile !== null) {
+                $mime = strtolower((string) ($mediaFile->getMimeType() ?: ''));
+                $extension = strtolower((string) ($mediaFile->getClientOriginalExtension() ?: ''));
+                $isVideo = str_starts_with($mime, 'video/')
+                    || in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'], true);
+                $mediaType = $isVideo ? 'video' : 'image';
+                $messageType = $mediaType;
+            }
+
             $message = Message::query()->create([
                 'conversation_id' => $conversation->id,
                 'sender_user_id' => $viewer->id,
-                'message_type' => 'text',
-                'body' => $validated['body'],
+                'message_type' => $messageType,
+                'body' => $body !== '' ? $body : null,
                 'sent_at' => now(),
             ]);
+
+            if ($mediaFile !== null) {
+                $uploaded = stylebite_upload_file($mediaFile, 'chats/'.$conversation->id);
+
+                $upload = MediaUpload::create([
+                    'user_id' => $viewer->id,
+                    'source' => 'gallery',
+                    'upload_type' => 'message_attachment',
+                    'media_type' => $mediaType,
+                    'original_file_name' => $uploaded['original_file_name'],
+                    'file_path' => $uploaded['file_path'],
+                    'file_url' => $uploaded['file_url'],
+                    'mime_type' => $uploaded['mime_type'],
+                    'size_bytes' => $uploaded['size_bytes'],
+                    'storage_type' => 'local',
+                    'upload_status' => 'ready',
+                    'uploaded_at' => now(),
+                ]);
+
+                MessageAttachment::create([
+                    'message_id' => $message->id,
+                    'upload_id' => $upload->id,
+                    'media_type' => $mediaType,
+                    'file_url' => $uploaded['file_url'],
+                    'thumbnail_url' => $mediaType === 'image' ? $uploaded['file_url'] : null,
+                    'mime_type' => $uploaded['mime_type'],
+                    'size_bytes' => $uploaded['size_bytes'],
+                ]);
+            }
 
             $conversation->forceFill([
                 'last_message_id' => $message->id,
@@ -328,20 +401,32 @@ class ChatController extends Controller
             ->first(fn (ConversationMember $member) => (int) $member->user_id !== (int) $viewer->id)?->user;
 
         if ($recipient) {
+            $message->loadMissing('attachments');
             [$notifyBody, $notifyImage] = $this->notificationPreview(
-                (string) $message->body,
-                $viewer->avatar_url
+                (string) ($message->body ?? ''),
+                $viewer->avatar_url,
+                (string) $message->message_type,
+                $message->attachments->first()?->file_url
             );
+            $senderName = trim((string) ($viewer->full_name ?: $viewer->username));
+            $senderUsername = trim((string) $viewer->username);
             stylebite_notify_user(
                 $recipient->id,
                 $viewer->id,
                 'message',
                 'message',
                 $conversation->id,
-                $viewer->full_name ?: $viewer->username,
+                $senderName !== '' ? $senderName.' sent you a message' : 'New message',
                 $notifyBody,
-                '/chat/'.$conversation->id,
-                $notifyImage
+                '/chats/'.rawurlencode($senderUsername).'?conversation_id='.$conversation->id,
+                $notifyImage,
+                [
+                    'username' => $senderUsername,
+                    'sender_username' => $senderUsername,
+                    'chat_username' => $senderUsername,
+                    'conversation_id' => (string) $conversation->id,
+                    'message' => $notifyBody,
+                ]
             );
         }
 
@@ -352,7 +437,7 @@ class ChatController extends Controller
             'message' => 'Message sent successfully.',
             'message_data' => $this->messagePayload(
                 $viewer->id,
-                $message->fresh(['sender.profile', 'reactions.user']),
+                $message->fresh(['sender.profile', 'reactions.user', 'attachments']),
                 $conversation
             ),
             'chat' => $this->conversationPayload($viewer->id, $conversation),
@@ -455,7 +540,7 @@ class ChatController extends Controller
         $conversation->load(['members.user.profile', 'lastMessage']);
 
         $messages = Message::query()
-            ->with(['sender.profile', 'reactions.user'])
+            ->with(['sender.profile', 'reactions.user', 'attachments'])
             ->where('conversation_id', $conversation->id)
             ->where('is_deleted', false)
             ->where('id', '>', (int) $validated['after_message_id'])
@@ -623,7 +708,7 @@ class ChatController extends Controller
             'id' => $conversation->id,
             'is_messaging_stopped' => $conversation->messaging_stopped_at !== null,
             'messaging_stopped_at' => optional($conversation->messaging_stopped_at)?->toIso8601String(),
-            'last_message' => $conversation->lastMessage?->body,
+            'last_message' => $this->lastMessagePreview($conversation->lastMessage),
             'last_message_time' => optional($conversation->last_message_at)?->toIso8601String(),
             'unread_count' => $unreadCount,
             'is_blocked_by_me' => (bool) $blockFlags['me'],
@@ -665,7 +750,7 @@ class ChatController extends Controller
             $status = 'delivered';
         }
 
-        $message->loadMissing('reactions.user');
+        $message->loadMissing(['reactions.user', 'attachments']);
         $reactionGroups = [];
         $myReaction = null;
         foreach ($message->reactions as $reaction) {
@@ -687,6 +772,20 @@ class ChatController extends Controller
             }
         }
 
+        $attachments = $message->attachments->map(function (MessageAttachment $attachment) {
+            return [
+                'id' => $attachment->id,
+                'media_type' => $attachment->media_type,
+                'file_url' => stylebite_asset_url($attachment->file_url),
+                'thumbnail_url' => stylebite_asset_url($attachment->thumbnail_url ?: $attachment->file_url),
+                'mime_type' => $attachment->mime_type,
+                'width' => $attachment->width,
+                'height' => $attachment->height,
+            ];
+        })->values()->all();
+
+        $primaryAttachment = $attachments[0] ?? null;
+
         return [
             'id' => $message->id,
             'conversation_id' => $message->conversation_id,
@@ -694,6 +793,9 @@ class ChatController extends Controller
             'sender_name' => $message->sender?->profile?->display_name ?? $message->sender?->full_name,
             'body' => $message->body,
             'message_type' => $message->message_type,
+            'media_url' => $primaryAttachment['file_url'] ?? null,
+            'thumbnail_url' => $primaryAttachment['thumbnail_url'] ?? null,
+            'attachments' => $attachments,
             'sent_at' => optional($message->sent_at)?->toIso8601String(),
             'created_at' => optional($message->sent_at ?? $message->created_at)?->toIso8601String(),
             'is_mine' => $isMine,
@@ -709,6 +811,24 @@ class ChatController extends Controller
                 'name' => $message->sender?->profile?->display_name ?? $message->sender?->full_name,
             ],
         ];
+    }
+
+    private function lastMessagePreview(?Message $message): ?string
+    {
+        if ($message === null) {
+            return null;
+        }
+
+        $body = trim((string) ($message->body ?? ''));
+        if ($body !== '') {
+            return $body;
+        }
+
+        return match ((string) $message->message_type) {
+            'image' => 'Photo',
+            'video' => 'Video',
+            default => $body !== '' ? $body : null,
+        };
     }
 
     private function setMessagingState(Request $request, int $conversationId, bool $shouldStop): JsonResponse
@@ -1013,11 +1133,44 @@ class ChatController extends Controller
     /**
      * @return array{0: string, 1: ?string}
      */
-    private function notificationPreview(string $body, ?string $avatarUrl): array
-    {
+    private function notificationPreview(
+        string $body,
+        ?string $avatarUrl,
+        string $messageType = 'text',
+        ?string $mediaUrl = null,
+    ): array {
+        if ($messageType === 'image') {
+            $trimmed = trim($body);
+
+            return [
+                $this->truncateNotificationSnippet(
+                    $trimmed !== '' ? $trimmed : 'Sent a photo'
+                ),
+                stylebite_asset_url($mediaUrl) ?: $avatarUrl,
+            ];
+        }
+
+        if ($messageType === 'video') {
+            $trimmed = trim($body);
+
+            return [
+                $this->truncateNotificationSnippet(
+                    $trimmed !== '' ? $trimmed : 'Sent a video'
+                ),
+                stylebite_asset_url($mediaUrl) ?: $avatarUrl,
+            ];
+        }
+
         $prefix = 'sbshare:v1:';
         if (! str_starts_with($body, $prefix)) {
-            return [$body, $avatarUrl];
+            $trimmed = trim($body);
+
+            return [
+                $this->truncateNotificationSnippet(
+                    $trimmed !== '' ? $trimmed : 'Sent you a message'
+                ),
+                $avatarUrl,
+            ];
         }
 
         $decoded = json_decode(substr($body, strlen($prefix)), true);
@@ -1028,5 +1181,25 @@ class ChatController extends Controller
             $kind === 'reel' ? 'Shared a reel' : 'Shared a post',
             $preview !== '' ? $preview : $avatarUrl,
         ];
+    }
+
+    private function truncateNotificationSnippet(string $text, int $maxWords = 12, int $maxChars = 90): string
+    {
+        $normalized = preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text);
+        if ($normalized === '') {
+            return 'Sent you a message';
+        }
+
+        $words = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $snippet = $normalized;
+        if (count($words) > $maxWords) {
+            $snippet = implode(' ', array_slice($words, 0, $maxWords)).'…';
+        }
+
+        if (mb_strlen($snippet) > $maxChars) {
+            $snippet = rtrim(mb_substr($snippet, 0, $maxChars - 1)).'…';
+        }
+
+        return $snippet;
     }
 }

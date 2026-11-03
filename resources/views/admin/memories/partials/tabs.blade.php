@@ -1,6 +1,7 @@
 @php
     $tabs = [
-        ['route' => 'admin.memories.memories', 'key' => 'memories', 'label' => 'Memories'],
+        ['route' => 'admin.memories.users', 'key' => 'memory_users', 'label' => 'By User'],
+        ['route' => 'admin.memories.memories', 'key' => 'memories', 'label' => 'All Memories'],
         ['route' => 'admin.memories.memory-media', 'key' => 'memory_media', 'label' => 'Media'],
         ['route' => 'admin.memories.memory-comments', 'key' => 'memory_comments', 'label' => 'Comments'],
         ['route' => 'admin.memories.saved_memories', 'key' => 'saved_memories', 'label' => 'Saved'],

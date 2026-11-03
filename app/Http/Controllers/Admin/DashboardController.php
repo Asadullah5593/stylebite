@@ -10,6 +10,7 @@ use App\Models\EarningTransaction;
 use App\Models\MediaUpload;
 use App\Models\Memory;
 use App\Models\Post;
+use App\Models\Profile;
 use App\Models\PushNotificationLog;
 use App\Models\Report;
 use App\Models\User;
@@ -62,20 +63,75 @@ class DashboardController extends Controller
         $mediaByType = $this->mediaByType();
         $earningsOverview = $this->earningsOverview($now);
         $reportReasons = $this->reportReasons();
-        $statusSnapshots = $this->statusSnapshots($stats);
         $recentReports = $this->recentReports();
         $withdrawalQueue = $this->withdrawalQueue();
         $recentUsers = $this->recentUsers();
         $recentActivity = $this->recentActivity();
         $actionCards = $this->actionCards($now);
 
+        $pendingPrizes = EarningTransaction::query()
+            ->where('source_type', 'contest_reward')
+            ->where('transaction_type', 'credit')
+            ->where('status', 'pending')
+            ->count();
+
+        $pendingVerification = Profile::where('verification_status', 'pending')->count();
+
         $statCards = [
-            ['label' => 'Total Users', 'value' => number_format($stats['totalUsers']), 'sub' => $stats['activeUsers'].' active', 'delta' => $deltas['users'], 'icon' => 'bi-people', 'accent' => 'primary'],
-            ['label' => 'Posts', 'value' => number_format($stats['totalPosts']), 'sub' => $stats['publishedPosts'].' published', 'delta' => $deltas['posts'], 'icon' => 'bi-file-earmark-text', 'accent' => 'info'],
-            ['label' => 'Memories', 'value' => number_format($stats['totalMemories']), 'sub' => $stats['favoriteMemories'].' favorites', 'delta' => $deltas['memories'], 'icon' => 'bi-images', 'accent' => 'primary'],
-            ['label' => 'Active Contests', 'value' => number_format($stats['activeContests']), 'sub' => '', 'delta' => $deltas['contests'], 'icon' => 'bi-trophy', 'accent' => 'warning'],
-            ['label' => 'Open Reports', 'value' => number_format($stats['openReports']), 'sub' => 'Needs moderation follow-up', 'delta' => $deltas['reports'], 'icon' => 'bi-shield-exclamation', 'accent' => 'danger'],
-            ['label' => 'Total Balance', 'value' => '$'.number_format($stats['totalBalance'], 0), 'sub' => '', 'delta' => $deltas['balance'], 'icon' => 'bi-wallet2', 'accent' => 'success'],
+            [
+                'label' => 'Total Users',
+                'value' => number_format($stats['totalUsers']),
+                'sub' => $stats['activeUsers'].' active',
+                'delta' => $deltas['users'],
+                'icon' => 'bi-people',
+                'accent' => 'primary',
+                'route' => route('admin.users.all_users'),
+            ],
+            [
+                'label' => 'Posts',
+                'value' => number_format($stats['totalPosts']),
+                'sub' => $stats['publishedPosts'].' published',
+                'delta' => $deltas['posts'],
+                'icon' => 'bi-file-earmark-text',
+                'accent' => 'info',
+                'route' => route('admin.posts.all_posts'),
+            ],
+            [
+                'label' => 'Memories',
+                'value' => number_format($stats['totalMemories']),
+                'sub' => $stats['favoriteMemories'].' favorites',
+                'delta' => $deltas['memories'],
+                'icon' => 'bi-images',
+                'accent' => 'primary',
+                'route' => route('admin.memories.users'),
+            ],
+            [
+                'label' => 'Active Contests',
+                'value' => number_format($stats['activeContests']),
+                'sub' => number_format($pendingPrizes).' prizes pending',
+                'delta' => $deltas['contests'],
+                'icon' => 'bi-trophy',
+                'accent' => 'warning',
+                'route' => route('admin.contests.contests'),
+            ],
+            [
+                'label' => 'Open Reports',
+                'value' => number_format($stats['openReports']),
+                'sub' => number_format($pendingVerification).' verification pending',
+                'delta' => $deltas['reports'],
+                'icon' => 'bi-shield-exclamation',
+                'accent' => 'danger',
+                'route' => route('admin.moderation.reports', ['status' => 'open']),
+            ],
+            [
+                'label' => 'Total Balance',
+                'value' => number_format($stats['totalBalance'], 0),
+                'sub' => 'Available across wallets',
+                'delta' => $deltas['balance'],
+                'icon' => 'bi-wallet2',
+                'accent' => 'success',
+                'route' => route('admin.earnings.wallets'),
+            ],
         ];
 
         return view('admin.dashboard', compact(
@@ -85,7 +141,6 @@ class DashboardController extends Controller
             'mediaByType',
             'earningsOverview',
             'reportReasons',
-            'statusSnapshots',
             'recentReports',
             'withdrawalQueue',
             'recentUsers',
@@ -197,40 +252,6 @@ class DashboardController extends Controller
             ]);
     }
 
-    private function statusSnapshots(array $stats): array
-    {
-        return [
-            [
-                'label' => 'Pending Withdrawals',
-                'value' => number_format($stats['pendingWithdrawals']),
-                'hint' => 'Finance queue awaiting action',
-                'route' => route('admin.earnings.withdrawals'),
-                'icon' => 'bi-cash-stack',
-            ],
-            [
-                'label' => 'Failed Pushes',
-                'value' => number_format($stats['failedPushes']),
-                'hint' => 'Delivery failures in the last 24 hours',
-                'route' => route('admin.notifications.push_logs'),
-                'icon' => 'bi-bell-slash',
-            ],
-            [
-                'label' => 'Open Reports',
-                'value' => number_format($stats['openReports']),
-                'hint' => 'Open or under review moderation items',
-                'route' => route('admin.moderation.reports'),
-                'icon' => 'bi-flag',
-            ],
-            [
-                'label' => 'Banned Users',
-                'value' => number_format(User::where('status', 'banned')->count()),
-                'hint' => 'Restricted accounts currently in effect',
-                'route' => route('admin.users.all_users', ['status' => 'banned']),
-                'icon' => 'bi-person-lock',
-            ],
-        ];
-    }
-
     private function recentReports()
     {
         return Report::query()
@@ -305,6 +326,12 @@ class DashboardController extends Controller
 
     private function actionCards(CarbonImmutable $now)
     {
+        $pendingPrizes = EarningTransaction::query()
+            ->where('source_type', 'contest_reward')
+            ->where('transaction_type', 'credit')
+            ->where('status', 'pending')
+            ->count();
+
         return collect([
             [
                 'label' => 'Posts under review',
@@ -312,13 +339,37 @@ class DashboardController extends Controller
                 'urgency' => 'med',
                 'hint' => 'Hidden until moderator decision',
                 'icon' => 'bi-shield-check',
-                'route' => route('admin.posts.all_posts'),
+                'route' => route('admin.posts.all_posts', ['status' => 'under_review']),
+            ],
+            [
+                'label' => 'Open reports',
+                'count' => Report::whereIn('status', ['open', 'under_review'])->count(),
+                'urgency' => 'high',
+                'hint' => 'Moderation items needing follow-up',
+                'icon' => 'bi-flag',
+                'route' => route('admin.moderation.reports', ['status' => 'open']),
+            ],
+            [
+                'label' => 'Verification pending',
+                'count' => Profile::where('verification_status', 'pending')->count(),
+                'urgency' => 'med',
+                'hint' => 'Badge requests awaiting approval',
+                'icon' => 'bi-patch-check',
+                'route' => route('admin.users.verification_requests', ['status' => 'pending']),
+            ],
+            [
+                'label' => 'Contest prizes',
+                'count' => $pendingPrizes,
+                'urgency' => 'high',
+                'hint' => 'Pending rewards to release',
+                'icon' => 'bi-trophy-fill',
+                'route' => route('admin.earnings.contest_prizes', ['status' => 'pending']),
             ],
             [
                 'label' => 'Pending withdrawals',
                 'count' => WithdrawalRequest::whereIn('status', ['pending', 'processing'])->count(),
                 'urgency' => 'med',
-                'hint' => 'Approve or reject payouts',
+                'hint' => 'Approve or mark Done after payout',
                 'icon' => 'bi-wallet2',
                 'route' => route('admin.earnings.withdrawals'),
             ],
@@ -330,14 +381,7 @@ class DashboardController extends Controller
                 'icon' => 'bi-bell-slash',
                 'route' => route('admin.notifications.push_logs'),
             ],
-            [
-                'label' => 'Banned users',
-                'count' => User::where('status', 'banned')->count(),
-                'urgency' => 'low',
-                'hint' => 'Currently restricted from app',
-                'icon' => 'bi-person',
-                'route' => route('admin.users.all_users', ['status' => 'banned']),
-            ],
-        ]);
+        ])->filter(fn (array $card) => ($card['count'] ?? 0) > 0)
+            ->values();
     }
 }

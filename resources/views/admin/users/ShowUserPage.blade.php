@@ -9,6 +9,7 @@
     $hasVerifiedBadge = (bool) ($user->profile?->is_verified_badge)
         || $user->profileBadges->contains(fn ($badge) => $badge->badge_key === 'verified_user');
     $verificationStatus = $user->profile?->verification_status ?? 'none';
+    $monetizationStatus = $user->profile?->monetization_status ?? 'none';
     $assignedBadgeKeys = $user->profileBadges->pluck('badge_key')->all();
 @endphp
 
@@ -65,6 +66,22 @@
                         @method('PATCH')
                         <button class="btn btn-outline-danger rounded-3" type="submit">
                             <i class="bi bi-x-circle me-2"></i>Reject Verification
+                        </button>
+                    </form>
+                @endif
+                @if ($monetizationStatus === 'pending')
+                    <form method="POST" action="{{ route('admin.users.monetization.approve', $user) }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-outline-success rounded-3" type="submit">
+                            <i class="bi bi-cash-coin me-2"></i>Approve Monetization
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ route('admin.users.monetization.reject', $user) }}">
+                        @csrf
+                        @method('PATCH')
+                        <button class="btn btn-outline-danger rounded-3" type="submit">
+                            <i class="bi bi-x-circle me-2"></i>Reject Monetization
                         </button>
                     </form>
                 @endif
@@ -174,6 +191,10 @@
                     <div class="d-flex justify-content-between align-items-center py-2 border-bottom border-white-05">
                         <span>Verification Request</span>
                         <span class="badge {{ $verificationStatus === 'pending' ? 'bg-warning-soft text-warning' : ($verificationStatus === 'approved' ? 'bg-success-soft text-success' : ($verificationStatus === 'rejected' ? 'bg-danger-soft text-danger' : 'bg-secondary-soft text-muted')) }} rounded-pill">{{ str($verificationStatus)->title() }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom border-white-05">
+                        <span>Monetization</span>
+                        <span class="badge {{ $monetizationStatus === 'pending' ? 'bg-warning-soft text-warning' : ($monetizationStatus === 'approved' ? 'bg-success-soft text-success' : ($monetizationStatus === 'rejected' ? 'bg-danger-soft text-danger' : 'bg-secondary-soft text-muted')) }} rounded-pill">{{ str($monetizationStatus)->title() }}</span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center border-bottom border-white-05 pb-2">
                         <span>Total Badges</span>

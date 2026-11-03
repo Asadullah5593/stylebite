@@ -12,14 +12,10 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Earnings</h1>
-        <p class="text-muted small mb-0">Credits, debits, payout links, and transaction metadata preview</p>
+        <p class="text-muted small mb-0">Transactions — credits, debits, payout links, and metadata preview</p>
     </div>
 
     @include('admin.earnings.partials.tabs')
-
-    @if (session('status'))
-        <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
-    @endif
 
     @include('admin.earnings.partials.pending-prizes-alert')
 

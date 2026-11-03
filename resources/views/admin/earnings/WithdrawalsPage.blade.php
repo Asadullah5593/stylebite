@@ -12,14 +12,10 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Earnings</h1>
-        <p class="text-muted small mb-0">Withdrawal requests with bank details and payout review controls</p>
+        <p class="text-muted small mb-0">Withdrawals — bank details and payout review controls</p>
     </div>
 
     @include('admin.earnings.partials.tabs')
-
-    @if (session('status'))
-        <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
-    @endif
 
     <div class="row g-3 mb-4">
         <div class="col-6 col-xl-2">

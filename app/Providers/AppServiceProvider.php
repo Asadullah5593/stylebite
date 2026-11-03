@@ -101,6 +101,45 @@ class AppServiceProvider extends ServiceProvider
             $view->with('settingsTabCounts', SettingsController::tabCounts());
         });
 
+        View::composer('admin.partials.sidebar', function ($view) {
+            $view->with('sidebarCounts', once(function () {
+                $userTabs = UserController::tabCounts();
+                $socialTabs = SocialController::tabCounts();
+                $postTabs = PostController::tabCounts();
+                $commentTabs = CommentController::tabCounts();
+                $engagementTabs = EngagementController::tabCounts();
+                $mediaTabs = MediaController::tabCounts();
+                $memoryTabs = MemoryController::tabCounts();
+                $messagingTabs = MessagingController::tabCounts();
+                $notificationTabs = NotificationController::tabCounts();
+                $contestTabs = ContestController::tabCounts();
+                $earningsTabs = EarningsController::tabCounts();
+
+                return [
+                    'users' => $userTabs['all_users'] ?? 0,
+                    'verification_requests' => $userTabs['verification_requests'] ?? 0,
+                    'monetization_requests' => $userTabs['monetization_requests'] ?? 0,
+                    'social' => ($socialTabs['follows'] ?? 0) + ($socialTabs['blocks'] ?? 0),
+                    'posts' => $postTabs['all_posts'] ?? 0,
+                    'comments' => $commentTabs['comments'] ?? 0,
+                    'engagement' => ($engagementTabs['post_likes'] ?? 0)
+                        + ($engagementTabs['shares'] ?? 0)
+                        + ($engagementTabs['saved'] ?? 0),
+                    'media' => $mediaTabs['uploads'] ?? 0,
+                    'memories' => $memoryTabs['memories'] ?? 0,
+                    'messaging' => $messagingTabs['conversations'] ?? 0,
+                    'notifications' => $notificationTabs['notifications'] ?? 0,
+                    'moderation' => Report::query()
+                        ->whereIn('status', ['open', 'under_review'])
+                        ->count(),
+                    'contests' => $contestTabs['contests'] ?? 0,
+                    'contest_prizes' => $earningsTabs['contest_prizes'] ?? 0,
+                    'earnings' => $earningsTabs['wallets'] ?? 0,
+                    'settings' => SettingsController::tabCounts()['configs'] ?? 0,
+                ];
+            }));
+        });
+
         View::composer('admin.partials.header', function ($view) {
             $adminUser = auth()->user();
 
@@ -126,10 +165,10 @@ class AppServiceProvider extends ServiceProvider
 
             $operationalAlerts = collect([
                 [
-                    'count' => Report::where('status', 'open')->count(),
+                    'count' => Report::whereIn('status', ['open', 'under_review'])->count(),
                     'title' => 'open reports awaiting review',
                     'time' => 'Moderation queue',
-                    'route' => route('admin.moderation.reports'),
+                    'route' => route('admin.moderation.reports', ['status' => 'open']),
                     'kind' => 'ops',
                 ],
                 [
@@ -137,6 +176,20 @@ class AppServiceProvider extends ServiceProvider
                     'title' => 'verification requests awaiting review',
                     'time' => 'Users queue',
                     'route' => route('admin.users.verification_requests', ['status' => 'pending']),
+                    'kind' => 'ops',
+                ],
+                [
+                    'count' => Profile::where('monetization_status', 'pending')->count(),
+                    'title' => 'monetization requests awaiting review',
+                    'time' => 'Monetization queue',
+                    'route' => route('admin.users.monetization_requests', ['status' => 'pending']),
+                    'kind' => 'ops',
+                ],
+                [
+                    'count' => EarningsController::tabCounts()['contest_prizes'] ?? 0,
+                    'title' => 'contest prizes awaiting release',
+                    'time' => 'Finance queue',
+                    'route' => route('admin.earnings.contest_prizes', ['status' => 'pending']),
                     'kind' => 'ops',
                 ],
                 [
@@ -163,7 +216,7 @@ class AppServiceProvider extends ServiceProvider
 
             $headerNotifications = $personalNotifications
                 ->concat($operationalAlerts)
-                ->take(4)
+                ->take(5)
                 ->values();
 
             $view->with('headerNotifications', $headerNotifications);

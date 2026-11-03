@@ -12,7 +12,7 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Earnings</h1>
-        <p class="text-muted small mb-0">Wallet balances, history counts, and linked creator accounts</p>
+        <p class="text-muted small mb-0">Wallets — balances, history counts, and linked creator accounts</p>
     </div>
 
     @include('admin.earnings.partials.tabs')
@@ -61,7 +61,6 @@
 
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
         <a href="{{ route('admin.earnings.wallets') }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
-        <a href="{{ route('admin.earnings.transactions.export', request()->query()) }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-download me-2"></i>Export CSV</a>
     </form>
 
     <div class="glass rounded-4 overflow-hidden border-white-05">

@@ -11,15 +11,11 @@
     </nav>
 
     <div class="mb-4">
-        <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Contest Prizes</h1>
-        <p class="text-muted small mb-0">Contest wins credit available balance automatically. Legacy pending rows (if any) can still be released here.</p>
+        <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Earnings</h1>
+        <p class="text-muted small mb-0">Contest Prizes — wins credit available balance automatically. Legacy pending rows can still be released here.</p>
     </div>
 
     @include('admin.earnings.partials.tabs')
-
-    @if (session('status'))
-        <div class="alert alert-success rounded-3 border-0 mb-4">{{ session('status') }}</div>
-    @endif
 
     @include('admin.earnings.partials.pending-prizes-alert', [
         'pendingContestPrizeCount' => $prizeStats['pending'] ?? 0,

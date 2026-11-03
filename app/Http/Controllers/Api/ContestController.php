@@ -538,12 +538,73 @@ class ContestController extends Controller
             }
         }
 
+        $post->loadMissing(['media' => fn ($query) => $query->orderBy('sort_order')]);
+        $this->notifyFollowersOfContestEntry($user, $contest->fresh() ?? $contest, $post);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Contest outfit submitted successfully.',
             'post_id' => $post->id,
             'contest' => $this->contestPayload($contest->fresh(), (int) $user->id, true),
         ], Response::HTTP_CREATED);
+    }
+
+    private function notifyFollowersOfContestEntry(User $actor, Contest $contest, Post $post): void
+    {
+        $followerIds = UserFollow::query()
+            ->where('following_user_id', $actor->id)
+            ->pluck('follower_user_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0 && $id !== (int) $actor->id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($followerIds === []) {
+            return;
+        }
+
+        $actor->loadMissing('profile');
+        $actorName = trim((string) (
+            $actor->profile?->display_name
+            ?: $actor->full_name
+            ?: $actor->username
+            ?: 'Someone'
+        ));
+        $contestTitle = trim((string) $contest->title);
+        if ($contestTitle === '') {
+            $contestTitle = 'a contest';
+        }
+
+        $contestId = (int) $contest->id;
+        $postId = (int) $post->id;
+        $actionUrl = '/contests/'.$contestId.'?post_id='.$postId;
+        $image = $post->media->first()?->file_url
+            ?: $contest->cover_image_url
+            ?: $contest->banner_image_url
+            ?: $actor->avatar_url;
+        $title = $actorName.' joined a contest';
+        $body = $actorName.' entered '.$contestTitle.'. Check out their look.';
+
+        app()->terminating(function () use ($followerIds, $actor, $contestId, $title, $body, $actionUrl, $image): void {
+            foreach ($followerIds as $followerId) {
+                try {
+                    stylebite_notify_user(
+                        (int) $followerId,
+                        (int) $actor->id,
+                        'contest',
+                        'contest',
+                        $contestId,
+                        $title,
+                        $body,
+                        $actionUrl,
+                        $image
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
+        });
     }
 
     private function liveSubmissionsQuery(int $contestId)

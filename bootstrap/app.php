@@ -87,8 +87,9 @@ if (! function_exists('api_validation_first_message')) {
             'push_token' => str_contains(Str::lower($message), 'required')
                 ? 'Push token is required for this request.'
                 : $message,
-            'email' => str_contains(Str::lower($message), 'taken')
-                ? 'An account with this email already exists.'
+            'email' => (str_contains(Str::lower($message), 'taken')
+                    || str_contains(Str::lower($message), 'already exists'))
+                ? 'An account already exists with this email.'
                 : $message,
             'username' => str_contains(Str::lower($message), 'taken')
                 ? 'This username is already in use. Please choose another one.'

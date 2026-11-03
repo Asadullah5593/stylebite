@@ -191,6 +191,10 @@
                                                 <form method="POST" action="{{ route('admin.users.destroy', $user) }}" id="delete-user-{{ $user->id }}">
                                                     @csrf
                                                     @method('DELETE')
+                                                    <input type="hidden" name="return_q" value="{{ request('q') }}">
+                                                    <input type="hidden" name="return_status" value="{{ request('status') }}">
+                                                    <input type="hidden" name="return_with_deleted" value="{{ request()->boolean('with_deleted') ? '1' : '' }}">
+                                                    <input type="hidden" name="return_page" value="{{ request('page', $users->currentPage()) }}">
                                                     <button class="dropdown-item small py-2 text-danger" type="button" onclick="confirmAction('delete-user-{{ $user->id }}', 'Delete this user?', 'This will remove the user from the admin list. This action needs confirmation.')">
                                                         <i class="bi bi-trash3 me-2"></i>Delete
                                                     </button>

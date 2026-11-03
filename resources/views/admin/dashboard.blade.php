@@ -26,8 +26,8 @@
             <span>Needs your attention</span>
         </div>
         <div class="row g-3 g-xl-4">
-            @foreach ($actionCards as $card)
-            <div class="col-12 col-md-6 col-lg-3">
+            @forelse ($actionCards as $card)
+            <div class="col-12 col-md-6 col-xl-4">
                 <a href="{{ $card['route'] }}" class="card glass border-0 rounded-4 p-3 p-xl-4 text-decoration-none action-card h-100">
                     <div class="d-flex align-items-center gap-3 h-100">
                         <div class="action-icon {{ $card['urgency'] }}">
@@ -44,7 +44,13 @@
                     </div>
                 </a>
             </div>
-            @endforeach
+            @empty
+            <div class="col-12">
+                <div class="card glass border-0 rounded-4 p-4 text-muted small">
+                    No urgent queues right now. Verification, reports, prizes, and withdrawals will appear here when they need action.
+                </div>
+            </div>
+            @endforelse
         </div>
     </section>
 
@@ -56,7 +62,7 @@
         <div class="row g-2 g-xl-3">
             @foreach ($statCards as $card)
                 <div class="col-12 col-sm-6 col-xl-4">
-                    <div class="card glass border-0 rounded-4 p-3 stat-card h-100 metric-card">
+                    <a href="{{ $card['route'] }}" class="card glass border-0 rounded-4 p-3 stat-card h-100 metric-card text-decoration-none d-block">
                         <div class="d-flex justify-content-between align-items-start mb-3 gap-3">
                             <div class="min-w-0">
                                 <p class="mini-label text-muted mb-2">{{ $card['label'] }}</p>
@@ -72,27 +78,6 @@
                             <span>{{ $card['delta'] }}%</span>
                             <span class="text-muted fw-normal">vs last period</span>
                         </div>
-                    </div>
-                </div>
-            @endforeach
-        </div>
-    </section>
-
-    <section class="mb-4 mb-xl-5">
-        <div class="row g-3 g-xl-4">
-            @foreach ($statusSnapshots as $snapshot)
-                <div class="col-12 col-sm-6 col-xl-3">
-                    <a href="{{ $snapshot['route'] }}" class="card glass border-0 rounded-4 p-3 text-decoration-none snapshot-card h-100">
-                        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
-                            <div>
-                                <div class="mini-label text-muted mb-2">{{ $snapshot['label'] }}</div>
-                                <div class="snapshot-value">{{ $snapshot['value'] }}</div>
-                            </div>
-                            <div class="snapshot-icon">
-                                <i class="bi {{ $snapshot['icon'] }}"></i>
-                            </div>
-                        </div>
-                        <div class="text-muted extra-small">{{ $snapshot['hint'] }}</div>
                     </a>
                 </div>
             @endforeach
@@ -108,7 +93,7 @@
                             <h3 class="panel-title mb-1">Users & Posts Growth</h3>
                             <p class="text-muted panel-subtitle mb-0">Last 14 days</p>
                         </div>
-                        <span class="chart-link"><i class="bi bi-graph-up-arrow"></i></span>
+                        <a href="{{ route('admin.users.all_users') }}" class="panel-link">View users</a>
                     </div>
                     <div class="chart-wrap">
                         <canvas id="growthChart"></canvas>
@@ -136,8 +121,13 @@
         <div class="row g-3 g-xl-4">
             <div class="col-12 col-lg-6">
                 <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                    <h3 class="panel-title mb-1">Media Uploads by Type</h3>
-                    <p class="text-muted panel-subtitle mb-4">Distribution of uploads</p>
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                        <div>
+                            <h3 class="panel-title mb-1">Media Uploads by Type</h3>
+                            <p class="text-muted panel-subtitle mb-0">Distribution of uploads</p>
+                        </div>
+                        <a href="{{ route('admin.media.uploads') }}" class="panel-link">Open media</a>
+                    </div>
                     <div class="chart-wrap">
                         <canvas id="mediaChart"></canvas>
                     </div>
@@ -145,8 +135,13 @@
             </div>
             <div class="col-12 col-lg-6">
                 <div class="card glass border-0 rounded-4 p-4 chart-card h-100 chart-shell">
-                    <h3 class="panel-title mb-1">Earnings & Withdrawals</h3>
-                    <p class="text-muted panel-subtitle mb-4">Last 7 days</p>
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+                        <div>
+                            <h3 class="panel-title mb-1">Earnings & Withdrawals</h3>
+                            <p class="text-muted panel-subtitle mb-0">Last 7 days</p>
+                        </div>
+                        <a href="{{ route('admin.earnings.wallets') }}" class="panel-link">Open earnings</a>
+                    </div>
                     <div class="chart-wrap">
                         <canvas id="earningsChart"></canvas>
                     </div>
@@ -226,7 +221,7 @@
                         <a href="{{ route('admin.users.all_users') }}" class="panel-link">View all</a>
                     </div>
                     <div class="d-flex flex-column gap-1 bottom-card-list">
-                        @foreach ($recentUsers as $user)
+                        @forelse ($recentUsers as $user)
                             <a href="{{ route('admin.users.show', $user['id']) }}" class="bottom-list-row user-row text-decoration-none">
                                 @php
                                     $avatar = $user['avatar'];
@@ -243,7 +238,9 @@
                                 </div>
                                 <span class="pill-status role {{ strtolower(str_replace(' ', '-', $user['role'])) }}">{{ $user['role'] }}</span>
                             </a>
-                        @endforeach
+                        @empty
+                            <div class="text-muted small px-1 py-3">No users to show yet.</div>
+                        @endforelse
                     </div>
                 </div>
             </div>
@@ -255,7 +252,7 @@
                         <a href="{{ route('admin.activity.activity_logs') }}" class="panel-link">View all</a>
                     </div>
                     <div class="d-flex flex-column gap-1 bottom-card-list activity-list">
-                        @foreach ($recentActivity as $entry)
+                        @forelse ($recentActivity as $entry)
                             <a href="{{ route('admin.activity.activity_logs') }}" class="bottom-list-row activity-row text-decoration-none">
                                 <div class="timeline-icon"><i class="bi bi-clock-history"></i></div>
                                 <div class="flex-grow-1 min-w-0">
@@ -264,7 +261,9 @@
                                 </div>
                                 <span class="text-muted extra-small activity-time">{{ $entry['time'] }}</span>
                             </a>
-                        @endforeach
+                        @empty
+                            <div class="text-muted small px-1 py-3">No recent admin activity yet.</div>
+                        @endforelse
                     </div>
                 </div>
             </div>

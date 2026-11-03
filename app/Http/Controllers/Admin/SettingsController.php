@@ -611,10 +611,25 @@ class SettingsController extends Controller
                 ],
             ],
             'ads' => [
-                'label' => 'Ads',
+                'label' => 'Ads / Monetization',
                 'fields' => [
-                    'ads.min_followers' => ['label' => 'Minimum Followers for Ad Eligibility', 'type' => 'number', 'placeholder' => '500'],
-                    'ads.min_watch_hours' => ['label' => 'Minimum Watch Hours for Ad Eligibility', 'type' => 'number', 'placeholder' => '1000'],
+                    'ads.min_followers' => ['label' => 'Minimum Vibe Count (followers) for Monetization', 'type' => 'number', 'placeholder' => '500'],
+                    'ads.min_watch_hours' => ['label' => 'Minimum Watch Hours for Monetization', 'type' => 'number', 'placeholder' => '1000'],
+                    'ads.monetization_info' => [
+                        'label' => 'Monetization Info Text (shown in app)',
+                        'type' => 'text',
+                        'placeholder' => 'Explain how creators unlock monetization…',
+                    ],
+                    'ads.reel_owner_share_percent' => [
+                        'label' => 'Reel Owner Ad Share (%)',
+                        'type' => 'number',
+                        'placeholder' => '70',
+                    ],
+                    'ads.mid_reel_trigger_percent' => [
+                        'label' => 'Mid-reel Ad Trigger (%)',
+                        'type' => 'number',
+                        'placeholder' => '40',
+                    ],
                 ],
             ],
             'legal' => [

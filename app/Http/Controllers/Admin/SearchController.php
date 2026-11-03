@@ -158,7 +158,7 @@ class SearchController extends Controller
                     $memory->user?->full_name ?: ($memory->user?->username ? '@'.$memory->user->username : null),
                     $memory->city,
                 ])->filter()->implode(' · '),
-                'url' => route('admin.memories.memories'),
+                'url' => route('admin.memories.show', $memory),
                 'icon' => 'bi-images',
             ])
             ->values()

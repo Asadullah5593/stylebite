@@ -12,7 +12,7 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Earnings</h1>
-        <p class="text-muted small mb-0">Formal wallet reconciliation checks with exportable audit rows</p>
+        <p class="text-muted small mb-0">Reconciliation — formal wallet checks with exportable audit rows</p>
     </div>
 
     @include('admin.earnings.partials.tabs')

@@ -26,18 +26,18 @@
     @include('admin.posts.partials.tabs')
     @include('admin.posts.partials.section-filters')
 
-    <form method="GET" action="{{ route('admin.posts.all_posts') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
+    <form method="GET" action="{{ route('admin.posts.all_posts') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4" data-live-search="0">
         @if (request('section'))
             <input type="hidden" name="section" value="{{ request('section') }}">
         @endif
         <div class="position-relative flex-grow-1" style="min-width: 250px;">
             <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-            <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search posts, author, city, location...">
+            <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Type username, caption, city — then Filter" data-live-search-min="3" autocomplete="off">
         </div>
 
         <select name="post_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
             <option value="">All Types</option>
-            @foreach (['outfit' => 'Outfit', 'food' => 'Food', 'reel' => 'Reel', 'memory' => 'Memory', 'contest_submission' => 'Contest Submission'] as $value => $label)
+            @foreach (['outfit' => 'Outfit', 'food' => 'Food', 'reel' => 'Reel', 'contest_submission' => 'Contest Submission'] as $value => $label)
                 <option value="{{ $value }}" @selected(request('post_type') === $value)>{{ $label }}</option>
             @endforeach
         </select>
@@ -58,6 +58,16 @@
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
         <a href="{{ route('admin.posts.all_posts') }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
     </form>
+
+    @if (request('post_type') === 'memory')
+        <div class="glass rounded-4 p-4 mb-4 border border-primary-soft">
+            <div class="fw-bold mb-1">Memories are not Posts</div>
+            <p class="text-muted small mb-3 mb-md-2">User memories live under the Memories section (with media and by-user view). The Posts list only shows feed posts.</p>
+            <a href="{{ route('admin.memories.users') }}" class="btn btn-sm btn-outline-dynamic rounded-3">
+                <i class="bi bi-journal-richtext me-1"></i>Open Memories by User
+            </a>
+        </div>
+    @endif
 
     <div class="glass rounded-4 overflow-hidden border-white-05">
         <div class="table-responsive scrollbar-hidden">

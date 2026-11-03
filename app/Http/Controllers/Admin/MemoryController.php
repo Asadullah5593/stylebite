@@ -7,6 +7,7 @@ use App\Models\Memory;
 use App\Models\MemoryComment;
 use App\Models\MemoryMedia;
 use App\Models\SavedMemory;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -15,9 +16,19 @@ class MemoryController extends Controller
 {
     public function index(Request $request): View
     {
+        $userId = $request->integer('user_id') ?: null;
+        $filterUser = $userId
+            ? User::query()->select('id', 'username', 'full_name')->find($userId)
+            : null;
+
         $memories = Memory::query()
-            ->with('user:id,username,full_name')
+            ->with([
+                'user:id,username,full_name',
+                // Avoid limit() on eager loads (Eloquent can share one limit across parents).
+                'media' => fn ($query) => $query->orderBy('sort_order'),
+            ])
             ->withCount('media')
+            ->when($userId, fn ($query) => $query->where('user_id', $userId))
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
@@ -37,13 +48,51 @@ class MemoryController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        return view('admin.memories.MemoriesPage', compact('memories'));
+        return view('admin.memories.MemoriesPage', compact('memories', 'filterUser'));
+    }
+
+    public function users(Request $request): View
+    {
+        $users = User::query()
+            ->select('id', 'username', 'full_name', 'avatar_url')
+            ->whereHas('memories')
+            ->withCount('memories')
+            ->withMax('memories as latest_memory_at', 'memory_date')
+            ->when($request->filled('q'), function ($query) use ($request) {
+                $search = $request->string('q')->toString();
+
+                $query->where(function ($query) use ($search) {
+                    $query->where('username', 'like', "%{$search}%")
+                        ->orWhere('full_name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('memories_count')
+            ->paginate(12)
+            ->withQueryString();
+
+        return view('admin.memories.MemoryUsersPage', compact('users'));
+    }
+
+    public function show(Memory $memory): View
+    {
+        $memory->load([
+            'user:id,username,full_name,email,avatar_url',
+            'media' => fn ($query) => $query->orderBy('sort_order'),
+            'comments' => fn ($query) => $query->latest()->limit(20)->with('user:id,username,full_name'),
+        ]);
+
+        return view('admin.memories.ShowMemoryPage', compact('memory'));
     }
 
     public function media(Request $request): View
     {
         $memoryMedia = MemoryMedia::query()
-            ->with(['memory:id,title', 'upload:id,file_url,thumbnail_url'])
+            ->with([
+                'memory:id,title,user_id',
+                'memory.user:id,username,full_name',
+                'upload:id,file_url,thumbnail_url',
+            ])
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
@@ -125,6 +174,7 @@ class MemoryController extends Controller
     public static function tabCounts(): array
     {
         return [
+            'memory_users' => User::query()->whereHas('memories')->count(),
             'memories' => Memory::count(),
             'memory_media' => MemoryMedia::count(),
             'memory_comments' => MemoryComment::count(),

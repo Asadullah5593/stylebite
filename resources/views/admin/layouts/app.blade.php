@@ -156,6 +156,43 @@
         .text-muted { color: var(--sb-muted) !important; }
         main.container-fluid { max-width: none !important; }
 
+        /* Shared admin utilities (formerly Users-only theme) */
+        .bg-dark-soft { background: rgba(0,0,0,0.25) !important; color: var(--sb-text) !important; }
+        .bg-white-05 { background: rgba(255,255,255,0.04) !important; }
+        .border-white-05 { border-color: rgba(255,255,255,0.06) !important; }
+        .border-white-10 { border-color: rgba(255,255,255,0.1) !important; }
+        .border-primary-soft { border-color: rgba(255, 85, 122, 0.2) !important; }
+        .bg-primary-soft { background: rgba(255, 85, 122, 0.12) !important; }
+        .bg-primary-soft-opaque { background: rgba(255, 85, 122, 0.05) !important; }
+        .bg-info-soft { background: rgba(92, 148, 255, 0.12) !important; }
+        .bg-warning-soft { background: rgba(242, 168, 29, 0.12) !important; }
+        .bg-danger-soft { background: rgba(255, 80, 95, 0.12) !important; }
+        .bg-success-soft { background: rgba(50, 211, 107, 0.12) !important; }
+        .bg-secondary-soft { background: rgba(255, 255, 255, 0.08) !important; }
+        .text-emphasis-dynamic { color: var(--sb-text) !important; }
+        .extra-small { font-size: 0.75rem; }
+        .fw-extrabold { font-weight: 800; }
+        .space-y-5 > * + * { margin-top: 1.25rem; }
+
+        .btn-outline-dynamic {
+            border-color: rgba(255,255,255,0.1) !important;
+            color: var(--sb-text) !important;
+        }
+        .btn-outline-dynamic:hover {
+            background: rgba(255,255,255,0.04);
+            color: var(--sb-text) !important;
+        }
+
+        body.theme-light .bg-dark-soft { background: rgba(0,0,0,0.03) !important; color: var(--sb-text) !important; }
+        body.theme-light .bg-white-05 { background: rgba(0,0,0,0.02) !important; }
+        body.theme-light .border-white-05 { border-color: rgba(0,0,0,0.05) !important; }
+        body.theme-light .border-white-10 { border-color: rgba(0,0,0,0.1) !important; }
+        body.theme-light .bg-secondary-soft { background: rgba(0,0,0,0.04) !important; }
+        body.theme-light .btn-outline-dynamic {
+            border-color: rgba(0,0,0,0.1) !important;
+            color: var(--sb-text) !important;
+        }
+
         .admin-main {
             max-width: var(--admin-content-max) !important;
             margin: 0 auto;
@@ -674,6 +711,11 @@
         <div class="content-area d-flex flex-column">
             @include('admin.partials.header')
             <main class="admin-main px-1 px-md-2 px-lg-3 px-xl-3">
+                @if (session('status'))
+                    <div class="alert alert-success rounded-4 border-0 mb-4">
+                        {{ session('status') }}
+                    </div>
+                @endif
                 @if ($errors->any())
                     <div class="alert alert-danger rounded-4 border-0 mb-4">
                         <div class="fw-bold mb-1">This action could not be completed.</div>
@@ -730,14 +772,16 @@
         })();
 
         (function () {
-            const forms = document.querySelectorAll('form[method="GET"]');
+            // Opt-in live search only. Auto-submit on every keystroke reloads the
+            // page and steals focus mid-typing. Forms need data-live-search="1".
+            const forms = document.querySelectorAll('form[method="GET"][data-live-search="1"]');
 
             forms.forEach((form) => {
                 const queryInput = form.querySelector('input[name="q"], input[type="search"][name="q"]');
                 if (!queryInput) return;
 
                 let timer = null;
-                const minChars = parseInt(queryInput.dataset.liveSearchMin || '0', 10);
+                const minChars = parseInt(queryInput.dataset.liveSearchMin || '3', 10);
 
                 queryInput.addEventListener('input', function () {
                     const value = queryInput.value.trim();
@@ -747,7 +791,7 @@
                         if (value.length === 0 || value.length >= minChars) {
                             form.requestSubmit();
                         }
-                    }, 350);
+                    }, 700);
                 });
             });
         })();

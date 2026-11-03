@@ -90,6 +90,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/devices', [UserController::class, 'devices'])->name('devices'); 
         Route::get('/password-resets', [UserController::class, 'passwordResets'])->name('password_resets');
         Route::get('/verification-requests', [UserController::class, 'verificationRequests'])->name('verification_requests');
+        Route::get('/monetization-requests', [UserController::class, 'monetizationRequests'])->name('monetization_requests');
         Route::get('/{user}', [UserController::class, 'show'])->withTrashed()->name('show');
         Route::get('/{user}/edit', [UserController::class, 'edit'])->withTrashed()->name('edit');
         Route::put('/{user}', [UserController::class, 'update'])->withTrashed()->name('update');
@@ -100,6 +101,8 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::patch('/{user}/badge/verified', [UserController::class, 'toggleVerifiedBadge'])->withTrashed()->name('badge.verified');
         Route::patch('/{user}/verification/approve', [UserController::class, 'approveVerification'])->withTrashed()->name('verification.approve');
         Route::patch('/{user}/verification/reject', [UserController::class, 'rejectVerification'])->withTrashed()->name('verification.reject');
+        Route::patch('/{user}/monetization/approve', [UserController::class, 'approveMonetization'])->withTrashed()->name('monetization.approve');
+        Route::patch('/{user}/monetization/reject', [UserController::class, 'rejectMonetization'])->withTrashed()->name('monetization.reject');
         Route::patch('/{user}/sessions/{session}/revoke', [UserController::class, 'revokeSession'])->withTrashed()->name('sessions.revoke');
         Route::patch('/{user}/devices/{device}/toggle', [UserController::class, 'toggleDevice'])->withTrashed()->name('devices.toggle');
         Route::patch('/{user}/password-resets/{passwordReset}/expire', [UserController::class, 'expirePasswordReset'])->withTrashed()->name('password_resets.expire');
@@ -139,10 +142,12 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
 
      Route::prefix('memories')->name('memories.')->group(function () {
         Route::get('/', [MemoryController::class, 'index'])->name('memories');
+        Route::get('/users', [MemoryController::class, 'users'])->name('users');
         Route::get('/memory-media', [MemoryController::class, 'media'])->name('memory-media');
         Route::get('/memory-comments', [MemoryController::class, 'comments'])->name('memory-comments');
         Route::patch('/memory-comments/{memoryComment}', [MemoryController::class, 'updateComment'])->name('memory-comments.update');
         Route::get('/saved-memories', [MemoryController::class, 'saved'])->name('saved_memories');
+        Route::get('/{memory}', [MemoryController::class, 'show'])->name('show');
     });
 
     // Post Module

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Mail\GlobalAppMail;
+use App\Models\EmailVerificationToken;
 use App\Models\User;
 use App\Models\UserAuthProvider;
 use App\Models\UserSession;
@@ -111,6 +112,8 @@ class AuthApiTest extends TestCase
 
     public function test_user_can_login_with_google_from_frontend_payload(): void
     {
+        Mail::fake();
+
         $response = $this->postJson('/api/auth/google-login', [
             'provider_user_id' => 'google-user-123',
             'email' => 'google@example.com',
@@ -125,11 +128,10 @@ class AuthApiTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('status_code', 1)
-            ->assertJsonPath('message', 'Google login successful.')
-            ->assertJsonPath('token_type', 'Bearer')
-            ->assertJsonPath('user.email', 'google@example.com')
-            ->assertJsonStructure(['status_code', 'message', 'token_type', 'access_token', 'bearer_token', 'user']);
+            ->assertJsonPath('status_code', 0)
+            ->assertJsonPath('requires_2fa', true)
+            ->assertJsonPath('requires_verification', true)
+            ->assertJsonPath('email', 'google@example.com');
 
         $this->assertDatabaseHas('users', [
             'email' => 'google@example.com',
@@ -142,8 +144,46 @@ class AuthApiTest extends TestCase
             'provider_email' => 'google@example.com',
         ]);
 
+        $this->assertDatabaseMissing('user_sessions', [
+            'device_id' => 'device-google-1',
+        ]);
+
+        $user = User::query()->where('email', 'google@example.com')->firstOrFail();
+        $verification = EmailVerificationToken::query()
+            ->where('user_id', $user->id)
+            ->where('purpose', 'login_2fa')
+            ->whereNull('verified_at')
+            ->latest('id')
+            ->firstOrFail();
+
+        // Local tests may store a plain debug hash path; pull code via mail fake or recreate.
+        // Issue a known code by verifying through the same endpoint after creating a token.
+        EmailVerificationToken::query()->where('id', $verification->id)->delete();
+        EmailVerificationToken::create([
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'purpose' => 'login_2fa',
+            'token_hash' => Hash::make('123456'),
+            'expires_at' => now()->addMinutes(15),
+        ]);
+
+        $verify = $this->postJson('/api/auth/verify-email-otp', [
+            'email' => 'google@example.com',
+            'code' => '123456',
+            'device_id' => 'device-google-1',
+            'platform' => 'android',
+            'push_token' => 'push-token-google-1',
+            'app_version' => '2.1.0',
+        ]);
+
+        $verify
+            ->assertOk()
+            ->assertJsonPath('status_code', 1)
+            ->assertJsonPath('token_type', 'Bearer')
+            ->assertJsonPath('user.email', 'google@example.com');
+
         $this->assertDatabaseHas('user_sessions', [
-            'user_id' => $response->json('user.id'),
+            'user_id' => $user->id,
             'platform' => 'android',
             'device_id' => 'device-google-1',
         ]);

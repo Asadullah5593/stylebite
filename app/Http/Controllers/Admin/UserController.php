@@ -256,6 +256,116 @@ class UserController extends Controller
         return back()->with('status', 'Verification approved. Badge granted to @'.$user->username.'.');
     }
 
+    public function monetizationRequests(Request $request): View
+    {
+        $statusFilter = $request->string('status')->toString() ?: 'pending';
+        $search = $request->string('q')->toString();
+
+        $requests = Profile::query()
+            ->with(['user:id,username,full_name,email,avatar_url,phone'])
+            ->whereIn('monetization_status', ['pending', 'approved', 'rejected'])
+            ->when($statusFilter !== 'all', fn ($query) => $query->where('monetization_status', $statusFilter))
+            ->when($search !== '', function ($query) use ($search) {
+                $query->whereHas('user', function ($userQuery) use ($search) {
+                    $userQuery->where('username', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('full_name', 'like', "%{$search}%");
+                });
+            })
+            ->orderByRaw("CASE monetization_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END")
+            ->orderByDesc('monetization_requested_at')
+            ->paginate(20)
+            ->withQueryString();
+
+        $monetizationStats = [
+            'pending' => Profile::where('monetization_status', 'pending')->count(),
+            'approved' => Profile::where('monetization_status', 'approved')->count(),
+            'rejected' => Profile::where('monetization_status', 'rejected')->count(),
+            'total' => Profile::whereIn('monetization_status', ['pending', 'approved', 'rejected'])->count(),
+        ];
+
+        return view('admin.earnings.MonetizationRequestsPage', compact('requests', 'monetizationStats', 'statusFilter'));
+    }
+
+    public function approveMonetization(Request $request, User $user): RedirectResponse
+    {
+        $validated = $request->validate([
+            'admin_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'monetization_status' => 'approved',
+            'ads_enabled' => true,
+            'monetization_requested_at' => $profile->monetization_requested_at ?? now(),
+            'monetization_reviewed_at' => now(),
+            'monetization_reviewed_by' => auth()->id(),
+            'monetization_admin_note' => $validated['admin_note'] ?? null,
+        ])->save();
+
+        $this->logActivity('monetization_request_approved', 'user', $user->id, [
+            'username' => $user->username,
+            'admin_note' => $validated['admin_note'] ?? null,
+        ]);
+
+        if (function_exists('stylebite_notify_user')) {
+            stylebite_notify_user(
+                (int) $user->id,
+                auth()->id(),
+                'system',
+                'user',
+                (int) $user->id,
+                'Monetization approved',
+                'Your StyleBite monetization request was approved. Ads earnings are now unlocked.',
+                '/settings/monetization',
+                null
+            );
+        }
+
+        return back()->with('status', 'Monetization approved for @'.$user->username.'.');
+    }
+
+    public function rejectMonetization(Request $request, User $user): RedirectResponse
+    {
+        $validated = $request->validate([
+            'admin_note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $profile = $user->profile()->firstOrCreate(['user_id' => $user->id]);
+
+        $profile->forceFill([
+            'monetization_status' => 'rejected',
+            'ads_enabled' => false,
+            'monetization_reviewed_at' => now(),
+            'monetization_reviewed_by' => auth()->id(),
+            'monetization_admin_note' => $validated['admin_note'] ?? null,
+        ])->save();
+
+        $this->logActivity('monetization_request_rejected', 'user', $user->id, [
+            'username' => $user->username,
+            'admin_note' => $validated['admin_note'] ?? null,
+        ]);
+
+        if (function_exists('stylebite_notify_user')) {
+            stylebite_notify_user(
+                (int) $user->id,
+                auth()->id(),
+                'system',
+                'user',
+                (int) $user->id,
+                'Monetization request update',
+                $validated['admin_note']
+                    ? 'Your monetization request was not approved: '.$validated['admin_note']
+                    : 'Your monetization request was not approved. Keep growing and try again.',
+                '/settings/monetization',
+                null
+            );
+        }
+
+        return back()->with('status', 'Monetization request rejected for @'.$user->username.'.');
+    }
+
     public function rejectVerification(Request $request, User $user): RedirectResponse
     {
         $validated = $request->validate([
@@ -545,7 +655,7 @@ class UserController extends Controller
         return back()->with('status', $badgeDefinition['title'].' added successfully.');
     }
 
-    public function destroy(User $user): RedirectResponse
+    public function destroy(Request $request, User $user): RedirectResponse
     {
         if ($user->trashed()) {
             return back()->with('status', 'User is already deleted.');
@@ -560,9 +670,22 @@ class UserController extends Controller
             'role' => $user->role,
         ]);
 
-        return redirect()
-            ->route('admin.users.all_users')
-            ->with('status', 'User deleted successfully.');
+        // Prefer staying on the same list page/filters (search, page N).
+        // Fall back to an explicit return query if the form posted one.
+        $returnQuery = array_filter([
+            'q' => $request->input('return_q', $request->query('q')),
+            'status' => $request->input('return_status', $request->query('status')),
+            'with_deleted' => $request->input('return_with_deleted', $request->query('with_deleted')),
+            'page' => $request->input('return_page', $request->query('page')),
+        ], fn ($value) => $value !== null && $value !== '');
+
+        if ($returnQuery !== []) {
+            return redirect()
+                ->route('admin.users.all_users', $returnQuery)
+                ->with('status', 'User deleted successfully.');
+        }
+
+        return back()->with('status', 'User deleted successfully.');
     }
 
     public function restore(User $user): RedirectResponse
@@ -591,6 +714,7 @@ class UserController extends Controller
             'all_users' => User::withTrashed()->count(),
             'profiles' => Profile::count(),
             'verification_requests' => Profile::where('verification_status', 'pending')->count(),
+            'monetization_requests' => Profile::where('monetization_status', 'pending')->count(),
             'settings' => User::whereHas('settings')->count(),
             'auth_providers' => UserAuthProvider::count(),
             'sessions' => UserSession::count(),

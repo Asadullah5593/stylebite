@@ -51,27 +51,24 @@ if (! function_exists('stylebite_app_config')) {
 
 if (! function_exists('stylebite_ad_eligibility')) {
     /**
-     * Evaluate a creator against the admin-configured ad eligibility criteria
-     * (Admin → Settings → Ads). Read-only: nothing is stored or changed.
+     * Evaluate a creator against the admin-configured monetization / ads criteria
+     * (Admin → Settings → Ads). Read-only metrics; request status comes from profile.
      *
-     * NOTE: watch hours are summed from post_views.watch_seconds, which is not
-     * populated yet — until the app starts reporting watch time, watch_hours
-     * will read 0 and no creator will meet the watch-hours criterion.
+     * Vibe Count in the app = follower_count. Watch hours come from post_views.
      *
-     * @return array{
-     *     eligible:bool,
-     *     followers:int, min_followers:int, meets_followers:bool,
-     *     watch_hours:float, min_watch_hours:float, meets_watch_hours:bool
-     * }
+     * @return array<string, mixed>
      */
     function stylebite_ad_eligibility(int $userId): array
     {
         $minFollowers = (int) stylebite_app_config('ads.min_followers', 500);
         $minWatchHours = (float) stylebite_app_config('ads.min_watch_hours', 1000);
+        $infoText = trim((string) stylebite_app_config(
+            'ads.monetization_info',
+            'Unlock StyleBite Monetization when your account reaches the community goals set by StyleBite. Grow your Vibe Count and Watch Time, then send a request for review.'
+        ));
 
-        $followers = (int) (\App\Models\Profile::query()
-            ->where('user_id', $userId)
-            ->value('follower_count') ?? 0);
+        $profile = \App\Models\Profile::query()->where('user_id', $userId)->first();
+        $followers = (int) ($profile?->follower_count ?? 0);
 
         $watchSeconds = (int) (\Illuminate\Support\Facades\DB::table('post_views')
             ->join('posts', 'posts.id', '=', 'post_views.post_id')
@@ -82,15 +79,68 @@ if (! function_exists('stylebite_ad_eligibility')) {
         $watchHours = round($watchSeconds / 3600, 2);
         $meetsFollowers = $followers >= $minFollowers;
         $meetsWatchHours = $watchHours >= $minWatchHours;
+        $eligible = $meetsFollowers && $meetsWatchHours;
+
+        $status = (string) ($profile?->monetization_status ?? 'none');
+        if ($status === '') {
+            $status = 'none';
+        }
+
+        $followerProgress = $minFollowers > 0
+            ? min(1, round($followers / $minFollowers, 4))
+            : 1.0;
+        $watchProgress = $minWatchHours > 0
+            ? min(1, round($watchHours / $minWatchHours, 4))
+            : 1.0;
+        $overallProgress = round(($followerProgress + $watchProgress) / 2, 4);
+        $adsEnabled = (bool) ($profile?->ads_enabled ?? false);
+        $isApproved = $status === 'approved' || $adsEnabled;
 
         return [
-            'eligible' => $meetsFollowers && $meetsWatchHours,
+            'eligible' => $eligible,
+            'is_eligible' => $eligible,
+            'ads_enabled' => $adsEnabled,
+            'monetization_status' => $status,
+            'monetization_requested_at' => optional($profile?->monetization_requested_at)?->toIso8601String(),
+            'monetization_reviewed_at' => optional($profile?->monetization_reviewed_at)?->toIso8601String(),
+            'monetization_admin_note' => $profile?->monetization_admin_note,
+            'can_request' => $eligible && in_array($status, ['none', 'rejected'], true),
+            'is_approved' => $isApproved,
+            'info' => $infoText,
+            'overall_progress' => $overallProgress,
+            'config' => [
+                'reel_owner_share_percent' => (float) stylebite_app_config('ads.reel_owner_share_percent', 70),
+                'mid_reel_trigger_percent' => (float) stylebite_app_config('ads.mid_reel_trigger_percent', 40),
+            ],
             'followers' => $followers,
+            'vibe_count' => $followers,
             'min_followers' => $minFollowers,
+            'min_vibe_count' => $minFollowers,
             'meets_followers' => $meetsFollowers,
+            'meets_vibe_count' => $meetsFollowers,
             'watch_hours' => $watchHours,
             'min_watch_hours' => $minWatchHours,
             'meets_watch_hours' => $meetsWatchHours,
+            'requirements' => [
+                [
+                    'type' => 'followers',
+                    'label' => 'Vibe Count',
+                    'current' => $followers,
+                    'threshold' => $minFollowers,
+                    'is_passed' => $meetsFollowers,
+                    'progress' => $followerProgress,
+                    'unit' => 'vibes',
+                ],
+                [
+                    'type' => 'watch_hours',
+                    'label' => 'Watch Time',
+                    'current' => $watchHours,
+                    'threshold' => $minWatchHours,
+                    'is_passed' => $meetsWatchHours,
+                    'progress' => $watchProgress,
+                    'unit' => 'hours',
+                ],
+            ],
         ];
     }
 }
@@ -155,6 +205,67 @@ if (! function_exists('stylebite_send_email')) {
         Mail::to($toEmail, $toName)->send(
             new GlobalAppMail($subject, $heading, $content, $actionText, $actionUrl)
         );
+    }
+}
+
+if (! function_exists('stylebite_normalize_email')) {
+    /**
+     * Lower/trim, and collapse Gmail aliases (dots / +tags / googlemail.com)
+     * so the same mailbox cannot register twice under lookalike addresses.
+     */
+    function stylebite_normalize_email(string $email): string
+    {
+        $email = Str::lower(trim($email));
+        if (! str_contains($email, '@')) {
+            return $email;
+        }
+
+        [$local, $domain] = explode('@', $email, 2);
+        if (in_array($domain, ['gmail.com', 'googlemail.com'], true)) {
+            $local = Str::before($local, '+');
+            $local = str_replace('.', '', $local);
+
+            return $local.'@gmail.com';
+        }
+
+        return $email;
+    }
+}
+
+if (! function_exists('stylebite_email_is_registered')) {
+    /**
+     * True when any user (including soft-deleted) already owns this mailbox.
+     */
+    function stylebite_email_is_registered(string $email): bool
+    {
+        $email = Str::lower(trim($email));
+        if ($email === '') {
+            return false;
+        }
+
+        if (User::withTrashed()->where('email', $email)->exists()) {
+            return true;
+        }
+
+        $normalized = stylebite_normalize_email($email);
+        if ($normalized === $email || ! str_ends_with($normalized, '@gmail.com')) {
+            return false;
+        }
+
+        $gmailUsers = User::withTrashed()
+            ->where(function ($query) {
+                $query->where('email', 'like', '%@gmail.com')
+                    ->orWhere('email', 'like', '%@googlemail.com');
+            })
+            ->get(['id', 'email']);
+
+        foreach ($gmailUsers as $user) {
+            if (stylebite_normalize_email((string) $user->email) === $normalized) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 
@@ -237,7 +348,8 @@ if (! function_exists('stylebite_notify_user')) {
         ?string $title,
         ?string $body,
         ?string $actionUrl = null,
-        ?string $image = null
+        ?string $image = null,
+        array $extraData = []
     ): Notification {
         $notification = Notification::create([
             'recipient_user_id' => $recipientUserId,
@@ -300,19 +412,23 @@ if (! function_exists('stylebite_notify_user')) {
 
         try {
             foreach ($deviceTokens as $deviceToken) {
+                $pushData = array_merge([
+                    'notification_id' => (string) $notification->id,
+                    'type' => $type,
+                    'entity_type' => $entityType,
+                    'entity_id' => $entityId !== null ? (string) $entityId : '',
+                    'recipient_user_id' => (string) $recipientUserId,
+                    'actor_user_id' => $actorUserId !== null ? (string) $actorUserId : '',
+                    'action_url' => $actionUrl ?? '',
+                    'title' => (string) ($title ?? ''),
+                    'body' => (string) ($body ?? ''),
+                ], $extraData);
+
                 $pushResult = stylebite_send_firebase_push_notification(
                     $deviceToken->push_token,
                     $title,
                     $body,
-                    [
-                        'notification_id' => (string) $notification->id,
-                        'type' => $type,
-                        'entity_type' => $entityType,
-                        'entity_id' => $entityId !== null ? (string) $entityId : '',
-                        'recipient_user_id' => (string) $recipientUserId,
-                        'actor_user_id' => $actorUserId !== null ? (string) $actorUserId : '',
-                        'action_url' => $actionUrl ?? '',
-                    ],
+                    $pushData,
                     $imageUrl
                 );
 

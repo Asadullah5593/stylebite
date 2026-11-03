@@ -42,7 +42,17 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'username' => ['nullable', 'string', 'min:3', 'max:50', 'regex:/^[a-z0-9_]+$/', 'unique:users,username'],
-            'email' => ['required', 'string', 'email', 'max:191', 'unique:users,email'],
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:191',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (stylebite_email_is_registered((string) $value)) {
+                        $fail('An account already exists with this email.');
+                    }
+                },
+            ],
             'password' => ['required', 'confirmed', Password::min(8)],
             'avatar' => ['nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'device_id' => ['nullable', 'string', 'max:191', 'required_with:push_token'],
@@ -78,16 +88,15 @@ class AuthController extends Controller
 
         $this->storeRegistrationAvatar($user, $request);
 
-        $session = $this->createSession($user, $request);
+        // Session is issued only after the Gmail OTP is confirmed.
         $verificationCode = $this->sendVerificationEmail($user);
 
         return response()->json($this->withLocalDebugOtp([
             'status_code' => 1,
-            'message' => 'Registration successful.',
-            'token_type' => 'Bearer',
-            'access_token' => $session['plain_text_token'],
-            'bearer_token' => 'Bearer '.$session['plain_text_token'],
-            'user' => $this->userPayload($session['user']),
+            'requires_verification' => true,
+            'email' => $user->email,
+            'message' => 'Registration successful. Enter the 6-digit code sent to your email.',
+            'user' => $this->userPayload($user->fresh(['profile', 'settings'])),
         ], $verificationCode), 201);
     }
 
@@ -169,16 +178,16 @@ class AuthController extends Controller
             ], $verificationCode));
         }
 
-        $session = $this->createSession($user, $request);
+        // Password OK — finish login with a one-time code emailed via Gmail SMTP.
+        $verificationCode = $this->sendLoginTwoFactorEmail($user);
 
-        return response()->json([
-            'status_code' => 1,
-            'message' => 'Login successful.',
-            'token_type' => 'Bearer',
-            'access_token' => $session['plain_text_token'],
-            'bearer_token' => 'Bearer '.$session['plain_text_token'],
-            'user' => $this->userPayload($session['user']),
-        ]);
+        return response()->json($this->withLocalDebugOtp([
+            'status_code' => 0,
+            'requires_verification' => true,
+            'requires_2fa' => true,
+            'email' => $user->email,
+            'message' => 'Enter the 6-digit code sent to your email to finish signing in.',
+        ], $verificationCode));
     }
 
     #[BodyParameter('provider_user_id', description: 'Unique user ID issued by Google.', required: true, type: 'string', example: '112233445566778899000')]
@@ -267,6 +276,10 @@ class AuthController extends Controller
         $validated = $request->validate([
             'email' => ['required', 'string', 'email', 'max:191'],
             'code' => ['required', 'digits:6'],
+            'device_id' => ['nullable', 'string', 'max:191', 'required_with:push_token'],
+            'platform' => ['nullable', 'string', 'in:ios,android,web,desktop'],
+            'push_token' => ['nullable', 'string', 'max:512'],
+            'app_version' => ['nullable', 'string', 'max:32'],
         ], $this->verifyEmailOtpValidationMessages(), $this->authValidationAttributes());
 
         $user = User::query()->where('email', Str::lower($validated['email']))->first();
@@ -274,19 +287,6 @@ class AuthController extends Controller
         if (! $user) {
             throw ValidationException::withMessages([
                 'code' => ['The verification code is invalid or expired.'],
-            ]);
-        }
-
-        if ($user->email_verified_at !== null) {
-            $session = $this->createSession($user, $request);
-
-            return response()->json([
-                'status_code' => 1,
-                'message' => 'Email already verified.',
-                'token_type' => 'Bearer',
-                'access_token' => $session['plain_text_token'],
-                'bearer_token' => 'Bearer '.$session['plain_text_token'],
-                'user' => $this->userPayload($session['user']),
             ]);
         }
 
@@ -303,11 +303,21 @@ class AuthController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($user, $verification): void {
-            $user->forceFill([
-                'email_verified_at' => now(),
-                'status' => $user->status === 'inactive' ? 'active' : $user->status,
-            ])->save();
+        $purpose = $verification->purpose ?: 'email_verification';
+
+        DB::transaction(function () use ($user, $verification, $purpose): void {
+            if ($purpose === 'email_verification' || $user->email_verified_at === null) {
+                $user->forceFill([
+                    'email_verified_at' => $user->email_verified_at ?? now(),
+                    'status' => $user->status === 'inactive' ? 'active' : $user->status,
+                ])->save();
+            }
+
+            if ($purpose === 'login_2fa') {
+                $user->forceFill([
+                    'is_two_factor_enabled' => true,
+                ])->save();
+            }
 
             $verification->forceFill([
                 'verified_at' => now(),
@@ -318,7 +328,9 @@ class AuthController extends Controller
 
         return response()->json([
             'status_code' => 1,
-            'message' => 'OTP Verified successfully.',
+            'message' => $purpose === 'login_2fa'
+                ? 'Login verified successfully.'
+                : 'OTP Verified successfully.',
             'token_type' => 'Bearer',
             'access_token' => $session['plain_text_token'],
             'bearer_token' => 'Bearer '.$session['plain_text_token'],
@@ -335,8 +347,10 @@ class AuthController extends Controller
         $user = User::query()->where('email', Str::lower($validated['email']))->first();
         $verificationCode = null;
 
-        if ($user && $user->email_verified_at === null) {
-            $verificationCode = $this->sendVerificationEmail($user);
+        if ($user) {
+            $verificationCode = $user->email_verified_at === null
+                ? $this->sendVerificationEmail($user)
+                : $this->sendLoginTwoFactorEmail($user);
         }
 
         return response()->json($this->withLocalDebugOtp([
@@ -374,6 +388,7 @@ class AuthController extends Controller
 
         $verification = EmailVerificationToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', 'email_verification')
             ->whereNull('verified_at')
             ->where('expires_at', '>', now())
             ->latest('id')
@@ -502,7 +517,11 @@ class AuthController extends Controller
                 ]);
             }
 
-            $user = User::query()->where('email', $email)->first();
+            $user = $this->findUserByEmailMailbox($email);
+
+            if ($user?->trashed()) {
+                $user->restore();
+            }
 
             if (! $user) {
                 $user = User::create([
@@ -553,6 +572,32 @@ class AuthController extends Controller
             throw ValidationException::withMessages([
                 'email' => ['This account is not active.'],
             ]);
+        }
+
+        // Google sign-up / sign-in also finishes with a Gmail OTP (same as password login).
+        if ($provider === 'google') {
+            $email = $user->email ?: ($email ?? null);
+            if (! is_string($email) || trim($email) === '') {
+                throw ValidationException::withMessages([
+                    'email' => ['A Gmail address is required to finish Google sign-in.'],
+                ]);
+            }
+
+            if ($user->email_verified_at === null) {
+                $user->forceFill([
+                    'email_verified_at' => now(),
+                ])->save();
+            }
+
+            $verificationCode = $this->sendLoginTwoFactorEmail($user->fresh());
+
+            return response()->json($this->withLocalDebugOtp([
+                'status_code' => 0,
+                'requires_verification' => true,
+                'requires_2fa' => true,
+                'email' => $user->email,
+                'message' => 'Enter the 6-digit code sent to your Gmail to finish signing in with Google.',
+            ], $verificationCode));
         }
 
         $session = $this->createSession($user, $request);
@@ -645,10 +690,61 @@ class AuthController extends Controller
         return $username;
     }
 
+    private function findUserByEmailMailbox(string $email): ?User
+    {
+        $email = Str::lower(trim($email));
+
+        $exact = User::withTrashed()->where('email', $email)->first();
+        if ($exact) {
+            return $exact;
+        }
+
+        $normalized = stylebite_normalize_email($email);
+        if ($normalized === $email || ! str_ends_with($normalized, '@gmail.com')) {
+            return null;
+        }
+
+        return User::withTrashed()
+            ->where(function ($query) {
+                $query->where('email', 'like', '%@gmail.com')
+                    ->orWhere('email', 'like', '%@googlemail.com');
+            })
+            ->get()
+            ->first(fn (User $candidate) => stylebite_normalize_email((string) $candidate->email) === $normalized);
+    }
+
     private function sendVerificationEmail(User $user): string
     {
+        return $this->issueEmailOtp(
+            $user,
+            'email_verification',
+            'Verify your Stylebite account',
+            'Welcome to Stylebite',
+            "Thanks for registering with Stylebite.\n\nYour 6-digit verification code is: {code}\n\nThis code will expire in 15 minutes."
+        );
+    }
+
+    private function sendLoginTwoFactorEmail(User $user): string
+    {
+        return $this->issueEmailOtp(
+            $user,
+            'login_2fa',
+            'Your Stylebite login code',
+            'Confirm it\'s you',
+            "Someone is signing in to your Stylebite account.\n\nYour 6-digit login code is: {code}\n\nThis code will expire in 15 minutes.\nIf this wasn't you, change your password."
+        );
+    }
+
+    private function issueEmailOtp(
+        User $user,
+        string $purpose,
+        string $subject,
+        string $heading,
+        string $contentTemplate
+    ): string {
         EmailVerificationToken::query()
             ->where('user_id', $user->id)
+            ->where('purpose', $purpose)
             ->whereNull('verified_at')
             ->delete();
 
@@ -657,6 +753,7 @@ class AuthController extends Controller
         EmailVerificationToken::create([
             'user_id' => $user->id,
             'email' => $user->email,
+            'purpose' => $purpose,
             'token_hash' => Hash::make($code),
             'expires_at' => now()->addMinutes(15),
         ]);
@@ -664,9 +761,9 @@ class AuthController extends Controller
         stylebite_send_email(
             $user->email,
             $user->full_name ?? $user->username,
-            'Verify your Stylebite account',
-            'Welcome to Stylebite',
-            "Thanks for registering with Stylebite.\n\nYour 6-digit verification code is: {$code}\n\nThis code will expire in 15 minutes."
+            $subject,
+            $heading,
+            str_replace('{code}', $code, $contentTemplate)
         );
 
         return $code;
@@ -725,7 +822,7 @@ class AuthController extends Controller
             'username.unique' => 'This username is already in use. Please choose another one.',
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address.',
-            'email.unique' => 'An account with this email already exists.',
+            'email.unique' => 'An account already exists with this email.',
             'password.required' => 'Please enter a password.',
             'password.confirmed' => 'Password confirmation does not match.',
             'password.min' => 'Your password must be at least 8 characters long.',
@@ -737,6 +834,26 @@ class AuthController extends Controller
             'push_token.max' => 'Push token is too long. Please try again.',
             'app_version.max' => 'App version is too long. Please try again.',
         ];
+    }
+
+    public function checkEmail(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:191'],
+        ], [
+            'email.required' => 'Please enter your email address.',
+            'email.email' => 'Please enter a valid email address.',
+        ], $this->authValidationAttributes());
+
+        $taken = stylebite_email_is_registered($validated['email']);
+
+        return response()->json([
+            'status_code' => 1,
+            'available' => ! $taken,
+            'message' => $taken
+                ? 'An account already exists with this email.'
+                : 'Email is available.',
+        ]);
     }
 
     private function loginValidationMessages(): array

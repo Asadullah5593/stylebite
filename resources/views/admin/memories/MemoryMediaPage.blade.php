@@ -17,10 +17,10 @@
 
     @include('admin.memories.partials.tabs')
 
-    <form method="GET" action="{{ route('admin.memories.memory-media') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4">
+    <form method="GET" action="{{ route('admin.memories.memory-media') }}" class="glass rounded-4 p-3 d-flex flex-wrap align-items-center gap-3 mb-4" data-live-search="0">
         <div class="position-relative flex-grow-1" style="min-width: 250px;">
             <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-            <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search memory media...">
+            <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search memory title or file..." data-live-search-min="3" autocomplete="off">
         </div>
 
         <select name="media_type" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto;">
@@ -50,9 +50,20 @@
                     @forelse ($memoryMedia as $item)
                         <tr class="border-white-05">
                             <td class="ps-4"><span class="fw-bold small">#{{ $item->id }}</span></td>
-                            <td><span class="text-muted small">{{ $item->memory?->title ?: 'Unknown memory' }}</span></td>
+                            <td>
+                                @if ($item->memory)
+                                    <a href="{{ route('admin.memories.show', $item->memory) }}" class="small fw-semibold text-decoration-none">
+                                        {{ $item->memory->title }}
+                                    </a>
+                                    @if ($item->memory->user)
+                                        <div class="text-muted extra-small">{{ '@'.$item->memory->user->username }}</div>
+                                    @endif
+                                @else
+                                    <span class="text-muted small">Unknown memory</span>
+                                @endif
+                            </td>
                             <td><span class="badge bg-info-soft text-info rounded-pill text-uppercase">{{ $item->media_type }}</span></td>
-                            <td><span class="text-muted extra-small text-truncate d-inline-block" style="max-width: 280px;">{{ $item->file_url }}</span></td>
+                            <td>@include('admin.memories.partials.media-preview', ['media' => $item])</td>
                             <td><span class="text-muted small">{{ $item->sort_order }}</span></td>
                             <td><span class="text-muted small">{{ $item->created_at?->format('M d, Y H:i') ?? '—' }}</span></td>
                         </tr>

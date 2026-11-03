@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\EarningsController;
 use App\Http\Controllers\Api\FeedController;
 use App\Http\Controllers\Api\FollowController;
 use App\Http\Controllers\Api\MemoryController;
+use App\Http\Controllers\Api\MonetizationController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PostController;
 use App\Http\Controllers\Api\ProfileController;
@@ -29,6 +30,7 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/apple-login', [AuthController::class, 'appleLogin']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+    Route::post('/check-email', [AuthController::class, 'checkEmail']);
     Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp']);
     Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp']);
     Route::get('/verify-email/{id}/{token}', [AuthController::class, 'verifyEmail'])->name('auth.verify-email');
@@ -58,6 +60,11 @@ Route::middleware('session.auth')->group(function (): void {
     Route::get('/earnings/breakdowns', [EarningsController::class, 'breakdowns']);
     Route::get('/earnings/withdrawals', [EarningsController::class, 'withdrawals']);
     Route::post('/earnings/withdrawals', [EarningsController::class, 'storeWithdrawal']);
+    Route::get('/monetization/status', [MonetizationController::class, 'status']);
+    Route::post('/monetization/request', [MonetizationController::class, 'requestAccess']);
+    Route::get('/ads/eligibility', [MonetizationController::class, 'status']);
+    Route::post('/ads/request', [MonetizationController::class, 'requestAccess']);
+    Route::post('/ads/toggle', [MonetizationController::class, 'toggleAds']);
     Route::get('/feed/posts/{postId}', [FeedController::class, 'show']);
     Route::get('/feed/posts/{postId}/comments', [FeedController::class, 'comments']);
     Route::get('/feed/posts/{postId}/likes', [FeedController::class, 'likes']);
