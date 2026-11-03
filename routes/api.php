@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastingAuthController;
 use App\Http\Controllers\Api\ChatController;
@@ -32,6 +33,9 @@ Route::prefix('auth')->group(function (): void {
     Route::post('/resend-email-otp', [AuthController::class, 'resendEmailOtp']);
     Route::get('/verify-email/{id}/{token}', [AuthController::class, 'verifyEmail'])->name('auth.verify-email');
 });
+
+// Public — splash calls this before login to decide hard force-update.
+Route::get('/app/version-check', [AppVersionController::class, 'check']);
 
 Route::middleware('session.auth.optional')->group(function (): void {
     Route::get('/search/posts', [FeedController::class, 'searchPosts']);

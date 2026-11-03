@@ -43,7 +43,8 @@ class SettingsController extends Controller
                             ->where('config_key', 'not like', 'legal.%')
                             ->where('config_key', 'not like', 'uploads.%')
                             ->where('config_key', 'not like', 'feed.%')
-                            ->where('config_key', 'not like', 'ads.%');
+                            ->where('config_key', 'not like', 'ads.%')
+                            ->where('config_key', 'not like', 'app.%');
                     });
 
                     return;
@@ -66,6 +67,7 @@ class SettingsController extends Controller
             'uploads' => AppConfig::query()->where('config_key', 'like', 'uploads.%')->count(),
             'feed' => AppConfig::query()->where('config_key', 'like', 'feed.%')->count(),
             'ads' => AppConfig::query()->where('config_key', 'like', 'ads.%')->count(),
+            'app' => AppConfig::query()->where('config_key', 'like', 'app.%')->count(),
         ];
 
         $configGroupCounts['other'] = max(AppConfig::count() - array_sum($configGroupCounts), 0);
@@ -622,6 +624,36 @@ class SettingsController extends Controller
                     'legal.terms_url' => ['label' => 'Terms URL', 'type' => 'string', 'placeholder' => 'https://.../terms'],
                     'legal.delete_account_url' => ['label' => 'Delete Account URL', 'type' => 'string', 'placeholder' => 'https://.../delete-account'],
                     'legal.company_name' => ['label' => 'Company Name', 'type' => 'string', 'placeholder' => 'Stylebite Inc.'],
+                ],
+            ],
+            'app' => [
+                'label' => 'Mobile App',
+                'fields' => [
+                    'app.force_update' => [
+                        'label' => 'Force Update (block old builds)',
+                        'type' => 'boolean',
+                        'placeholder' => 'false',
+                    ],
+                    'app.min_ios_version' => [
+                        'label' => 'Minimum iOS Version (e.g. 1.0.17)',
+                        'type' => 'string',
+                        'placeholder' => '1.0.16',
+                    ],
+                    'app.min_android_version' => [
+                        'label' => 'Minimum Android Version (e.g. 1.0.17)',
+                        'type' => 'string',
+                        'placeholder' => '1.0.16',
+                    ],
+                    'app.ios_store_url' => [
+                        'label' => 'App Store URL',
+                        'type' => 'string',
+                        'placeholder' => 'https://apps.apple.com/app/id...',
+                    ],
+                    'app.android_store_url' => [
+                        'label' => 'Play Store URL',
+                        'type' => 'string',
+                        'placeholder' => 'https://play.google.com/store/apps/details?id=com.stylebite.app',
+                    ],
                 ],
             ],
         ];
