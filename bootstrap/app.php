@@ -111,6 +111,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'session.auth' => \App\Http\Middleware\SessionTokenAuth::class,
             'session.auth.optional' => \App\Http\Middleware\OptionalSessionTokenAuth::class,
             'admin' => \App\Http\Middleware\EnsureAdminUser::class,
+            'app.min.version' => \App\Http\Middleware\EnforceMinAppVersion::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -23,7 +23,7 @@ use App\Http\Controllers\Api\UserSearchController;
 use App\Http\Controllers\Api\ViewController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('auth')->group(function (): void {
+Route::prefix('auth')->middleware('app.min.version')->group(function (): void {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/google-login', [AuthController::class, 'googleLogin']);
@@ -39,7 +39,7 @@ Route::prefix('auth')->group(function (): void {
 // Public — splash calls this before login to decide hard force-update.
 Route::get('/app/version-check', [AppVersionController::class, 'check']);
 
-Route::middleware('session.auth.optional')->group(function (): void {
+Route::middleware(['session.auth.optional', 'app.min.version'])->group(function (): void {
     Route::get('/search/posts', [FeedController::class, 'searchPosts']);
     Route::get('/feed/hashtags/{tag}', [FeedController::class, 'hashtagPosts']);
     Route::get('/feed/tags/{tag}', [FeedController::class, 'hashtagPosts']);
@@ -48,7 +48,7 @@ Route::middleware('session.auth.optional')->group(function (): void {
     Route::get('/feed/posts/{postId}/food-reviews', [RestaurantReviewController::class, 'postReviews']);
 });
 
-Route::middleware('session.auth')->group(function (): void {
+Route::middleware(['session.auth', 'app.min.version'])->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::post('/devices/push-token', [DeviceController::class, 'storePushToken']);
     Route::post('/views/batch', [ViewController::class, 'storeBatch']);
