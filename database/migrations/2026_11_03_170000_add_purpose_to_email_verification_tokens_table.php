@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('email_verification_tokens', 'purpose')) {
+            return;
+        }
+
         Schema::table('email_verification_tokens', function (Blueprint $table) {
             $table->string('purpose', 32)
                 ->default('email_verification')
@@ -18,6 +22,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (! Schema::hasColumn('email_verification_tokens', 'purpose')) {
+            return;
+        }
+
         Schema::table('email_verification_tokens', function (Blueprint $table) {
             $table->dropColumn('purpose');
         });
