@@ -238,10 +238,12 @@ class UserController extends Controller
         ]);
 
         if (function_exists('stylebite_notify_user')) {
+            // notifications.type is a MySQL enum — only `system` (not
+            // verification_approved) is valid for admin/system events.
             stylebite_notify_user(
                 (int) $user->id,
                 auth()->id(),
-                'verification_approved',
+                'system',
                 'user',
                 (int) $user->id,
                 'Verification approved',
@@ -278,10 +280,12 @@ class UserController extends Controller
         ]);
 
         if (function_exists('stylebite_notify_user')) {
+            // notifications.type is a MySQL enum — only `system` (not
+            // verification_rejected) is valid for admin/system events.
             stylebite_notify_user(
                 (int) $user->id,
                 auth()->id(),
-                'verification_rejected',
+                'system',
                 'user',
                 (int) $user->id,
                 'Verification not approved',

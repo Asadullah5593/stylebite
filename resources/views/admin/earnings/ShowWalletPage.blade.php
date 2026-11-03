@@ -223,7 +223,15 @@
                                 <tr class="border-white-05">
                                     <td class="ps-4">
                                         <div class="small fw-semibold">#{{ $withdrawal->id }}</div>
-                                        <div class="text-muted extra-small">{{ $withdrawal->account_ref ?: 'No account ref' }}</div>
+                                        @if ($withdrawal->bank_name || $withdrawal->bank_account_number)
+                                            <div class="text-muted extra-small">
+                                                {{ $withdrawal->bank_name ?: 'Bank' }}
+                                                ·
+                                                {{ $withdrawal->bank_account_number ?: ($withdrawal->account_ref ?: '—') }}
+                                            </div>
+                                        @else
+                                            <div class="text-muted extra-small">{{ $withdrawal->account_ref ?: 'No bank details' }}</div>
+                                        @endif
                                         <div class="text-muted extra-small">{{ $withdrawal->payoutTransaction ? 'Txn #'.$withdrawal->payoutTransaction->id : 'No linked payout txn' }}</div>
                                     </td>
                                     <td><span class="fw-semibold">{{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }}</span></td>

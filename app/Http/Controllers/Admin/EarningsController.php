@@ -693,62 +693,90 @@ class EarningsController extends Controller
             return back()->with('status', 'This transaction cannot be reversed from the admin panel.');
         }
 
-        DB::transaction(function () use ($transaction) {
-            $transaction->loadMissing('wallet');
-            $wallet = $transaction->wallet;
+        $transaction->loadMissing('wallet');
+        $wallet = $transaction->wallet;
 
-            if (! $wallet) {
-                abort(404, 'Wallet not found for this transaction.');
-            }
+        if (! $wallet) {
+            return back()->with('status', 'Wallet not found for this transaction.');
+        }
 
-            $amount = round((float) $transaction->amount, 2);
+        $amount = round((float) $transaction->amount, 2);
+        $currency = (string) $transaction->currency_code;
 
-            if ($transaction->transaction_type === 'credit' && (float) $wallet->available_balance < $amount) {
-                abort(422, 'Insufficient available balance to reverse this credit transaction.');
-            }
+        if ($transaction->transaction_type === 'credit' && (float) $wallet->available_balance < $amount) {
+            return back()->with(
+                'status',
+                'Cannot reverse this credit: available balance ('
+                .number_format((float) $wallet->available_balance, 2).' '.$currency
+                .') is less than the credit ('
+                .number_format($amount, 2).' '.$currency
+                .'). The user may have already spent or withdrawn part of it.'
+            );
+        }
 
-            $transaction->status = 'reversed';
-            $transaction->updated_at = now();
-            $transaction->save();
+        try {
+            DB::transaction(function () use ($transaction, $amount) {
+                $wallet = EarningsWallet::query()
+                    ->whereKey($transaction->wallet_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            EarningTransaction::create([
-                'wallet_id' => $wallet->id,
-                'user_id' => $wallet->user_id,
-                'transaction_type' => $transaction->transaction_type === 'credit' ? 'debit' : 'credit',
-                'source_type' => 'adjustment',
-                'source_id' => $transaction->id,
-                'amount' => $amount,
-                'currency_code' => $transaction->currency_code,
-                // Mirror the original conversion so the reversal is auditable too.
-                'base_amount' => $transaction->base_amount,
-                'base_currency_code' => $transaction->base_currency_code,
-                'fx_rate' => $transaction->fx_rate,
-                'fx_rate_at' => $transaction->fx_rate_at,
-                'status' => 'completed',
-                'note' => 'Reversal for transaction #'.$transaction->id,
-                'metadata_json' => [
-                    'reason' => 'Admin reversal',
-                    'reversed_transaction_id' => $transaction->id,
-                ],
-                'processed_at' => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+                // Re-check under lock in case balance changed after the pre-check.
+                if ($transaction->transaction_type === 'credit' && (float) $wallet->available_balance < $amount) {
+                    throw new \RuntimeException(
+                        'Cannot reverse this credit: available balance ('
+                        .number_format((float) $wallet->available_balance, 2).' '.$transaction->currency_code
+                        .') is less than the credit ('
+                        .number_format($amount, 2).' '.$transaction->currency_code
+                        .'). The user may have already spent or withdrawn part of it.'
+                    );
+                }
 
-            if ($transaction->transaction_type === 'credit') {
-                $wallet->available_balance = round((float) $wallet->available_balance - $amount, 2);
-            } else {
-                $wallet->available_balance = round((float) $wallet->available_balance + $amount, 2);
-            }
+                $transaction->status = 'reversed';
+                $transaction->updated_at = now();
+                $transaction->save();
 
-            $wallet->updated_balance_at = now();
-            $wallet->save();
-        });
+                EarningTransaction::create([
+                    'wallet_id' => $wallet->id,
+                    'user_id' => $wallet->user_id,
+                    'transaction_type' => $transaction->transaction_type === 'credit' ? 'debit' : 'credit',
+                    'source_type' => 'adjustment',
+                    'source_id' => $transaction->id,
+                    'amount' => $amount,
+                    'currency_code' => $transaction->currency_code,
+                    // Mirror the original conversion so the reversal is auditable too.
+                    'base_amount' => $transaction->base_amount,
+                    'base_currency_code' => $transaction->base_currency_code,
+                    'fx_rate' => $transaction->fx_rate,
+                    'fx_rate_at' => $transaction->fx_rate_at,
+                    'status' => 'completed',
+                    'note' => 'Reversal for transaction #'.$transaction->id,
+                    'metadata_json' => [
+                        'reason' => 'Admin reversal',
+                        'reversed_transaction_id' => $transaction->id,
+                    ],
+                    'processed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                if ($transaction->transaction_type === 'credit') {
+                    $wallet->available_balance = round((float) $wallet->available_balance - $amount, 2);
+                } else {
+                    $wallet->available_balance = round((float) $wallet->available_balance + $amount, 2);
+                }
+
+                $wallet->updated_balance_at = now();
+                $wallet->save();
+            });
+        } catch (\RuntimeException $exception) {
+            return back()->with('status', $exception->getMessage());
+        }
 
         $this->logActivity('earning_transaction_reversed', 'earning_transaction', $transaction->id, [
             'wallet_id' => $transaction->wallet_id,
             'user_id' => $transaction->user_id,
-            'amount' => round((float) $transaction->amount, 2),
+            'amount' => $amount,
             'transaction_type' => $transaction->transaction_type,
         ]);
 
