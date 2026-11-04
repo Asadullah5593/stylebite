@@ -129,14 +129,18 @@
 
     @include('admin.users.partials.tabs')
 
+    @php
+        $vibeCount = (int) ($user->profile?->vibe_count ?? $user->profile?->follower_count ?? $user->followers_count ?? 0);
+        $vibeFlow = (int) ($user->profile?->following_count ?? 0);
+    @endphp
     <div class="row g-3 mb-4">
         @foreach ([
             ['label' => 'Status', 'value' => $statusLabel, 'icon' => 'bi-activity'],
             ['label' => 'Role', 'value' => str($user->role)->title(), 'icon' => 'bi-shield-check'],
+            ['label' => 'Vibe Count', 'value' => number_format($vibeCount), 'icon' => 'bi-heart-pulse'],
+            ['label' => 'Vibe Flow', 'value' => number_format($vibeFlow), 'icon' => 'bi-arrow-left-right'],
             ['label' => 'Posts', 'value' => number_format($user->posts_count), 'icon' => 'bi-file-earmark-text'],
-            ['label' => 'Followers', 'value' => number_format($user->followers_count), 'icon' => 'bi-people'],
             ['label' => 'Sessions', 'value' => number_format($user->sessions_count), 'icon' => 'bi-laptop'],
-            ['label' => 'Devices', 'value' => number_format($user->device_tokens_count), 'icon' => 'bi-phone'],
         ] as $tile)
             <div class="col-6 col-lg-2">
                 <div class="glass rounded-4 p-3 detail-tile border border-white-05">
@@ -170,6 +174,12 @@
                     <div class="row g-3 small">
                         <div class="col-md-6"><span class="text-muted d-block">Display Name</span>{{ $user->profile->display_name ?? 'Not set' }}</div>
                         <div class="col-md-6"><span class="text-muted d-block">Visibility</span>{{ str($user->profile->visibility)->replace('_', ' ')->title() }}</div>
+                        <div class="col-md-6"><span class="text-muted d-block">Vibe Count</span>{{ number_format($vibeCount) }}</div>
+                        <div class="col-md-6"><span class="text-muted d-block">Vibe Flow</span>{{ number_format($vibeFlow) }}</div>
+                        <div class="col-md-6"><span class="text-muted d-block">Posts</span>{{ number_format((int) ($user->profile->post_count ?? $user->posts_count ?? 0)) }}</div>
+                        <div class="col-md-6"><span class="text-muted d-block">Style Points</span>{{ number_format((int) ($user->profile->style_points ?? 0)) }}</div>
+                        <div class="col-md-6"><span class="text-muted d-block">Contest Wins</span>{{ number_format((int) ($user->profile->contest_wins ?? 0)) }}</div>
+                        <div class="col-md-6"><span class="text-muted d-block">Contest Entries</span>{{ number_format((int) ($user->profile->contest_entries ?? 0)) }}</div>
                         <div class="col-md-6"><span class="text-muted d-block">City</span>{{ $user->profile->city ?? 'Not set' }}</div>
                         <div class="col-md-6"><span class="text-muted d-block">Country</span>{{ $user->profile->country ?? 'Not set' }}</div>
                         <div class="col-12"><span class="text-muted d-block">Bio</span>{{ $user->profile->bio ?? 'No bio yet.' }}</div>

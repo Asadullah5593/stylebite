@@ -185,7 +185,7 @@ class UserController extends Controller
         }
 
         $requests = Profile::query()
-            ->with(['user:id,username,email,full_name,avatar_url,email_verified_at,phone_verified_at'])
+            ->with(['user:id,username,email,full_name,avatar_url,email_verified_at,phone_verified_at,created_at,last_seen_at'])
             ->whereIn('verification_status', ['pending', 'approved', 'rejected'])
             ->when($statusFilter !== 'all', fn ($query) => $query->where('verification_status', $statusFilter))
             ->when($request->filled('q'), function ($query) use ($request) {
