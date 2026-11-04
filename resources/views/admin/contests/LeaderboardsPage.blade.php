@@ -125,6 +125,10 @@
                     </thead>
                     <tbody>
                         @forelse ($rankings as $index => $row)
+                            @php
+                                $ratingVotes = collect($row->rating_votes ?? []);
+                                $modalId = 'ratings-c'.$contest->id.'-r'.($row->submission_id ?: $row->user_id).'-'.$index;
+                            @endphp
                             <tr class="border-white-05">
                                 <td class="ps-3"><span class="fw-bold">{{ $row->rank_position ?: ($index + 1) }}</span></td>
                                 <td>
@@ -132,7 +136,21 @@
                                     <div class="text-muted extra-small">{{ '@'.($row->user?->username ?: 'unknown') }} · user #{{ $row->user_id }}</div>
                                 </td>
                                 <td><span class="fw-semibold">{{ number_format((float) ($row->final_score ?? $row->total_score ?? 0), 2) }}</span></td>
-                                <td><span class="text-muted small">{{ number_format((int) ($row->vote_count ?? 0)) }}</span></td>
+                                <td>
+                                    @if ($ratingVotes->isNotEmpty())
+                                        <button
+                                            type="button"
+                                            class="btn btn-link p-0 text-decoration-underline fw-semibold"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#{{ $modalId }}"
+                                            title="View who rated"
+                                        >
+                                            {{ number_format((int) ($row->vote_count ?? $ratingVotes->count())) }}
+                                        </button>
+                                    @else
+                                        <span class="text-muted small">{{ number_format((int) ($row->vote_count ?? 0)) }}</span>
+                                    @endif
+                                </td>
                                 <td><span class="text-muted small">{{ number_format((int) ($row->like_count ?? 0)) }}</span></td>
                                 <td><span class="badge bg-secondary-soft text-muted rounded-pill">{{ str($row->status ?: 'n/a')->title() }}</span></td>
                                 <td>
@@ -151,6 +169,70 @@
                     </tbody>
                 </table>
             </div>
+
+            @foreach ($rankings as $index => $row)
+                @php
+                    $ratingVotes = collect($row->rating_votes ?? []);
+                    $modalId = 'ratings-c'.$contest->id.'-r'.($row->submission_id ?: $row->user_id).'-'.$index;
+                @endphp
+                @if ($ratingVotes->isNotEmpty())
+                    <div class="modal fade" id="{{ $modalId }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-scrollable modal-lg">
+                            <div class="modal-content bg-dark border border-white-10">
+                                <div class="modal-header border-white-10">
+                                    <h5 class="modal-title">
+                                        Ratings for {{ '@'.($row->user?->username ?: 'unknown') }}
+                                        @if ($row->submission_id)
+                                            · submission #{{ $row->submission_id }}
+                                        @endif
+                                    </h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="text-muted small mb-3">
+                                        {{ $ratingVotes->count() }} rating{{ $ratingVotes->count() === 1 ? '' : 's' }}
+                                        · avg {{ number_format((float) $ratingVotes->avg('score'), 2) }}
+                                    </div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th class="text-muted small">#</th>
+                                                    <th class="text-muted small">Rater</th>
+                                                    <th class="text-muted small">Status</th>
+                                                    <th class="text-muted small text-end">Score</th>
+                                                    <th class="text-muted small text-end">When</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach ($ratingVotes as $voteIndex => $vote)
+                                                    <tr>
+                                                        <td class="small">{{ $voteIndex + 1 }}</td>
+                                                        <td>
+                                                            <div class="fw-semibold small">{{ $vote['full_name'] ?: '—' }}</div>
+                                                            <div class="text-muted extra-small">
+                                                                {{ '@'.($vote['username'] ?: 'unknown') }}
+                                                                · user #{{ $vote['voter_user_id'] }}
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <span class="badge {{ ($vote['status'] ?? '') === 'active' ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning' }} rounded-pill">
+                                                                {{ str($vote['status'] ?? 'unknown')->title() }}
+                                                            </span>
+                                                        </td>
+                                                        <td class="text-end fw-bold">{{ number_format((float) $vote['score'], 2) }}</td>
+                                                        <td class="text-end text-muted extra-small">{{ $vote['created_at'] ?: '—' }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+            @endforeach
         </div>
     @empty
         <div class="glass rounded-4 p-5 text-center text-muted mb-4">

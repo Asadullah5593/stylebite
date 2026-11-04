@@ -620,7 +620,7 @@ class ContestController extends Controller
                 ->with([
                     'user:id,username,full_name',
                     'post:id,like_count',
-                    'votes.voter' => fn ($query) => $query->withTrashed()->select('id', 'status'),
+                    'votes.voter' => fn ($query) => $query->withTrashed()->select('id', 'username', 'full_name', 'status'),
                 ])
                 ->orderByRaw('COALESCE(rank_position, 999999), id ASC'),
         ];
@@ -731,21 +731,7 @@ class ContestController extends Controller
 
         if ($rankings->isEmpty()) {
             return $contest->submissions
-                ->map(function (ContestSubmission $submission) {
-                    $participant = new ContestParticipant([
-                        'user_id' => $submission->user_id,
-                        'total_score' => $submission->final_score,
-                        'rank_position' => $submission->rank_position,
-                        'status' => $submission->submission_status,
-                    ]);
-                    $participant->setRelation('user', $submission->user);
-                    $participant->setAttribute('submission_id', $submission->id);
-                    $participant->setAttribute('vote_count', $submission->votes->count());
-                    $participant->setAttribute('like_count', (int) ($submission->post?->like_count ?? 0));
-                    $participant->setAttribute('final_score', $submission->final_score);
-
-                    return $participant;
-                })
+                ->map(fn (ContestSubmission $submission) => $this->rankingRowFromSubmission($submission))
                 ->sort(function ($left, $right): int {
                     $leftRank = $left->rank_position;
                     $rightRank = $right->rank_position;
@@ -768,18 +754,63 @@ class ContestController extends Controller
 
         return $rankings->map(function (ContestParticipant $participant) use ($submissionByUser) {
             $submission = $submissionByUser->get((int) $participant->user_id);
-            $participant->setAttribute('submission_id', $submission?->id);
-            $participant->setAttribute(
-                'vote_count',
-                $submission ? $submission->votes->filter(
-                    fn ($vote) => $vote->voter && $vote->voter->status === 'active'
-                )->count() : 0
-            );
-            $participant->setAttribute('like_count', (int) ($submission?->post?->like_count ?? 0));
-            $participant->setAttribute('final_score', $submission?->final_score);
+            if (! $submission) {
+                $participant->setAttribute('submission_id', null);
+                $participant->setAttribute('vote_count', 0);
+                $participant->setAttribute('like_count', 0);
+                $participant->setAttribute('final_score', $participant->total_score);
+                $participant->setAttribute('rating_votes', []);
 
-            return $participant;
+                return $participant;
+            }
+
+            return $this->attachSubmissionStats($participant, $submission);
         });
+    }
+
+    private function rankingRowFromSubmission(ContestSubmission $submission): ContestParticipant
+    {
+        $participant = new ContestParticipant([
+            'user_id' => $submission->user_id,
+            'total_score' => $submission->final_score,
+            'rank_position' => $submission->rank_position,
+            'status' => $submission->submission_status,
+        ]);
+        $participant->setRelation('user', $submission->user);
+
+        return $this->attachSubmissionStats($participant, $submission);
+    }
+
+    private function attachSubmissionStats(ContestParticipant $participant, ContestSubmission $submission): ContestParticipant
+    {
+        $ratingVotes = $submission->votes
+            ->sortByDesc(fn ($vote) => (float) $vote->score)
+            ->values()
+            ->map(function ($vote) {
+                $voter = $vote->voter;
+
+                return [
+                    'voter_user_id' => (int) $vote->voter_user_id,
+                    'username' => $voter?->username,
+                    'full_name' => $voter?->full_name,
+                    'status' => $voter?->status ?? 'unknown',
+                    'score' => round((float) $vote->score, 2),
+                    'created_at' => optional($vote->created_at)?->toDateTimeString(),
+                ];
+            })
+            ->all();
+
+        $activeCount = collect($ratingVotes)
+            ->where('status', 'active')
+            ->count();
+
+        $participant->setAttribute('submission_id', $submission->id);
+        $participant->setAttribute('vote_count', $activeCount > 0 ? $activeCount : count($ratingVotes));
+        $participant->setAttribute('like_count', (int) ($submission->post?->like_count ?? 0));
+        $participant->setAttribute('final_score', $submission->final_score);
+        $participant->setAttribute('rating_votes', $ratingVotes);
+
+        return $participant;
     }
 
     public function storeInvitation(Request $request): RedirectResponse
