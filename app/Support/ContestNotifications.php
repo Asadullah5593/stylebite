@@ -3,7 +3,9 @@
 namespace App\Support;
 
 use App\Models\Contest;
+use App\Models\ContestParticipant;
 use App\Models\ContestPlace;
+use App\Models\ContestSubmission;
 use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Support\Str;
@@ -63,16 +65,22 @@ class ContestNotifications
         $contestId = (int) $contest->id;
         $title = self::contestName($contest);
         $image = $contest->cover_image_url ?: $contest->banner_image_url;
+        $participantStats = self::participantResultStats($contest);
 
-        self::afterResponse(function () use ($contestId, $title, $image, $actionUrl, $winners): void {
+        self::afterResponse(function () use ($contestId, $title, $image, $actionUrl, $winners, $participantStats): void {
             if (self::alreadySent($contestId, $actionUrl)) {
                 return;
             }
 
-            self::eachActiveUser(function (int $userId) use ($contestId, $title, $image, $actionUrl, $winners): void {
-                [$headline, $body] = isset($winners[$userId])
-                    ? self::winnerCopy((int) $winners[$userId], $title)
-                    : ['See who won', 'See who won '.$title.'.'];
+            self::eachActiveUser(function (int $userId) use ($contestId, $title, $image, $actionUrl, $winners, $participantStats): void {
+                if (isset($winners[$userId])) {
+                    [$headline, $body] = self::winnerCopy((int) $winners[$userId], $title);
+                } elseif (isset($participantStats[$userId])) {
+                    [$headline, $body] = self::nonWinnerCopy($title, $participantStats[$userId]);
+                } else {
+                    $headline = 'See who won';
+                    $body = 'See who won '.$title.'.';
+                }
 
                 stylebite_notify_user(
                     $userId,
@@ -81,7 +89,7 @@ class ContestNotifications
                     'contest',
                     $contestId,
                     $headline,
-                    $body,
+                    Str::limit($body, 500, ''),
                     $actionUrl,
                     $image
                 );
@@ -89,6 +97,98 @@ class ContestNotifications
         });
 
         return true;
+    }
+
+    /**
+     * Best live submission stats per approved participant (for better-luck copy).
+     *
+     * @return array<int, array{score:float,avg_rating:float,likes:int,ratings:int,rank:?int}>
+     */
+    private static function participantResultStats(Contest $contest): array
+    {
+        $participantIds = ContestParticipant::query()
+            ->where('contest_id', $contest->id)
+            ->where('status', 'approved')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($participantIds === []) {
+            return [];
+        }
+
+        $submissions = ContestSubmission::query()
+            ->with(['votes.voter:id,status', 'post:id,like_count'])
+            ->where('contest_id', $contest->id)
+            ->whereIn('user_id', $participantIds)
+            ->whereNotIn('submission_status', ['rejected', 'disqualified'])
+            ->orderByDesc('final_score')
+            ->orderBy('id')
+            ->get();
+
+        $stats = [];
+        foreach ($submissions as $submission) {
+            $userId = (int) $submission->user_id;
+            if ($userId <= 0 || isset($stats[$userId])) {
+                continue;
+            }
+
+            $activeVotes = $submission->votes->filter(
+                fn ($vote) => $vote->voter && $vote->voter->status === 'active'
+            );
+            $ratings = $activeVotes->count();
+            $avg = $ratings === 0 ? 0.0 : round((float) $activeVotes->avg('score'), 2);
+            $likes = max(0, (int) ($submission->post?->like_count ?? 0));
+
+            $stats[$userId] = [
+                'score' => round((float) ($submission->final_score ?? 0), 2),
+                'avg_rating' => $avg,
+                'likes' => $likes,
+                'ratings' => $ratings,
+                'rank' => $submission->rank_position !== null ? (int) $submission->rank_position : null,
+            ];
+        }
+
+        // Approved joiners with no live submission still get a softer notice.
+        foreach ($participantIds as $userId) {
+            if (! isset($stats[$userId])) {
+                $stats[$userId] = [
+                    'score' => 0.0,
+                    'avg_rating' => 0.0,
+                    'likes' => 0,
+                    'ratings' => 0,
+                    'rank' => null,
+                ];
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * @param  array{score:float,avg_rating:float,likes:int,ratings:int,rank:?int}  $stats
+     * @return array{0:string,1:string}
+     */
+    private static function nonWinnerCopy(string $title, array $stats): array
+    {
+        $rankBit = ! empty($stats['rank'])
+            ? ' You finished #'.(int) $stats['rank'].'.'
+            : '';
+
+        $body = sprintf(
+            'Thanks for entering %s — this round went to someone else.%s Your entry landed at %.1f avg rating across %d voters, %d likes, and a final score of %.2f. Keep showing up; the next contest is wide open.',
+            $title,
+            $rankBit,
+            (float) $stats['avg_rating'],
+            (int) $stats['ratings'],
+            (int) $stats['likes'],
+            (float) $stats['score'],
+        );
+
+        return ['Better luck next time', $body];
     }
 
     private static function winnerPlaces(Contest $contest): array

@@ -640,6 +640,13 @@ class ContestController extends Controller
 
     private function contestPayload(Contest $contest, ?int $viewerUserId = null, bool $includeDetails = false): array
     {
+        // Contests created before Rules existed still get defaults so the app
+        // never shows an empty Rules section to participants.
+        if ($includeDetails) {
+            ContestResults::ensureDefaultRules($contest);
+            $contest->unsetRelation('rules');
+        }
+
         $liveQuery = $this->liveSubmissionsQuery($contest->id);
         $submissions = $includeDetails
             ? (clone $liveQuery)
