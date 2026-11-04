@@ -155,16 +155,19 @@ class ContestController extends Controller
             'category' => $contest->category,
             'contest_type' => $contest->contest_type,
             'status' => $contest->status,
+            'result_at' => optional($contest->result_at)?->toDateTimeString(),
+            'end_at' => optional($contest->end_at)?->toDateTimeString(),
         ]);
 
         $announced = ContestNotifications::announceCreated($contest);
 
-        return redirect()->route('admin.contests.contests')->with(
-            'status',
-            $announced
+        $message = session()->pull('contest_deadline_reset')
+            ? 'Contest time extended. Winner announcement was reset — results will follow new votes until the new end time.'
+            : ($announced
                 ? 'Contest updated. Everyone will get a notification.'
-                : 'Contest updated successfully.'
-        );
+                : 'Contest updated successfully.');
+
+        return redirect()->route('admin.contests.contests')->with('status', $message);
     }
 
     public function destroyContest(Contest $contest): RedirectResponse
@@ -629,6 +632,9 @@ class ContestController extends Controller
             'winner_team_id' => $contest->winner_team_id,
         ];
 
+        $leavingCompleted = $original['status'] === 'completed'
+            && in_array($validated['status'], ['active', 'upcoming', 'draft'], true);
+
         $contest->status = $validated['status'];
 
         if ($contest->status === 'completed' && $contest->result_at === null) {
@@ -639,11 +645,16 @@ class ContestController extends Controller
 
         $contest->save();
 
+        if ($leavingCompleted) {
+            ContestResults::reopen($contest->fresh());
+            $winnerLabel = 'Frozen winners and ranks were cleared so the contest can run again. ';
+        }
+
         if (ContestNotifications::announceCreated($contest)) {
             $winnerLabel .= ' Everyone will get a new-contest notification.';
         }
 
-        if ($contest->status === 'completed' && ContestResults::finish($contest)) {
+        if ($contest->status === 'completed' && ContestResults::finish($contest->fresh())) {
             $winnerLabel .= ' Places follow the ratings. Win notifications are going out.';
         }
 
@@ -852,12 +863,15 @@ class ContestController extends Controller
         ContestResults::refreshScores($contest);
         $contest->save();
 
-        if ($contest->status === 'completed' && ContestResults::resultsMissing($contest)) {
-            ContestResults::assignOpenPlaces($contest);
-            $contest->save();
+        if ($contest->status === 'completed') {
+            // Also rebuild place winners from current ranks so an accidental
+            // earlier finish cannot leave a lower-score user stuck in 1st.
+            ContestResults::repairFinalization($contest->fresh());
             if (ContestNotifications::announceWinners($contest->fresh())) {
-                return back()->with('status', 'Scores were recalculated for "'.$contest->title.'". Places follow the ratings and win notifications are going out.');
+                return back()->with('status', 'Scores and place winners were rebuilt for "'.$contest->title.'" from current ratings.');
             }
+
+            return back()->with('status', 'Scores and place winners were rebuilt for "'.$contest->title.'" from current ratings.');
         }
 
         return back()->with('status', 'Scores and ranks were recalculated for "'.$contest->title.'".');
@@ -1033,6 +1047,19 @@ class ContestController extends Controller
                 }
             }
 
+            $oldDeadline = null;
+            $wasCompletedOrHadResults = false;
+            if ($contest !== null) {
+                $oldDeadline = $contest->voting_end_at ?? $contest->end_at;
+                $wasCompletedOrHadResults = $contest->status === 'completed'
+                    || $contest->result_at !== null
+                    || $contest->winner_user_id !== null
+                    || ContestPlace::query()
+                        ->where('contest_id', $contest->id)
+                        ->whereNotNull('winner_user_id')
+                        ->exists();
+            }
+
             $contest ??= Contest::create([
                 'slug' => $this->uniqueContestSlug($validated['title']),
                 'creator_user_id' => auth()->id(),
@@ -1041,6 +1068,16 @@ class ContestController extends Controller
                 'contest_type' => $validated['contest_type'],
             ]);
 
+            $newEndAt = isset($validated['end_at'])
+                ? Carbon::parse($validated['end_at'], 'Asia/Karachi')
+                : null;
+
+            $resetForExtension = ContestResults::shouldResetForExtendedDeadline(
+                $oldDeadline,
+                $newEndAt,
+                $wasCompletedOrHadResults,
+            );
+
             $contest->forceFill([
                 'title' => $validated['title'],
                 'slug' => $contest->slug ?: $this->uniqueContestSlug($validated['title']),
@@ -1048,7 +1085,8 @@ class ContestController extends Controller
                 'description' => $validated['description'] ?? null,
                 'category' => $category,
                 'contest_type' => $validated['contest_type'],
-                'status' => $validated['status'],
+                // Extending time reopens voting — do not keep "completed".
+                'status' => $resetForExtension ? 'active' : $validated['status'],
                 'visibility' => $validated['visibility'],
                 'city' => $validated['city'] ?? null,
                 'country' => $validated['country'] ?? null,
@@ -1057,9 +1095,11 @@ class ContestController extends Controller
                 'start_at' => isset($validated['start_at'])
                     ? Carbon::parse($validated['start_at'], 'Asia/Karachi')
                     : null,
-                'end_at' => isset($validated['end_at'])
-                    ? Carbon::parse($validated['end_at'], 'Asia/Karachi')
-                    : null,
+                'end_at' => $newEndAt,
+                // Keep voting deadline in sync with end_at when extending.
+                'voting_end_at' => $resetForExtension && $newEndAt
+                    ? $newEndAt
+                    : $contest->voting_end_at,
             ])->save();
 
             $coverImageUrl = $contest->cover_image_url;
@@ -1088,7 +1128,12 @@ class ContestController extends Controller
                 ]);
             }
 
-            $this->syncContestPlaces($contest, $placeRows);
+            $this->syncContestPlaces($contest, $placeRows, clearWinners: $resetForExtension);
+
+            if ($resetForExtension) {
+                ContestResults::reopen($contest->fresh());
+                session()->flash('contest_deadline_reset', true);
+            }
 
             return $contest->fresh();
         });
@@ -1121,12 +1166,14 @@ class ContestController extends Controller
         return (string) $uploaded['file_url'];
     }
 
-    private function syncContestPlaces(Contest $contest, $placeRows): void
+    private function syncContestPlaces(Contest $contest, $placeRows, bool $clearWinners = false): void
     {
-        $existingWinners = ContestPlace::query()
-            ->where('contest_id', $contest->id)
-            ->get()
-            ->keyBy('place');
+        $existingWinners = $clearWinners
+            ? collect()
+            : ContestPlace::query()
+                ->where('contest_id', $contest->id)
+                ->get()
+                ->keyBy('place');
 
         ContestPlace::query()->where('contest_id', $contest->id)->delete();
 

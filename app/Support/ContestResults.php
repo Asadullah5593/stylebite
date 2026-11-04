@@ -17,14 +17,98 @@ class ContestResults
     public static function finish(Contest $contest): bool
     {
         $contest->status = 'completed';
+        // A prior finish (e.g. accidental end) leaves sticky place winners.
+        // When re-finalizing, wipe them so ranks from the extension win.
+        $refinalizing = $contest->result_at !== null;
         $contest->result_at = $contest->result_at ?? now();
         self::refreshScores($contest);
+        if ($refinalizing) {
+            self::clearPlaceWinners($contest);
+        }
         self::assignOpenPlaces($contest);
         $contest->save();
         self::creditContest($contest);
         self::syncProfiles($contest);
 
         return ContestNotifications::announceWinners($contest->fresh());
+    }
+
+    /**
+     * Undo a completed / frozen contest so voting can continue after an
+     * accidental end or an admin time extension. Clears announced winners,
+     * clears result_at, aligns voting_end_at with end_at, rebuilds live ranks.
+     */
+    public static function reopen(Contest $contest): void
+    {
+        self::clearPlaceWinners($contest);
+        $contest->result_at = null;
+
+        if (! in_array($contest->status, ['active', 'upcoming', 'draft'], true)) {
+            $contest->status = 'active';
+        }
+
+        // Deadline checks use voting_end_at ?? end_at — keep them aligned so an
+        // extended end_at is not ignored by a stale voting_end_at.
+        if ($contest->end_at) {
+            $contest->voting_end_at = $contest->end_at;
+        }
+
+        self::refreshScores($contest);
+        $contest->save();
+        self::syncProfiles($contest);
+    }
+
+    /**
+     * True when admin pushed the contest deadline later (or reopened a finished
+     * contest into a still-open window).
+     */
+    public static function shouldResetForExtendedDeadline(
+        ?\DateTimeInterface $oldDeadline,
+        ?\DateTimeInterface $newEndAt,
+        bool $wasCompletedOrHadResults,
+    ): bool {
+        if (! $newEndAt) {
+            return false;
+        }
+
+        $new = \Illuminate\Support\Carbon::parse($newEndAt);
+
+        if ($wasCompletedOrHadResults && $new->isFuture()) {
+            return true;
+        }
+
+        if ($oldDeadline && $new->gt(\Illuminate\Support\Carbon::parse($oldDeadline))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Repair a completed contest whose ranks/winners froze after an earlier finish.
+     * Rebuilds scores, reassigns places from current ranks, credits unpaid prizes.
+     */
+    public static function repairFinalization(Contest $contest): void
+    {
+        $contest->status = 'completed';
+        $contest->result_at = $contest->result_at ?? now();
+        self::refreshScores($contest);
+        self::clearPlaceWinners($contest);
+        self::assignOpenPlaces($contest);
+        $contest->save();
+        self::creditContest($contest);
+        self::syncProfiles($contest);
+    }
+
+    public static function clearPlaceWinners(Contest $contest): void
+    {
+        ContestPlace::query()
+            ->where('contest_id', $contest->id)
+            ->update(['winner_user_id' => null]);
+
+        $contest->winner_user_id = null;
+        $contest->winner_team_id = null;
+        $contest->unsetRelation('places');
     }
 
     public static function winCount(int $userId): int
@@ -180,7 +264,7 @@ class ContestResults
         }
 
         if ($places->isEmpty()) {
-            $contest->winner_user_id = $contest->winner_user_id ?: ($rankedUserIds[0] ?? null);
+            $contest->winner_user_id = $rankedUserIds[0] ?? null;
             if ($contest->winner_user_id) {
                 $contest->winner_team_id = null;
             }
@@ -298,11 +382,19 @@ class ContestResults
             return;
         }
 
-        if (EarningTransaction::query()
+        $existing = EarningTransaction::query()
             ->where('source_type', 'contest_reward')
             ->where('source_id', $place->id)
-            ->exists()) {
-            return;
+            ->first();
+
+        if ($existing) {
+            if ((int) $existing->user_id === $userId) {
+                return;
+            }
+
+            // Place winner changed after an earlier finish — claw back the
+            // old credit so the current ranked winner can be paid.
+            self::reverseContestReward($existing);
         }
 
         $user = User::query()->with('profile')->find($userId);
@@ -366,6 +458,58 @@ class ContestResults
         } catch (\Illuminate\Database\UniqueConstraintViolationException) {
             // Concurrent finalization lost the race — unique(source_type, source_id) already holds.
         }
+    }
+
+    private static function reverseContestReward(EarningTransaction $transaction): void
+    {
+        if (
+            $transaction->source_type !== 'contest_reward'
+            || $transaction->transaction_type !== 'credit'
+            || ! in_array($transaction->status, ['completed', 'pending'], true)
+        ) {
+            return;
+        }
+
+        DB::transaction(function () use ($transaction): void {
+            $locked = EarningTransaction::query()
+                ->whereKey($transaction->id)
+                ->lockForUpdate()
+                ->first();
+            if (! $locked || $locked->status === 'reversed') {
+                return;
+            }
+
+            $wallet = EarningsWallet::query()
+                ->whereKey($locked->wallet_id)
+                ->lockForUpdate()
+                ->first();
+            if (! $wallet) {
+                return;
+            }
+
+            $amount = round((float) $locked->amount, 2);
+            if ($amount <= 0) {
+                return;
+            }
+
+            if ($locked->status === 'pending') {
+                $wallet->pending_balance = max(0, round((float) $wallet->pending_balance - $amount, 2));
+            } else {
+                $wallet->available_balance = max(0, round((float) $wallet->available_balance - $amount, 2));
+                $wallet->lifetime_earned = max(0, round((float) $wallet->lifetime_earned - $amount, 2));
+            }
+            $wallet->updated_balance_at = now();
+            $wallet->save();
+
+            $metadata = is_array($locked->metadata_json) ? $locked->metadata_json : [];
+            $metadata['prize_status'] = 'reversed';
+            $metadata['reversed_at'] = now()->toDateTimeString();
+            $metadata['reversed_reason'] = 'Contest place winner reassigned from current ranks';
+
+            // Remove the row so a new contest_reward can reuse source_id
+            // (unique on source_type + source_id) for the corrected winner.
+            $locked->delete();
+        });
     }
 
     /**
