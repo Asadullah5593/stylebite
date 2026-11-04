@@ -143,7 +143,12 @@
     </div>
     <div class="col-12">
         <label class="form-label small text-muted">Rules</label>
-        <textarea name="rules_text" rows="4" class="form-control border-0 bg-dark-soft rounded-3" placeholder="One rule per line. Example:&#10;1. Post a full outfit photo&#10;2. Add a short caption&#10;3. Use brand tags if needed">{{ old('rules_text', $contest?->rules_text ?? '') }}</textarea>
+        @php
+            $defaultRulesText = implode("\n", \App\Support\ContestResults::defaultDisplayRules());
+            $rulesTextValue = old('rules_text', $contest?->rules_text ?? ($contest ? '' : $defaultRulesText));
+        @endphp
+        <textarea name="rules_text" rows="5" class="form-control border-0 bg-dark-soft rounded-3" placeholder="One rule per line. Leave blank to use platform defaults.">{{ $rulesTextValue }}</textarea>
+        <div class="form-text text-muted extra-small">Leave blank on save to auto-fill the standard winning / eligibility rules. These show in the Rules tab and the app.</div>
     </div>
     <div class="col-12 d-flex justify-content-end">
         <button type="submit" class="btn btn-primary rounded-3 px-4"><i class="bi bi-plus-circle me-1"></i>{{ $submitLabel }}</button>

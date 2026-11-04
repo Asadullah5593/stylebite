@@ -770,7 +770,24 @@ class ContestController extends Controller
             'submissions' => $includeDetails
                 ? $this->mapSubmissionPayloads($submissions, $viewerUserId)
                 : [],
+            'rules' => $this->contestRulesPayload($contest),
+            'winning_rules' => ContestResults::winningRulesPayload(),
         ];
+    }
+
+    /** @return list<array{id:int,rule_text:string,sort_order:int}> */
+    private function contestRulesPayload(Contest $contest): array
+    {
+        $contest->loadMissing(['rules' => fn ($query) => $query->orderBy('sort_order')]);
+
+        return $contest->rules
+            ->values()
+            ->map(fn ($rule) => [
+                'id' => (int) $rule->id,
+                'rule_text' => (string) $rule->rule_text,
+                'sort_order' => (int) $rule->sort_order,
+            ])
+            ->all();
     }
 
     private function mapSubmissionPayloads($submissions, ?int $viewerUserId)

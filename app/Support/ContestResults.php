@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Contest;
 use App\Models\ContestParticipant;
 use App\Models\ContestPlace;
+use App\Models\ContestRule;
 use App\Models\ContestSubmission;
 use App\Models\EarningTransaction;
 use App\Models\EarningsWallet;
@@ -190,6 +191,76 @@ class ContestResults
     public static function minRatingVoters(): int
     {
         return max(1, (int) stylebite_app_config('contests.min_rating_voters', 10));
+    }
+
+    /**
+     * Default per-contest display rules shown in admin + app when a contest
+     * has no custom rules_text yet.
+     *
+     * @return list<string>
+     */
+    public static function defaultDisplayRules(): array
+    {
+        $minVoters = self::minRatingVoters();
+
+        return [
+            'Post an original entry that matches the contest theme.',
+            'Community ratings use a 1–5 score. Final score = (average rating × 70) + (likes × 0.3).',
+            "A submission needs at least {$minVoters} active raters before it can win a prize place.",
+            'Banned or deleted accounts and blocked posts do not count toward the ranking.',
+            'Winners are assigned when the contest ends, based on eligible final scores.',
+        ];
+    }
+
+    /**
+     * Platform winning rules exposed to admin UI and the mobile app.
+     *
+     * @return array{min_rating_voters:int,score_formula:string,score_formula_label:string,eligible_first:bool}
+     */
+    public static function winningRulesPayload(): array
+    {
+        return [
+            'min_rating_voters' => self::minRatingVoters(),
+            'score_formula' => '(average_rating * 70) + (likes * 0.3)',
+            'score_formula_label' => 'Final score = (average rating × 70) + (likes × 0.3)',
+            'eligible_first' => true,
+        ];
+    }
+
+    /** Create default display rules for one contest when it has none. */
+    public static function ensureDefaultRules(Contest $contest): int
+    {
+        if (ContestRule::query()->where('contest_id', $contest->id)->exists()) {
+            return 0;
+        }
+
+        $created = 0;
+        foreach (self::defaultDisplayRules() as $index => $ruleText) {
+            ContestRule::query()->create([
+                'contest_id' => $contest->id,
+                'rule_text' => $ruleText,
+                'sort_order' => $index + 1,
+                'created_at' => now(),
+            ]);
+            $created++;
+        }
+
+        return $created;
+    }
+
+    /** Seed default display rules onto every contest that still has zero rules. */
+    public static function seedMissingRules(): int
+    {
+        $created = 0;
+
+        Contest::query()
+            ->whereDoesntHave('rules')
+            ->orderBy('id')
+            ->each(function (Contest $contest) use (&$created): void {
+                $created += self::ensureDefaultRules($contest);
+            });
+
+        return $created;
     }
 
     public static function isEligibleToWin(ContestSubmission $submission): bool

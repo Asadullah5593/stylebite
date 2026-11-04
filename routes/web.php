@@ -208,6 +208,10 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/', [ContestController::class, 'contests'])->name('contests');
         Route::get('/create', [ContestController::class, 'createContest'])->name('create');
         Route::get('/contest-rules', [ContestController::class, 'rules'])->name('contest_rules');
+        Route::post('/contest-rules/winning', [ContestController::class, 'updateWinningRules'])->name('contest_rules.winning');
+        Route::post('/contest-rules/seed-defaults', [ContestController::class, 'seedDefaultRules'])->name('contest_rules.seed');
+        Route::patch('/contest-rules/{rule}', [ContestController::class, 'updateContestRule'])->name('contest_rules.update');
+        Route::delete('/contest-rules/{rule}', [ContestController::class, 'destroyContestRule'])->name('contest_rules.destroy');
         Route::get('/participants', [ContestController::class, 'participants'])->name('participants');
         Route::get('/invitations', [ContestController::class, 'invitations'])->name('invitations');
         Route::get('/teams', [ContestController::class, 'teams'])->name('teams');

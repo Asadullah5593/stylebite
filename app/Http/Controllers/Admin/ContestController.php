@@ -13,9 +13,11 @@ use App\Models\ContestRule;
 use App\Models\ContestSubmission;
 use App\Models\ContestTeam;
 use App\Models\ContestTeamMember;
+use App\Models\AppConfig;
 use App\Models\ContestVote;
 use App\Models\EarningTransaction;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use App\Support\ContestNotifications;
 use App\Support\ContestResults;
 use Carbon\Carbon;
@@ -254,11 +256,106 @@ class ContestController extends Controller
                             ->orWhere('slug', 'like', "%{$search}%"));
                 });
             })
-            ->latest('created_at')
-            ->paginate(10)
+            ->orderBy('contest_id')
+            ->orderBy('sort_order')
+            ->paginate(15)
             ->withQueryString();
 
-        return view('admin.contests.ContestRulesPage', compact('rules'));
+        $winningRules = ContestResults::winningRulesPayload();
+        $contestsMissingRules = Contest::query()->whereDoesntHave('rules')->count();
+
+        return view('admin.contests.ContestRulesPage', compact(
+            'rules',
+            'winningRules',
+            'contestsMissingRules',
+        ));
+    }
+
+    public function updateWinningRules(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'min_rating_voters' => ['required', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        $config = AppConfig::query()->firstOrNew([
+            'config_key' => 'contests.min_rating_voters',
+        ]);
+        $oldValue = $config->exists ? $config->config_value : null;
+        $config->config_value = (string) $validated['min_rating_voters'];
+        $config->value_type = 'number';
+        $config->save();
+        Cache::forget('stylebite_app_configs');
+
+        // Keep display rules that describe the min-raters threshold in sync
+        // with the live platform setting (so the app text matches scoring).
+        $minVoters = (int) $validated['min_rating_voters'];
+        $syncedText = "A submission needs at least {$minVoters} active raters before it can win a prize place.";
+        ContestRule::query()
+            ->where('rule_text', 'like', 'A submission needs at least % active raters before it can win a prize place.')
+            ->update(['rule_text' => $syncedText]);
+
+        $this->logActivity('contest_winning_rules_updated', 'app_config', $config->id, [
+            'config_key' => $config->config_key,
+            'old_value' => $oldValue,
+            'new_value' => $config->config_value,
+        ]);
+
+        return back()->with(
+            'status',
+            'Winning rule updated: a submission needs at least '.$validated['min_rating_voters'].' active raters to win. This applies across the app and backend immediately.'
+        );
+    }
+
+    public function seedDefaultRules(): RedirectResponse
+    {
+        $created = ContestResults::seedMissingRules();
+
+        $this->logActivity('contest_default_rules_seeded', 'contest_rule', null, [
+            'created_count' => $created,
+        ]);
+
+        return back()->with(
+            'status',
+            $created > 0
+                ? "Added {$created} default rule".($created === 1 ? '' : 's').' to contests that had none. They now show in admin and the app.'
+                : 'Every contest already has rules. Nothing to seed.'
+        );
+    }
+
+    public function updateContestRule(Request $request, ContestRule $rule): RedirectResponse
+    {
+        $validated = $request->validate([
+            'rule_text' => ['required', 'string', 'max:500'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000'],
+        ]);
+
+        $rule->forceFill([
+            'rule_text' => trim($validated['rule_text']),
+            'sort_order' => array_key_exists('sort_order', $validated) && $validated['sort_order'] !== null
+                ? (int) $validated['sort_order']
+                : (int) $rule->sort_order,
+        ])->save();
+
+        $this->logActivity('contest_rule_updated', 'contest_rule', $rule->id, [
+            'contest_id' => $rule->contest_id,
+            'rule_text' => $rule->rule_text,
+            'sort_order' => $rule->sort_order,
+        ]);
+
+        return back()->with('status', 'Rule #'.$rule->id.' updated. The app will show the new text on the next contest refresh.');
+    }
+
+    public function destroyContestRule(ContestRule $rule): RedirectResponse
+    {
+        $ruleId = $rule->id;
+        $contestId = $rule->contest_id;
+        $rule->delete();
+
+        $this->logActivity('contest_rule_deleted', 'contest_rule', $ruleId, [
+            'contest_id' => $contestId,
+        ]);
+
+        return back()->with('status', 'Rule #'.$ruleId.' removed.');
     }
 
     public function participants(Request $request): View
@@ -1044,6 +1141,12 @@ class ContestController extends Controller
             ->filter()
             ->values();
 
+        // Empty rules box still gets the platform defaults so Rules tab + app
+        // never go blank after save.
+        if ($rules->isEmpty()) {
+            $rules = collect(ContestResults::defaultDisplayRules());
+        }
+
         if ($rules->contains(fn (string $rule) => mb_strlen($rule) > 500)) {
             throw ValidationException::withMessages([
                 'rules_text' => 'Each rule must be 500 characters or fewer. Put one rule on each line.',
@@ -1144,6 +1247,7 @@ class ContestController extends Controller
                     'contest_id' => $contest->id,
                     'rule_text' => $ruleText,
                     'sort_order' => $index + 1,
+                    'created_at' => now(),
                 ]);
             }
 
