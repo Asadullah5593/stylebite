@@ -608,6 +608,181 @@ class EarningsController extends Controller
         );
     }
 
+    /**
+     * Directly set wallet balances the app reads (available / pending / lifetime).
+     * Creates an adjustment ledger row when available_balance changes so history stays auditable.
+     */
+    public function updateBalances(Request $request, EarningsWallet $wallet)
+    {
+        $validated = $request->validate([
+            'available_balance' => ['required', 'numeric', 'min:0'],
+            'pending_balance' => ['required', 'numeric', 'min:0'],
+            'lifetime_earned' => ['required', 'numeric', 'min:0'],
+            'lifetime_withdrawn' => ['required', 'numeric', 'min:0'],
+            'currency_code' => ['required', 'string', 'size:3'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $note = trim((string) ($validated['note'] ?? ''));
+        if ($note === '') {
+            $note = 'Admin updated wallet balances';
+        }
+
+        $before = [];
+        $after = [];
+
+        DB::transaction(function () use ($wallet, $validated, $note, &$before, &$after): void {
+            $wallet = EarningsWallet::query()
+                ->whereKey($wallet->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $before = [
+                'available_balance' => round((float) $wallet->available_balance, 2),
+                'pending_balance' => round((float) $wallet->pending_balance, 2),
+                'lifetime_earned' => round((float) $wallet->lifetime_earned, 2),
+                'lifetime_withdrawn' => round((float) $wallet->lifetime_withdrawn, 2),
+                'currency_code' => (string) $wallet->currency_code,
+            ];
+
+            $after = [
+                'available_balance' => round((float) $validated['available_balance'], 2),
+                'pending_balance' => round((float) $validated['pending_balance'], 2),
+                'lifetime_earned' => round((float) $validated['lifetime_earned'], 2),
+                'lifetime_withdrawn' => round((float) $validated['lifetime_withdrawn'], 2),
+                'currency_code' => strtoupper(trim($validated['currency_code'])),
+            ];
+
+            $availableDelta = round($after['available_balance'] - $before['available_balance'], 2);
+
+            if ($availableDelta != 0.0) {
+                EarningTransaction::create([
+                    'wallet_id' => $wallet->id,
+                    'user_id' => $wallet->user_id,
+                    'transaction_type' => $availableDelta > 0 ? 'credit' : 'debit',
+                    'source_type' => 'adjustment',
+                    'amount' => abs($availableDelta),
+                    'currency_code' => $after['currency_code'],
+                    'status' => 'completed',
+                    'note' => $note,
+                    'metadata_json' => [
+                        'reason' => 'Admin balance edit',
+                        'wallet_id' => $wallet->id,
+                        'before' => $before,
+                        'after' => $after,
+                    ],
+                    'processed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $wallet->forceFill([
+                'available_balance' => $after['available_balance'],
+                'pending_balance' => $after['pending_balance'],
+                'lifetime_earned' => $after['lifetime_earned'],
+                'lifetime_withdrawn' => $after['lifetime_withdrawn'],
+                'currency_code' => $after['currency_code'],
+                'updated_balance_at' => now(),
+            ])->save();
+        });
+
+        $this->logActivity('wallet_balances_updated', 'earnings_wallet', $wallet->id, [
+            'user_id' => $wallet->user_id,
+            'before' => $before,
+            'after' => $after,
+            'note' => $note,
+        ]);
+
+        return back()->with(
+            'status',
+            'Wallet balances updated. The user will see the new available / pending / lifetime figures in the app on refresh.'
+        );
+    }
+
+    public function updateTransaction(Request $request, EarningTransaction $transaction)
+    {
+        $validated = $request->validate([
+            'transaction_type' => ['required', 'in:credit,debit'],
+            'source_type' => ['required', 'string', 'max:50'],
+            'amount' => ['required', 'numeric', 'min:0'],
+            'status' => ['required', 'in:pending,completed,failed,reversed'],
+            'note' => ['nullable', 'string', 'max:255'],
+            'currency_code' => ['required', 'string', 'size:3'],
+        ]);
+
+        DB::transaction(function () use ($transaction, $validated): void {
+            $locked = EarningTransaction::query()
+                ->whereKey($transaction->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $wallet = EarningsWallet::query()
+                ->whereKey($locked->wallet_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $oldEffect = $this->completedAvailableEffect($locked);
+            $oldLifetime = $this->completedLifetimeEffect($locked);
+
+            $locked->forceFill([
+                'transaction_type' => $validated['transaction_type'],
+                'source_type' => trim($validated['source_type']),
+                'amount' => round((float) $validated['amount'], 2),
+                'status' => $validated['status'],
+                'note' => trim((string) ($validated['note'] ?? '')) ?: null,
+                'currency_code' => strtoupper(trim($validated['currency_code'])),
+                'processed_at' => in_array($validated['status'], ['completed', 'failed', 'reversed'], true)
+                    ? ($locked->processed_at ?? now())
+                    : null,
+            ])->save();
+
+            $newEffect = $this->completedAvailableEffect($locked->fresh());
+            $newLifetime = $this->completedLifetimeEffect($locked->fresh());
+
+            $wallet->available_balance = max(
+                0,
+                round((float) $wallet->available_balance - $oldEffect + $newEffect, 2)
+            );
+            $wallet->lifetime_earned = max(
+                0,
+                round((float) $wallet->lifetime_earned - $oldLifetime + $newLifetime, 2)
+            );
+            $wallet->updated_balance_at = now();
+            $wallet->save();
+        });
+
+        $this->logActivity('earning_transaction_updated', 'earning_transaction', $transaction->id, [
+            'wallet_id' => $transaction->wallet_id,
+            'user_id' => $transaction->user_id,
+            'changes' => $validated,
+        ]);
+
+        return back()->with('status', 'Transaction #'.$transaction->id.' updated. Wallet balances were synced for completed credit/debit effects.');
+    }
+
+    /** Available-balance impact of a completed credit (+) / debit (-). */
+    private function completedAvailableEffect(EarningTransaction $transaction): float
+    {
+        if ($transaction->status !== 'completed') {
+            return 0.0;
+        }
+
+        $amount = round((float) $transaction->amount, 2);
+
+        return $transaction->transaction_type === 'credit' ? $amount : -$amount;
+    }
+
+    /** Lifetime-earned impact of a completed credit. */
+    private function completedLifetimeEffect(EarningTransaction $transaction): float
+    {
+        if ($transaction->status !== 'completed' || $transaction->transaction_type !== 'credit') {
+            return 0.0;
+        }
+
+        return round((float) $transaction->amount, 2);
+    }
+
     public function storeAdjustment(Request $request, EarningsWallet $wallet, CurrencyConverter $converter)
     {
         $validated = $request->validate([

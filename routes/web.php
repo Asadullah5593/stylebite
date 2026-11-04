@@ -242,6 +242,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/transactions', [EarningsController::class, 'transactions'])->name('transactions');
         Route::get('/transactions/export', [EarningsController::class, 'exportTransactions'])->name('transactions.export');
         Route::post('/transactions/{transaction}/reverse', [EarningsController::class, 'reverseTransaction'])->name('transactions.reverse');
+        Route::patch('/transactions/{transaction}', [EarningsController::class, 'updateTransaction'])->name('transactions.update');
         Route::get('/withdrawals', [EarningsController::class, 'withdrawals'])->name('withdrawals');
         Route::get('/withdrawals/export', [EarningsController::class, 'exportWithdrawals'])->name('withdrawals.export');
         Route::patch('/withdrawals/{withdrawal}', [EarningsController::class, 'updateWithdrawal'])->name('withdrawals.update');
@@ -250,6 +251,7 @@ Route::prefix('admin')->name('admin.')->middleware('admin')->group(function () {
         Route::get('/reconciliation/export', [EarningsController::class, 'exportReconciliation'])->name('reconciliation.export');
         Route::get('/{wallet}', [EarningsController::class, 'showWallet'])->name('show');
         Route::post('/{wallet}/adjustments', [EarningsController::class, 'storeAdjustment'])->name('adjustments.store');
+        Route::patch('/{wallet}/balances', [EarningsController::class, 'updateBalances'])->name('balances.update');
     });
 
     // System

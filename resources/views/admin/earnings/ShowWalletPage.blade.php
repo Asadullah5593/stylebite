@@ -38,32 +38,110 @@
                     </div>
                 </div>
 
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <div class="border border-white-05 rounded-4 p-3 h-100">
-                            <div class="text-muted small mb-1">Available Balance</div>
-                            <div class="fs-4 fw-bold">{{ number_format((float) $wallet->available_balance, 2) }} {{ $wallet->currency_code }}</div>
+                <form method="POST" action="{{ route('admin.earnings.balances.update', $wallet) }}" class="d-flex flex-column gap-3">
+                    @csrf
+                    @method('PATCH')
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <div class="border border-white-05 rounded-4 p-3 h-100">
+                                <label class="text-muted small mb-1" for="available_balance">Available Balance ({{ $wallet->currency_code }})</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    name="available_balance"
+                                    id="available_balance"
+                                    value="{{ old('available_balance', number_format((float) $wallet->available_balance, 2, '.', '')) }}"
+                                    class="form-control form-control-lg border-0 bg-dark-soft rounded-3 fw-bold @error('available_balance') is-invalid @enderror"
+                                    required
+                                >
+                                @error('available_balance')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="border border-white-05 rounded-4 p-3 h-100">
+                                <label class="text-muted small mb-1" for="pending_balance">Pending Balance ({{ $wallet->currency_code }})</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    name="pending_balance"
+                                    id="pending_balance"
+                                    value="{{ old('pending_balance', number_format((float) $wallet->pending_balance, 2, '.', '')) }}"
+                                    class="form-control form-control-lg border-0 bg-dark-soft rounded-3 fw-bold text-warning @error('pending_balance') is-invalid @enderror"
+                                    required
+                                >
+                                @error('pending_balance')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="border border-white-05 rounded-4 p-3 h-100">
+                                <label class="text-muted small mb-1" for="lifetime_earned">Lifetime Earned ({{ $wallet->currency_code }})</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    name="lifetime_earned"
+                                    id="lifetime_earned"
+                                    value="{{ old('lifetime_earned', number_format((float) $wallet->lifetime_earned, 2, '.', '')) }}"
+                                    class="form-control border-0 bg-dark-soft rounded-3 @error('lifetime_earned') is-invalid @enderror"
+                                    required
+                                >
+                                @error('lifetime_earned')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="border border-white-05 rounded-4 p-3 h-100">
+                                <label class="text-muted small mb-1" for="lifetime_withdrawn">Lifetime Withdrawn ({{ $wallet->currency_code }})</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    name="lifetime_withdrawn"
+                                    id="lifetime_withdrawn"
+                                    value="{{ old('lifetime_withdrawn', number_format((float) $wallet->lifetime_withdrawn, 2, '.', '')) }}"
+                                    class="form-control border-0 bg-dark-soft rounded-3 @error('lifetime_withdrawn') is-invalid @enderror"
+                                    required
+                                >
+                                @error('lifetime_withdrawn')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            </div>
                         </div>
                     </div>
-                    <div class="col-12 col-md-6">
-                        <div class="border border-white-05 rounded-4 p-3 h-100">
-                            <div class="text-muted small mb-1">Pending Balance</div>
-                            <div class="fs-4 fw-bold text-warning">{{ number_format((float) $wallet->pending_balance, 2) }} {{ $wallet->currency_code }}</div>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label small text-muted" for="currency_code">Currency</label>
+                            <input
+                                type="text"
+                                name="currency_code"
+                                id="currency_code"
+                                maxlength="3"
+                                value="{{ old('currency_code', $wallet->currency_code) }}"
+                                class="form-control border-0 bg-dark-soft rounded-3 text-uppercase @error('currency_code') is-invalid @enderror"
+                                required
+                            >
+                            @error('currency_code')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <label class="form-label small text-muted" for="balance_note">Reason (shown in transaction history)</label>
+                            <input
+                                type="text"
+                                name="note"
+                                id="balance_note"
+                                maxlength="255"
+                                value="{{ old('note') }}"
+                                class="form-control border-0 bg-dark-soft rounded-3"
+                                placeholder="e.g. Correct balance after contest 19 clawback"
+                            >
                         </div>
                     </div>
-                    <div class="col-12 col-md-6">
-                        <div class="border border-white-05 rounded-4 p-3 h-100">
-                            <div class="text-muted small mb-1">Lifetime Earned</div>
-                            <div class="fw-semibold">{{ number_format((float) $wallet->lifetime_earned, 2) }}</div>
-                        </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <button type="submit" class="btn btn-primary-gradient rounded-3 px-4"
+                                onclick="return confirm('Save these wallet balances? The user will see them in the app immediately on refresh.');">
+                            <i class="bi bi-save me-2"></i>Save balances
+                        </button>
+                        <span class="text-muted extra-small">App earnings screens read these fields directly.</span>
                     </div>
-                    <div class="col-12 col-md-6">
-                        <div class="border border-white-05 rounded-4 p-3 h-100">
-                            <div class="text-muted small mb-1">Lifetime Withdrawn</div>
-                            <div class="fw-semibold">{{ number_format((float) $wallet->lifetime_withdrawn, 2) }}</div>
-                        </div>
-                    </div>
-                </div>
+                </form>
             </div>
         </div>
 
@@ -136,11 +214,14 @@
         </div>
     </div>
 
+    <div class="mb-2">
+        <div class="text-muted small">Ledger totals below update when you edit transactions / withdrawals. Change pending withdrawals to move reserved amounts; edit or reverse credits/debits to change completed totals.</div>
+    </div>
     <div class="row g-3 mb-4">
-        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Reserved Withdrawals</div><div class="fs-5 fw-bold">{{ number_format($walletAudit['reserved_withdrawals'] ?? 0, 2) }} {{ $wallet->currency_code }}</div></div></div>
-        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Pending Gap</div><div class="fs-5 fw-bold {{ ($walletAudit['pending_balance_gap'] ?? 0) == 0.0 ? '' : 'text-warning' }}">{{ number_format($walletAudit['pending_balance_gap'] ?? 0, 2) }}</div></div></div>
-        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Completed Credits</div><div class="fs-5 fw-bold">{{ number_format($walletAudit['completed_credits'] ?? 0, 2) }}</div></div></div>
-        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Completed Debits</div><div class="fs-5 fw-bold">{{ number_format($walletAudit['completed_debits'] ?? 0, 2) }}</div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Reserved Withdrawals</div><div class="fs-5 fw-bold">{{ number_format($walletAudit['reserved_withdrawals'] ?? 0, 2) }} {{ $wallet->currency_code }}</div><div class="text-muted extra-small mt-1">From pending/processing withdrawals</div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Pending Gap</div><div class="fs-5 fw-bold {{ ($walletAudit['pending_balance_gap'] ?? 0) == 0.0 ? '' : 'text-warning' }}">{{ number_format($walletAudit['pending_balance_gap'] ?? 0, 2) }}</div><div class="text-muted extra-small mt-1">Pending balance − reserved − pending prizes</div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Completed Credits</div><div class="fs-5 fw-bold">{{ number_format($walletAudit['completed_credits'] ?? 0, 2) }}</div><div class="text-muted extra-small mt-1">Edit transaction rows below</div></div></div>
+        <div class="col-md-3 col-sm-6"><div class="glass rounded-4 p-3 h-100"><div class="text-muted small">Completed Debits</div><div class="fs-5 fw-bold">{{ number_format($walletAudit['completed_debits'] ?? 0, 2) }}</div><div class="text-muted extra-small mt-1">Edit transaction rows below</div></div></div>
     </div>
 
     <div class="row g-4">
@@ -163,33 +244,79 @@
                         </thead>
                         <tbody>
                             @forelse ($wallet->transactions as $transaction)
-                                <tr class="border-white-05">
-                                    <td class="ps-4">
-                                        <div class="small fw-semibold">#{{ $transaction->id }}</div>
-                                        <div class="text-muted extra-small">{{ $transaction->note ?: 'No note' }}</div>
-                                    </td>
-                                    <td><span class="badge {{ $transaction->transaction_type === 'credit' ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning' }} rounded-pill">{{ str($transaction->transaction_type)->title() }}</span></td>
-                                    <td><span class="fw-semibold">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency_code }}</span></td>
-                                    <td><span class="badge {{ $transaction->status === 'completed' ? 'bg-success-soft text-success' : ($transaction->status === 'reversed' ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning') }} rounded-pill">{{ str($transaction->status)->title() }}</span></td>
-                                    <td class="text-end">
+                                <tr class="border-white-05 align-top">
+                                    <td class="ps-4" colspan="5">
+                                        <form method="POST" action="{{ route('admin.earnings.transactions.update', $transaction) }}" class="row g-2 align-items-end py-2">
+                                            @csrf
+                                            @method('PATCH')
+                                            <div class="col-md-1">
+                                                <div class="small fw-semibold">#{{ $transaction->id }}</div>
+                                                <div class="text-muted extra-small">{{ $transaction->source_type }}</div>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label extra-small text-muted mb-0">Type</label>
+                                                <select name="transaction_type" class="form-select form-select-sm border-0 bg-dark-soft rounded-3">
+                                                    <option value="credit" @selected($transaction->transaction_type === 'credit')>Credit</option>
+                                                    <option value="debit" @selected($transaction->transaction_type === 'debit')>Debit</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label extra-small text-muted mb-0">Source</label>
+                                                <input type="text" name="source_type" value="{{ $transaction->source_type }}" class="form-control form-control-sm border-0 bg-dark-soft rounded-3" maxlength="50" required>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label extra-small text-muted mb-0">Amount</label>
+                                                <input type="number" step="0.01" min="0" name="amount" value="{{ number_format((float) $transaction->amount, 2, '.', '') }}" class="form-control form-control-sm border-0 bg-dark-soft rounded-3" required>
+                                            </div>
+                                            <div class="col-md-1">
+                                                <label class="form-label extra-small text-muted mb-0">CCY</label>
+                                                <input type="text" name="currency_code" value="{{ $transaction->currency_code }}" maxlength="3" class="form-control form-control-sm border-0 bg-dark-soft rounded-3 text-uppercase" required>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label extra-small text-muted mb-0">Status</label>
+                                                <select name="status" class="form-select form-select-sm border-0 bg-dark-soft rounded-3">
+                                                    @foreach (['pending','completed','failed','reversed'] as $status)
+                                                        <option value="{{ $status }}" @selected($transaction->status === $status)>{{ str($status)->title() }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label extra-small text-muted mb-0">Note</label>
+                                                <input type="text" name="note" value="{{ $transaction->note }}" maxlength="255" class="form-control form-control-sm border-0 bg-dark-soft rounded-3">
+                                            </div>
+                                            <div class="col-12 d-flex flex-wrap gap-2 justify-content-end">
+                                                <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
+                                                    <i class="bi bi-save me-1"></i>Save txn
+                                                </button>
+                                                @if (
+                                                    $transaction->status === 'pending'
+                                                    && $transaction->source_type === 'contest_reward'
+                                                    && $transaction->transaction_type === 'credit'
+                                                )
+                                                    <button type="submit" form="approve-{{ $transaction->id }}" class="btn btn-sm btn-success rounded-3 px-3 fw-bold">
+                                                        <i class="bi bi-check2-circle me-1"></i>Release to Available
+                                                    </button>
+                                                @endif
+                                                @if ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
+                                                    <button type="submit" form="reverse-{{ $transaction->id }}" class="btn btn-sm btn-outline-danger rounded-3 px-3">
+                                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reverse
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        </form>
                                         @if (
                                             $transaction->status === 'pending'
                                             && $transaction->source_type === 'contest_reward'
                                             && $transaction->transaction_type === 'credit'
                                         )
-                                            <form method="POST" action="{{ route('admin.earnings.contest_prizes.approve', $transaction) }}"
-                                                  onsubmit="return confirm('Approve this contest prize and move it to Available Balance?');">
+                                            <form id="approve-{{ $transaction->id }}" method="POST" action="{{ route('admin.earnings.contest_prizes.approve', $transaction) }}"
+                                                  onsubmit="return confirm('Approve this contest prize and move it to Available Balance?');" class="d-none">
                                                 @csrf
-                                                <button type="submit" class="btn btn-sm btn-success rounded-3 px-3 fw-bold">
-                                                    <i class="bi bi-check2-circle me-1"></i>Release to Available
-                                                </button>
                                             </form>
-                                        @elseif ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
-                                            <form method="POST" action="{{ route('admin.earnings.transactions.reverse', $transaction) }}">
+                                        @endif
+                                        @if ($transaction->status === 'completed' && $transaction->source_type !== 'withdrawal')
+                                            <form id="reverse-{{ $transaction->id }}" method="POST" action="{{ route('admin.earnings.transactions.reverse', $transaction) }}" class="d-none">
                                                 @csrf
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3">
-                                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reverse
-                                                </button>
                                             </form>
                                         @endif
                                     </td>
@@ -220,32 +347,45 @@
                         </thead>
                         <tbody>
                             @forelse ($wallet->withdrawalRequests as $withdrawal)
-                                <tr class="border-white-05">
-                                    <td class="ps-4">
-                                        <div class="small fw-semibold">#{{ $withdrawal->id }}</div>
-                                        @if ($withdrawal->bank_name || $withdrawal->bank_account_number)
-                                            <div class="text-muted extra-small">
-                                                {{ $withdrawal->bank_name ?: 'Bank' }}
-                                                ·
-                                                {{ $withdrawal->bank_account_number ?: ($withdrawal->account_ref ?: '—') }}
+                                <tr class="border-white-05 align-top">
+                                    <td class="ps-4" colspan="4">
+                                        <div class="small fw-semibold mb-1">#{{ $withdrawal->id }} · {{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }}</div>
+                                        <div class="text-muted extra-small mb-2">
+                                            {{ $withdrawal->bank_name ?: 'Bank' }}
+                                            · {{ $withdrawal->bank_account_number ?: ($withdrawal->account_ref ?: 'No bank details') }}
+                                            · {{ $withdrawal->payoutTransaction ? 'Txn #'.$withdrawal->payoutTransaction->id : 'No linked payout txn' }}
+                                        </div>
+                                        <form method="POST" action="{{ route('admin.earnings.withdrawals.update', $withdrawal) }}" class="row g-2 align-items-end">
+                                            @csrf
+                                            @method('PATCH')
+                                            <div class="col-md-4">
+                                                <label class="form-label extra-small text-muted mb-0">Status</label>
+                                                <select name="status" class="form-select form-select-sm border-0 bg-dark-soft rounded-3">
+                                                    @foreach (['pending' => 'Pending', 'processing' => 'Processing', 'completed' => 'Completed', 'failed' => 'Failed', 'rejected' => 'Rejected'] as $value => $label)
+                                                        <option value="{{ $value }}" @selected($withdrawal->status === $value)>{{ $label }}</option>
+                                                    @endforeach
+                                                </select>
                                             </div>
-                                        @else
-                                            <div class="text-muted extra-small">{{ $withdrawal->account_ref ?: 'No bank details' }}</div>
-                                        @endif
-                                        <div class="text-muted extra-small">{{ $withdrawal->payoutTransaction ? 'Txn #'.$withdrawal->payoutTransaction->id : 'No linked payout txn' }}</div>
-                                    </td>
-                                    <td><span class="fw-semibold">{{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }}</span></td>
-                                    <td><span class="badge {{ $withdrawal->status === 'completed' ? 'bg-success-soft text-success' : ($withdrawal->status === 'processing' ? 'bg-info-soft text-info' : ($withdrawal->status === 'pending' ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger')) }} rounded-pill">{{ str($withdrawal->status)->title() }}</span></td>
-                                    <td class="text-end pe-3">
-                                        @if (in_array($withdrawal->status, ['pending', 'processing'], true))
-                                            <form method="POST" action="{{ route('admin.earnings.withdrawals.complete', $withdrawal) }}" onsubmit="return confirm('Confirm you already sent {{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }} to this user\'s account. The user will be notified.');">
-                                                @csrf
-                                                <button type="submit" class="btn btn-sm btn-success rounded-3 px-3">
-                                                    <i class="bi bi-check2-circle me-1"></i>Done
+                                            <div class="col-md-5">
+                                                <label class="form-label extra-small text-muted mb-0">Failure / rejection reason</label>
+                                                <input type="text" name="failure_reason" value="{{ $withdrawal->failure_reason }}" maxlength="255" class="form-control form-control-sm border-0 bg-dark-soft rounded-3" placeholder="Required for failed/rejected">
+                                            </div>
+                                            <div class="col-md-3 d-flex flex-wrap gap-2">
+                                                <button type="submit" class="btn btn-sm btn-outline-dynamic rounded-3 px-3">
+                                                    <i class="bi bi-save me-1"></i>Save
                                                 </button>
+                                                @if (in_array($withdrawal->status, ['pending', 'processing'], true))
+                                                    <button type="submit" form="complete-wd-{{ $withdrawal->id }}" class="btn btn-sm btn-success rounded-3 px-3">
+                                                        <i class="bi bi-check2-circle me-1"></i>Done
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        </form>
+                                        @if (in_array($withdrawal->status, ['pending', 'processing'], true))
+                                            <form id="complete-wd-{{ $withdrawal->id }}" method="POST" action="{{ route('admin.earnings.withdrawals.complete', $withdrawal) }}" class="d-none"
+                                                  onsubmit="return confirm('Confirm you already sent {{ number_format((float) $withdrawal->amount, 2) }} {{ $withdrawal->currency_code }} to this user\'s account. The user will be notified.');">
+                                                @csrf
                                             </form>
-                                        @else
-                                            <span class="text-muted extra-small">—</span>
                                         @endif
                                     </td>
                                 </tr>
