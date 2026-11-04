@@ -89,10 +89,39 @@
             filter: brightness(1.08);
         }
 
-        /* Modal Theming */
+        /* Modal Theming — keep above sticky header; close always visible */
+        .modal { z-index: 1080 !important; }
+        .modal-backdrop { z-index: 1070 !important; }
         .modal-content { background: var(--sb-panel) !important; color: var(--sb-text) !important; border: 1px solid var(--sb-border) !important; }
-        .modal-header { border-bottom: 1px solid var(--sb-border) !important; }
+        .modal-header {
+            border-bottom: 1px solid var(--sb-border) !important;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .modal-footer { border-top: 1px solid var(--sb-border) !important; }
         .btn-close { filter: var(--sb-header-icon-filter, invert(1)); }
+        .modal-header .btn-close,
+        .modal-header .btn-close-white {
+            width: 2rem;
+            height: 2rem;
+            padding: 0.45rem;
+            margin: 0;
+            opacity: 1 !important;
+            border-radius: 999px;
+            background-color: rgba(127, 127, 127, 0.18);
+            box-sizing: content-box;
+            flex-shrink: 0;
+        }
+        body.theme-dark .modal-header .btn-close,
+        body.theme-dark .modal-header .btn-close-white {
+            filter: invert(1) grayscale(100%) !important;
+            background-color: rgba(255, 255, 255, 0.12);
+        }
+        body.theme-light .modal-header .btn-close,
+        body.theme-light .modal-header .btn-close-white {
+            filter: none !important;
+            background-color: rgba(0, 0, 0, 0.08);
+        }
 
         body {
             background: var(--sb-shell-bg);
@@ -734,6 +763,50 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+        (function () {
+            // Modals inside .glass (backdrop-filter + overflow:hidden) get clipped
+            // and their close buttons disappear under the sticky header. Hoist them.
+            const hoistModals = () => {
+                document.querySelectorAll('.modal').forEach((modal) => {
+                    if (modal.parentElement !== document.body) {
+                        document.body.appendChild(modal);
+                    }
+                    if (!modal.querySelector('.modal-header [data-bs-dismiss="modal"]')) {
+                        const header = modal.querySelector('.modal-header');
+                        if (header) {
+                            const close = document.createElement('button');
+                            close.type = 'button';
+                            close.className = 'btn-close';
+                            close.setAttribute('data-bs-dismiss', 'modal');
+                            close.setAttribute('aria-label', 'Close');
+                            header.appendChild(close);
+                        }
+                    }
+                    if (!modal.querySelector('.modal-footer [data-bs-dismiss="modal"]')) {
+                        let footer = modal.querySelector('.modal-footer');
+                        if (!footer) {
+                            footer = document.createElement('div');
+                            footer.className = 'modal-footer';
+                            const content = modal.querySelector('.modal-content');
+                            if (content) {
+                                content.appendChild(footer);
+                            }
+                        }
+                        if (footer && !footer.querySelector('[data-bs-dismiss="modal"]')) {
+                            const closeBtn = document.createElement('button');
+                            closeBtn.type = 'button';
+                            closeBtn.className = 'btn btn-outline-dynamic rounded-3';
+                            closeBtn.setAttribute('data-bs-dismiss', 'modal');
+                            closeBtn.textContent = 'Close';
+                            footer.appendChild(closeBtn);
+                        }
+                    }
+                });
+            };
+            hoistModals();
+            document.addEventListener('shown.bs.modal', hoistModals);
+        })();
+
         (function () {
             const body = document.body;
             const storedTheme = localStorage.getItem('stylebite-admin-theme') || 'dark';

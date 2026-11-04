@@ -97,17 +97,20 @@
                                     </button>
 
                                     <div class="modal fade" id="{{ $metadataId }}" tabindex="-1" aria-hidden="true">
-                                        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                                            <div class="modal-content bg-dark border border-white-10">
+                                        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                                            <div class="modal-content border border-white-10">
                                                 <div class="modal-header border-white-10">
                                                     <h5 class="modal-title">{{ str($log->event_name)->replace('_', ' ')->title() }} metadata</h5>
-                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                                 </div>
                                                 <div class="modal-body">
                                                     <div class="small text-muted mb-3">
                                                         {{ str($log->entity_type ?: 'n/a')->replace('_', ' ')->title() }} {{ $log->entity_id ? '#'.$log->entity_id : '' }} · {{ $log->created_at?->format('M d, Y H:i') ?? '-' }}
                                                     </div>
-                                                    <pre class="mb-0 text-white small bg-black rounded-3 p-3 border border-white-10" style="white-space: pre-wrap;">{{ json_encode($log->metadata_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                                                    <pre class="mb-0 small bg-dark-soft rounded-3 p-3 border border-white-10" style="white-space: pre-wrap;">{{ json_encode($log->metadata_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                                                </div>
+                                                <div class="modal-footer border-white-10">
+                                                    <button type="button" class="btn btn-outline-dynamic rounded-3" data-bs-dismiss="modal">Close</button>
                                                 </div>
                                             </div>
                                         </div>
