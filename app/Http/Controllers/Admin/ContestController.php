@@ -596,43 +596,157 @@ class ContestController extends Controller
 
     public function leaderboards(Request $request): View
     {
-        $leaderboards = ContestLeaderboardSnapshot::query()
-            ->with('contest:id,title,status,winner_user_id,winner_team_id')
+        $contestOptions = Contest::query()
+            ->orderByDesc('id')
+            ->get(['id', 'title', 'status', 'category']);
+
+        $categoryOptions = Contest::query()
+            ->whereNotNull('category')
+            ->distinct()
+            ->orderBy('category')
+            ->pluck('category');
+
+        // Live boards for every contest matching filters (not snapshots-only).
+        $contests = Contest::query()
+            ->with([
+                'winnerUser:id,username,full_name',
+                'places.winnerUser:id,username,full_name',
+                'participants.user:id,username,full_name,avatar_url,status',
+                'submissions' => fn ($query) => $query
+                    ->with(['user:id,username,full_name', 'post:id,like_count', 'votes.voter:id,status'])
+                    ->orderByRaw('COALESCE(rank_position, 999999), id ASC'),
+            ])
+            ->withCount([
+                'participants as approved_participants_count' => fn ($query) => $query->where('status', 'approved'),
+                'submissions',
+            ])
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
-
                 $query->where(function ($query) use ($search) {
-                    $query->where('period_key', 'like', "%{$search}%")
-                        ->orWhere('category_key', 'like', "%{$search}%")
-                        ->orWhereHas('contest', fn ($query) => $query
-                            ->where('title', 'like', "%{$search}%")
-                            ->orWhere('slug', 'like', "%{$search}%"));
+                    $query->where('title', 'like', "%{$search}%")
+                        ->orWhere('slug', 'like', "%{$search}%");
                 });
             })
-            ->when($request->filled('contest_id'), fn ($query) => $query->where('contest_id', $request->integer('contest_id')))
-            ->when($request->filled('category_key'), fn ($query) => $query->where('category_key', $request->string('category_key')))
-            ->latest('generated_at')
-            ->paginate(10)
+            ->when($request->filled('category_key'), fn ($query) => $query->where('category', $request->string('category_key')))
+            ->when($request->filled('contest_id'), fn ($query) => $query->where('id', $request->integer('contest_id')))
+            ->orderByDesc('id')
+            ->paginate(8)
             ->withQueryString();
 
-        $contestOptions = Contest::query()
-            ->orderBy('title')
-            ->get(['id', 'title']);
+        $boards = $contests->getCollection()->map(function (Contest $contest) {
+            return [
+                'contest' => $contest,
+                'places' => $contest->places->sortBy('place')->values(),
+                'rankings' => $this->liveContestRankings($contest),
+            ];
+        });
 
-        $categoryOptions = ContestLeaderboardSnapshot::query()
-            ->select('category_key')
-            ->distinct()
-            ->orderBy('category_key')
-            ->pluck('category_key');
+        $snapshots = ContestLeaderboardSnapshot::query()
+            ->with('contest:id,title,status')
+            ->when($request->filled('contest_id'), fn ($query) => $query->where('contest_id', $request->integer('contest_id')))
+            ->latest('generated_at')
+            ->limit(10)
+            ->get();
 
         $leaderboardStats = [
-            'total' => ContestLeaderboardSnapshot::count(),
-            'visible' => $leaderboards->total(),
-            'contests' => ContestLeaderboardSnapshot::distinct('contest_id')->count('contest_id'),
-            'latest_generated_at' => ContestLeaderboardSnapshot::max('generated_at'),
+            'contests' => Contest::count(),
+            'participants' => ContestParticipant::where('status', 'approved')->count(),
+            'submissions' => ContestSubmission::count(),
+            'snapshots' => ContestLeaderboardSnapshot::count(),
+            'boards_on_page' => $boards->count(),
         ];
 
-        return view('admin.contests.LeaderboardsPage', compact('leaderboards', 'contestOptions', 'categoryOptions', 'leaderboardStats'));
+        return view('admin.contests.LeaderboardsPage', compact(
+            'contestOptions',
+            'categoryOptions',
+            'contests',
+            'boards',
+            'snapshots',
+            'leaderboardStats',
+        ));
+    }
+
+    /** Live ranked rows for one contest (participants first, else submissions). */
+    private function liveContestRankings(Contest $contest)
+    {
+        $rankings = $contest->participants
+            ->filter(fn (ContestParticipant $participant) => $participant->status === 'approved'
+                || $participant->rank_position !== null
+                || (float) ($participant->total_score ?? 0) > 0)
+            ->sort(function (ContestParticipant $left, ContestParticipant $right): int {
+                $leftRank = $left->rank_position;
+                $rightRank = $right->rank_position;
+                if ($leftRank === null && $rightRank === null) {
+                    $byScore = ((float) ($right->total_score ?? 0)) <=> ((float) ($left->total_score ?? 0));
+
+                    return $byScore !== 0 ? $byScore : ((int) $left->id) <=> ((int) $right->id);
+                }
+                if ($leftRank === null) {
+                    return 1;
+                }
+                if ($rightRank === null) {
+                    return -1;
+                }
+                $byRank = ((int) $leftRank) <=> ((int) $rightRank);
+                if ($byRank !== 0) {
+                    return $byRank;
+                }
+
+                return ((float) ($right->total_score ?? 0)) <=> ((float) ($left->total_score ?? 0));
+            })
+            ->values();
+
+        if ($rankings->isEmpty()) {
+            return $contest->submissions
+                ->map(function (ContestSubmission $submission) {
+                    $participant = new ContestParticipant([
+                        'user_id' => $submission->user_id,
+                        'total_score' => $submission->final_score,
+                        'rank_position' => $submission->rank_position,
+                        'status' => $submission->submission_status,
+                    ]);
+                    $participant->setRelation('user', $submission->user);
+                    $participant->setAttribute('submission_id', $submission->id);
+                    $participant->setAttribute('vote_count', $submission->votes->count());
+                    $participant->setAttribute('like_count', (int) ($submission->post?->like_count ?? 0));
+                    $participant->setAttribute('final_score', $submission->final_score);
+
+                    return $participant;
+                })
+                ->sort(function ($left, $right): int {
+                    $leftRank = $left->rank_position;
+                    $rightRank = $right->rank_position;
+                    if ($leftRank === null && $rightRank === null) {
+                        return ((float) ($right->total_score ?? 0)) <=> ((float) ($left->total_score ?? 0));
+                    }
+                    if ($leftRank === null) {
+                        return 1;
+                    }
+                    if ($rightRank === null) {
+                        return -1;
+                    }
+
+                    return ((int) $leftRank) <=> ((int) $rightRank);
+                })
+                ->values();
+        }
+
+        $submissionByUser = $contest->submissions->keyBy(fn ($row) => (int) $row->user_id);
+
+        return $rankings->map(function (ContestParticipant $participant) use ($submissionByUser) {
+            $submission = $submissionByUser->get((int) $participant->user_id);
+            $participant->setAttribute('submission_id', $submission?->id);
+            $participant->setAttribute(
+                'vote_count',
+                $submission ? $submission->votes->filter(
+                    fn ($vote) => $vote->voter && $vote->voter->status === 'active'
+                )->count() : 0
+            );
+            $participant->setAttribute('like_count', (int) ($submission?->post?->like_count ?? 0));
+            $participant->setAttribute('final_score', $submission?->final_score);
+
+            return $participant;
+        });
     }
 
     public function storeInvitation(Request $request): RedirectResponse
@@ -1093,7 +1207,7 @@ class ContestController extends Controller
             'team_members' => ContestTeamMember::count(),
             'submissions' => ContestSubmission::count(),
             'votes' => ContestVote::count(),
-            'leaderboards' => ContestLeaderboardSnapshot::count(),
+            'leaderboards' => Contest::count(),
         ];
     }
 
