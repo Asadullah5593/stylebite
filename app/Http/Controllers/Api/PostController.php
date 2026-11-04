@@ -8,6 +8,7 @@ use App\Models\MediaUpload;
 use App\Models\Post;
 use App\Models\PostMedia;
 use App\Models\PostTag;
+use App\Models\RestaurantReview;
 use App\Models\Tag;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Illuminate\Http\JsonResponse;
@@ -105,6 +106,8 @@ class PostController extends Controller
             OptimizePostMedia::dispatch($media->id)->afterCommit();
         }
 
+        RestaurantReview::syncFromFoodPost($post);
+
         return response()->json([
             'status_code' => 1,
             'message' => 'Post created successfully.',
@@ -194,6 +197,8 @@ class PostController extends Controller
 
             return $post->fresh(['media', 'tags']);
         });
+
+        RestaurantReview::syncFromFoodPost($post);
 
         return response()->json([
             'status_code' => 1,

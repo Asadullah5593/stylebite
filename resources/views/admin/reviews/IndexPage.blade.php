@@ -10,7 +10,7 @@
 
     <div class="mb-4">
         <h1 class="display-6 fw-extrabold mb-1" style="letter-spacing: -0.04em;">Restaurant reviews</h1>
-        <p class="text-muted small mb-0">Food ratings people left on restaurants. Removing a review takes it off the app.</p>
+        <p class="text-muted small mb-0">Includes Bite post ratings and community restaurant reviews. Removing a review clears it from the app.</p>
     </div>
 
     @if (session('status'))
