@@ -34,11 +34,11 @@
             <input type="text" name="q" value="{{ request('q') }}" class="form-control ps-5 border-0 bg-dark-soft rounded-3" placeholder="Search contest title...">
         </div>
 
-        <select name="contest_id" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto; min-width: 220px;">
+        <select name="contest_id" class="form-select border-0 bg-dark-soft rounded-3 text-muted" style="width: auto; min-width: 220px;" onchange="this.form.submit()">
             <option value="">All Contests</option>
             @foreach ($contestOptions as $contestOption)
                 <option value="{{ $contestOption->id }}" @selected((string) request('contest_id') === (string) $contestOption->id)>
-                    {{ $contestOption->title !== '' ? $contestOption->title : ('Contest #'.$contestOption->id) }}
+                    #{{ $contestOption->id }} — {{ $contestOption->title !== '' ? $contestOption->title : 'Untitled' }}
                     ({{ str($contestOption->status)->title() }})
                 </option>
             @endforeach
@@ -153,7 +153,15 @@
             </div>
         </div>
     @empty
-        <div class="glass rounded-4 p-5 text-center text-muted mb-4">No contests found for the selected filters.</div>
+        <div class="glass rounded-4 p-5 text-center text-muted mb-4">
+            No contests found for the selected filters.
+            @if (! empty($selectedContestId))
+                <div class="extra-small mt-2">Requested contest id: {{ $selectedContestId }}</div>
+            @endif
+            <div class="mt-3">
+                <a href="{{ route('admin.contests.leaderboards') }}" class="btn btn-outline-dynamic rounded-3 px-3">Show all contests</a>
+            </div>
+        </div>
     @endforelse
 
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">

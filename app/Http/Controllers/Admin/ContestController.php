@@ -602,36 +602,68 @@ class ContestController extends Controller
 
         $categoryOptions = Contest::query()
             ->whereNotNull('category')
+            ->where('category', '!=', '')
             ->distinct()
             ->orderBy('category')
             ->pluck('category');
 
-        // Live boards for every contest matching filters (not snapshots-only).
-        $contests = Contest::query()
-            ->with([
-                'winnerUser:id,username,full_name',
-                'places.winnerUser:id,username,full_name',
-                'participants.user:id,username,full_name,avatar_url,status',
-                'submissions' => fn ($query) => $query
-                    ->with(['user:id,username,full_name', 'post:id,like_count', 'votes.voter:id,status'])
-                    ->orderByRaw('COALESCE(rank_position, 999999), id ASC'),
-            ])
-            ->withCount([
-                'participants as approved_participants_count' => fn ($query) => $query->where('status', 'approved'),
-                'submissions',
-            ])
-            ->when($request->filled('q'), function ($query) use ($request) {
-                $search = $request->string('q')->toString();
-                $query->where(function ($query) use ($search) {
-                    $query->where('title', 'like', "%{$search}%")
-                        ->orWhere('slug', 'like', "%{$search}%");
-                });
-            })
-            ->when($request->filled('category_key'), fn ($query) => $query->where('category', $request->string('category_key')))
-            ->when($request->filled('contest_id'), fn ($query) => $query->where('id', $request->integer('contest_id')))
-            ->orderByDesc('id')
-            ->paginate(8)
-            ->withQueryString();
+        $selectedContestId = $request->input('contest_id');
+        $selectedContestId = is_numeric($selectedContestId) ? (int) $selectedContestId : null;
+        $search = trim($request->string('q')->toString());
+        $categoryKey = trim($request->string('category_key')->toString());
+
+        $eager = [
+            'winnerUser:id,username,full_name',
+            'places.winnerUser:id,username,full_name',
+            'participants.user:id,username,full_name,avatar_url,status',
+            'submissions' => fn ($query) => $query
+                ->with([
+                    'user:id,username,full_name',
+                    'post:id,like_count',
+                    'votes.voter' => fn ($query) => $query->withTrashed()->select('id', 'status'),
+                ])
+                ->orderByRaw('COALESCE(rank_position, 999999), id ASC'),
+        ];
+
+        $withCount = [
+            'participants as approved_participants_count' => fn ($query) => $query->where('status', 'approved'),
+            'submissions',
+        ];
+
+        if ($selectedContestId) {
+            // Exact contest pick — include soft-deleted so filter never returns empty for a real id.
+            $picked = Contest::withTrashed()
+                ->with($eager)
+                ->withCount($withCount)
+                ->find($selectedContestId);
+
+            $items = $picked ? collect([$picked]) : collect();
+            $contests = new \Illuminate\Pagination\LengthAwarePaginator(
+                $items,
+                $items->count(),
+                8,
+                1,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
+        } else {
+            // Live boards for every contest matching filters (not snapshots-only).
+            $contests = Contest::query()
+                ->with($eager)
+                ->withCount($withCount)
+                ->when($search !== '', function ($query) use ($search) {
+                    $query->where(function ($query) use ($search) {
+                        $query->where('title', 'like', "%{$search}%")
+                            ->orWhere('slug', 'like', "%{$search}%");
+                    });
+                })
+                ->when($categoryKey !== '', fn ($query) => $query->where('category', $categoryKey))
+                ->orderByDesc('id')
+                ->paginate(8)
+                ->withQueryString();
+        }
 
         $boards = $contests->getCollection()->map(function (Contest $contest) {
             return [
@@ -643,7 +675,7 @@ class ContestController extends Controller
 
         $snapshots = ContestLeaderboardSnapshot::query()
             ->with('contest:id,title,status')
-            ->when($request->filled('contest_id'), fn ($query) => $query->where('contest_id', $request->integer('contest_id')))
+            ->when($selectedContestId, fn ($query) => $query->where('contest_id', $selectedContestId))
             ->latest('generated_at')
             ->limit(10)
             ->get();
@@ -663,6 +695,7 @@ class ContestController extends Controller
             'boards',
             'snapshots',
             'leaderboardStats',
+            'selectedContestId',
         ));
     }
 
