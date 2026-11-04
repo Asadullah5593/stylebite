@@ -471,6 +471,12 @@ class ProfileController extends Controller
             ->where('post_type', $postType)
             ->where('status', 'published')
             ->where('is_story', false)
+            // Banned / suspended authors disappear from everyone else's profile grid
+            // until admin sets them active again (rows are kept).
+            ->when(
+                $targetUser->status !== 'active',
+                fn (Builder $query) => $query->whereRaw('0 = 1')
+            )
             ->tap(fn (Builder $query) => $this->applyPostVisibilityScope($query, $viewerUserId, $targetUser->id))
             ->latest('published_at')
             ->latest('id');
@@ -550,6 +556,10 @@ class ProfileController extends Controller
                     ->with(['media' => fn ($media) => $media->orderBy('sort_order')]),
             ])
             ->where('user_id', $targetUser->id)
+            ->whereHas(
+                'post.user',
+                fn (Builder $userQuery) => $userQuery->where('status', 'active')
+            )
             ->latest('created_at');
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);

@@ -992,6 +992,7 @@ class FeedController extends Controller
     private function applyFeedVisibilityScope(Builder $query, int $viewerUserId): Builder
     {
         return $query
+            ->fromActiveAuthors()
             ->where('status', 'published')
             ->where('moderation_status', 'clean')
             ->where('is_blocked', false)

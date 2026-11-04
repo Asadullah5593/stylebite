@@ -242,6 +242,7 @@ class ModerationController extends Controller
 
     private function applyUserAction(User $user, string $action): void
     {
+        $oldStatus = (string) $user->status;
         $user->status = match ($action) {
             'ban' => 'banned',
             'restore' => 'active',
@@ -249,6 +250,12 @@ class ModerationController extends Controller
         };
 
         $user->save();
+
+        \App\Support\UserLifecycle::afterStatusChange(
+            $user->fresh(),
+            $oldStatus,
+            (string) $user->status
+        );
     }
 
     private function applyContentAction(Post|Comment|CommentReply $target, string $action): void

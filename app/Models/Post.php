@@ -125,6 +125,18 @@ class Post extends StylebiteModel
     }
 
     /**
+     * Authors who are banned/suspended/deleted stay out of public feeds.
+     * Their rows remain so content reappears when admin sets status=active.
+     */
+    public function scopeFromActiveAuthors(Builder $query): Builder
+    {
+        return $query->whereHas(
+            'user',
+            fn (Builder $userQuery) => $userQuery->where('status', 'active')
+        );
+    }
+
+    /**
      * Small badge payload for feed/profile cards: which contest this post
      * is entered in. Null when the post is not in any contest.
      *

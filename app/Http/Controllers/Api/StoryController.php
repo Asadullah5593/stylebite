@@ -26,6 +26,7 @@ class StoryController extends Controller
                 'media' => fn ($query) => $query->orderBy('sort_order'),
                 'tags',
             ])
+            ->fromActiveAuthors()
             ->where('status', 'published')
             ->where('moderation_status', 'clean')
             ->where('is_blocked', false)

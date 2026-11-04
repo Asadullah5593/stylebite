@@ -805,6 +805,12 @@ class UserController extends Controller
 
         $user->update(['status' => $targetStatus]);
 
+        \App\Support\UserLifecycle::afterStatusChange(
+            $user->fresh(),
+            $oldStatus,
+            $targetStatus
+        );
+
         $this->logActivity('user_lifecycle_updated', 'user', $user->id, [
             'action' => $action,
             'old_status' => $oldStatus,
@@ -814,9 +820,9 @@ class UserController extends Controller
         ]);
 
         $message = match ($action) {
-            'activate' => 'User activated successfully.',
-            'ban' => 'User banned successfully.',
-            default => 'User suspended successfully.',
+            'activate' => 'User activated successfully. Their posts and media are visible again.',
+            'ban' => 'User banned successfully. Their content is hidden and contest ratings they cast were removed.',
+            default => 'User suspended successfully. Their content is hidden until reactivated.',
         };
 
         return back()->with('status', $message);

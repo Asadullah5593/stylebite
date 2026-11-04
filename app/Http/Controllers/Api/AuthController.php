@@ -48,6 +48,9 @@ class AuthController extends Controller
                 'email',
                 'max:191',
                 function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! stylebite_email_domain_allowed((string) $value)) {
+                        $fail('Please use a Gmail or iCloud email address to register.');
+                    }
                     if (stylebite_email_is_registered((string) $value)) {
                         $fail('An account already exists with this email.');
                     }
@@ -161,10 +164,8 @@ class AuthController extends Controller
             ]);
         }
 
-        if ($user->status !== 'active') {
-            throw ValidationException::withMessages([
-                'email' => ['This account is not active.'],
-            ]);
+        if ($restricted = $this->inactiveAccountResponse($user)) {
+            return $restricted;
         }
 
         if ($user->email_verified_at === null) {
@@ -324,7 +325,12 @@ class AuthController extends Controller
             ])->save();
         });
 
-        $session = $this->createSession($user->fresh(['profile', 'settings']), $request);
+        $freshUser = $user->fresh(['profile', 'settings']);
+        if ($restricted = $this->inactiveAccountResponse($freshUser)) {
+            return $restricted;
+        }
+
+        $session = $this->createSession($freshUser, $request);
 
         return response()->json([
             'status_code' => 1,
@@ -517,6 +523,12 @@ class AuthController extends Controller
                 ]);
             }
 
+            if (! stylebite_email_domain_allowed($email)) {
+                throw ValidationException::withMessages([
+                    'email' => ['Please sign in with a Gmail or iCloud email address.'],
+                ]);
+            }
+
             $user = $this->findUserByEmailMailbox($email);
 
             if ($user?->trashed()) {
@@ -568,10 +580,8 @@ class AuthController extends Controller
             return $user;
         });
 
-        if ($user->status !== 'active') {
-            throw ValidationException::withMessages([
-                'email' => ['This account is not active.'],
-            ]);
+        if ($restricted = $this->inactiveAccountResponse($user)) {
+            return $restricted;
         }
 
         // Google sign-up / sign-in also finishes with a Gmail OTP (same as password login).
@@ -845,6 +855,14 @@ class AuthController extends Controller
             'email.email' => 'Please enter a valid email address.',
         ], $this->authValidationAttributes());
 
+        if (! stylebite_email_domain_allowed($validated['email'])) {
+            return response()->json([
+                'status_code' => 1,
+                'available' => false,
+                'message' => 'Please use a Gmail or iCloud email address to register.',
+            ]);
+        }
+
         $taken = stylebite_email_is_registered($validated['email']);
 
         return response()->json([
@@ -854,6 +872,26 @@ class AuthController extends Controller
                 ? 'An account already exists with this email.'
                 : 'Email is available.',
         ]);
+    }
+
+    private function inactiveAccountResponse(User $user): ?JsonResponse
+    {
+        if ($user->status === 'active') {
+            return null;
+        }
+
+        $banned = $user->status === 'banned';
+
+        return response()->json([
+            'status_code' => 0,
+            'code' => $banned ? 'account_banned' : 'account_suspended',
+            'message' => $banned
+                ? 'Your account has been banned. Contact StyleBite support if you believe this is a mistake.'
+                : 'Your account is suspended. Contact StyleBite support for help.',
+            'reason' => $banned
+                ? 'This account is banned and cannot use StyleBite.'
+                : 'This account is inactive until an admin reactivates it.',
+        ], 403);
     }
 
     private function loginValidationMessages(): array

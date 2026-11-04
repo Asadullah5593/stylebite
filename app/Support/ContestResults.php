@@ -78,19 +78,28 @@ class ContestResults
 
     public static function isEligibleToWin(ContestSubmission $submission): bool
     {
-        $submission->loadMissing('votes');
+        $submission->loadMissing(['votes.voter:id,status']);
 
-        return $submission->votes->count() >= self::minRatingVoters();
+        $activeVotes = $submission->votes->filter(
+            fn ($vote) => $vote->voter && $vote->voter->status === 'active'
+        );
+
+        return $activeVotes->count() >= self::minRatingVoters();
     }
 
     public static function applyScore(ContestSubmission $submission): void
     {
-        $submission->loadMissing(['votes', 'post:id,like_count']);
+        $submission->loadMissing(['votes.voter:id,status', 'post:id,like_count']);
 
-        $voteCount = $submission->votes->count();
+        // Ignore ratings from banned / suspended accounts even if a row remains.
+        $activeVotes = $submission->votes->filter(
+            fn ($vote) => $vote->voter && $vote->voter->status === 'active'
+        );
+
+        $voteCount = $activeVotes->count();
         $average = $voteCount === 0
             ? 0.0
-            : (float) $submission->votes->avg('score');
+            : (float) $activeVotes->avg('score');
         $likes = max(0, (int) ($submission->post->like_count ?? 0));
 
         $submission->community_score = round($average, 2);
@@ -147,7 +156,13 @@ class ContestResults
             $position++;
         }
 
-        $contest->total_vote_count = $submissions->sum(fn (ContestSubmission $submission) => $submission->votes->count());
+        $contest->total_vote_count = $submissions->sum(function (ContestSubmission $submission) {
+            $submission->loadMissing(['votes.voter:id,status']);
+
+            return $submission->votes->filter(
+                fn ($vote) => $vote->voter && $vote->voter->status === 'active'
+            )->count();
+        });
     }
 
     public static function assignOpenPlaces(Contest $contest): void
@@ -437,7 +452,7 @@ class ContestResults
     private static function rankedSubmissions(Contest $contest)
     {
         return ContestSubmission::query()
-            ->with(['votes', 'post:id,like_count'])
+            ->with(['votes.voter:id,status', 'post:id,like_count'])
             ->where('contest_id', $contest->id)
             ->whereNotIn('submission_status', ['rejected', 'disqualified'])
             ->whereHas('post', function ($query): void {
@@ -446,7 +461,8 @@ class ContestResults
                     ->where(function ($moderation): void {
                         $moderation->whereNull('moderation_status')
                             ->orWhere('moderation_status', 'clean');
-                    });
+                    })
+                    ->whereHas('user', fn ($userQuery) => $userQuery->where('status', 'active'));
             })
             ->get()
             ->map(function (ContestSubmission $submission) {

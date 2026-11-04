@@ -232,6 +232,36 @@ if (! function_exists('stylebite_normalize_email')) {
     }
 }
 
+if (! function_exists('stylebite_allowed_email_domains')) {
+    /**
+     * Consumer mailboxes allowed for StyleBite signup / first-time social login.
+     * Gmail + iCloud (including Apple's legacy iCloud aliases).
+     *
+     * @return list<string>
+     */
+    function stylebite_allowed_email_domains(): array
+    {
+        return ['gmail.com', 'googlemail.com', 'icloud.com', 'me.com', 'mac.com'];
+    }
+}
+
+if (! function_exists('stylebite_email_domain_allowed')) {
+    /**
+     * True when the address uses an allowed signup domain (gmail / iCloud).
+     */
+    function stylebite_email_domain_allowed(string $email): bool
+    {
+        $email = Str::lower(trim($email));
+        if ($email === '' || ! str_contains($email, '@')) {
+            return false;
+        }
+
+        $domain = Str::afterLast($email, '@');
+
+        return in_array($domain, stylebite_allowed_email_domains(), true);
+    }
+}
+
 if (! function_exists('stylebite_email_is_registered')) {
     /**
      * True when any user (including soft-deleted) already owns this mailbox.
