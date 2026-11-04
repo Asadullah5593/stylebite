@@ -241,7 +241,16 @@ if (! function_exists('stylebite_allowed_email_domains')) {
      */
     function stylebite_allowed_email_domains(): array
     {
-        return ['gmail.com', 'googlemail.com', 'icloud.com', 'me.com', 'mac.com'];
+        return [
+            'gmail.com',
+            'googlemail.com',
+            'icloud.com',
+            'me.com',
+            'mac.com',
+            // Apple Sign In "Hide My Email"
+            'privaterelay.appleid.com',
+            'appleid.com',
+        ];
     }
 }
 
