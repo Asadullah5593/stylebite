@@ -120,7 +120,7 @@
                     <i class="bi bi-trophy"></i> <span>Contests</span>
                     <span class="nav-count ms-auto">{{ number_format($sidebarCounts['contests'] ?? 0) }}</span>
                 </a>
-                <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'pending']) }}" class="nav-link {{ request()->routeIs('admin.earnings.contest_prizes*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
+                <a href="{{ route('admin.earnings.contest_prizes') }}" class="nav-link {{ request()->routeIs('admin.earnings.contest_prizes*') ? 'active' : 'text-white-50' }} d-flex align-items-center gap-3 px-3 py-2 rounded-3 small">
                     <i class="bi bi-trophy-fill"></i> <span>Contest Prizes</span>
                     <span class="nav-count ms-auto">{{ number_format($sidebarCounts['contest_prizes'] ?? 0) }}</span>
                 </a>

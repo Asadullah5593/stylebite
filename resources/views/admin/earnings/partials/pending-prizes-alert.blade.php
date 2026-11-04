@@ -1,6 +1,6 @@
 @php
     $pendingContestPrizeCount = $pendingContestPrizeCount
-        ?? (\App\Http\Controllers\Admin\EarningsController::tabCounts()['contest_prizes'] ?? 0);
+        ?? (\App\Http\Controllers\Admin\EarningsController::tabCounts()['contest_prizes_pending'] ?? 0);
 @endphp
 
 @if ($pendingContestPrizeCount > 0)

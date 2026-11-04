@@ -186,8 +186,8 @@ class AppServiceProvider extends ServiceProvider
                     'kind' => 'ops',
                 ],
                 [
-                    'count' => EarningsController::tabCounts()['contest_prizes'] ?? 0,
-                    'title' => 'contest prizes awaiting release',
+                    'count' => EarningsController::tabCounts()['contest_prizes_pending'] ?? 0,
+                    'title' => 'legacy contest prizes awaiting release',
                     'time' => 'Finance queue',
                     'route' => route('admin.earnings.contest_prizes', ['status' => 'pending']),
                     'kind' => 'ops',

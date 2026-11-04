@@ -63,8 +63,15 @@
 
         <button class="btn btn-outline-dynamic rounded-3 px-3" type="submit"><i class="bi bi-funnel me-2"></i>Filter</button>
         <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'pending']) }}" class="btn btn-outline-dynamic rounded-3 px-3">Legacy pending</a>
-        <a href="{{ route('admin.earnings.contest_prizes', ['status' => 'completed']) }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
+        <a href="{{ route('admin.earnings.contest_prizes') }}" class="btn btn-outline-dynamic rounded-3 px-3"><i class="bi bi-arrow-clockwise me-2"></i>Reset</a>
     </form>
+
+    @if (($statusFilter ?? '') === 'pending' && ($prizeStats['pending'] ?? 0) === 0 && ($prizeStats['approved'] ?? 0) > 0)
+        <div class="alert alert-info border-0 rounded-4 mb-4">
+            No legacy pending prizes. {{ number_format($prizeStats['approved']) }} credited reward{{ ($prizeStats['approved'] ?? 0) === 1 ? '' : 's' }} already sit in wallets —
+            <a href="{{ route('admin.earnings.contest_prizes') }}" class="fw-bold">show all contest prizes</a>.
+        </div>
+    @endif
 
     <div class="glass rounded-4 overflow-hidden border-white-05">
         <div class="table-responsive scrollbar-hidden">
@@ -95,15 +102,38 @@
                                 <div class="small text-muted">Place ID {{ $prize->source_id }}</div>
                             </td>
                             <td class="py-3">
-                                <div class="fw-bold">{{ $prize->user?->full_name ?: '@'.($prize->user?->username ?? 'unknown') }}</div>
-                                <div class="small text-muted">ID {{ $prize->user_id }} · {{ '@'.($prize->user?->username ?? 'unknown') }}</div>
+                                @if ($prize->user)
+                                    <a href="{{ route('admin.users.show', $prize->user) }}" class="text-decoration-none d-flex align-items-center gap-3">
+                                        @if ($prize->user->avatar_url)
+                                            <img src="{{ $prize->user->avatar_url }}" alt="{{ $prize->user->username }}" class="rounded-circle border border-white-05 flex-shrink-0" width="42" height="42" style="object-fit: cover;">
+                                        @else
+                                            <div class="rounded-circle border border-white-05 d-flex align-items-center justify-content-center text-muted flex-shrink-0" style="width:42px;height:42px;">
+                                                <i class="bi bi-person"></i>
+                                            </div>
+                                        @endif
+                                        <div class="min-w-0">
+                                            <div class="fw-bold text-truncate">{{ $prize->user->full_name ?: '@'.$prize->user->username }}</div>
+                                            <div class="small text-muted text-truncate">{{ '@'.$prize->user->username }} · ID {{ $prize->user_id }}</div>
+                                        </div>
+                                    </a>
+                                @else
+                                    <div class="fw-bold">Unknown winner</div>
+                                    <div class="small text-muted">ID {{ $prize->user_id }}</div>
+                                @endif
                             </td>
                             <td class="py-3">
                                 <div class="fw-bold">{{ $contest?->title ?? ($metadata['title'] ?? $prize->note ?? 'Contest') }}</div>
                                 <div class="small text-muted">Contest #{{ $contest?->id ?? ($metadata['contest_id'] ?? '—') }}</div>
                             </td>
                             <td class="py-3">
-                                {{ $placeNumber > 0 ? $placeNumber : '—' }}
+                                @if ($placeNumber > 0)
+                                    {{ $placeNumber }}
+                                @else
+                                    <span class="text-muted">—</span>
+                                    @if (! $place)
+                                        <div class="extra-small text-warning">Orphaned place</div>
+                                    @endif
+                                @endif
                             </td>
                             <td class="py-3">
                                 <div class="fw-bold">{{ number_format((float) $prize->amount, 2) }} {{ $prize->currency_code }}</div>

@@ -83,17 +83,17 @@
                         <tr class="border-white-05">
                             <td class="ps-4">
                                 @if ($wallet->user)
-                                    <a href="{{ route('admin.users.show', $wallet->user) }}" class="text-decoration-none d-flex align-items-center gap-3">
+                                    <a href="{{ route('admin.users.show', $wallet->user) }}" class="text-decoration-none d-flex align-items-center gap-3 py-1">
                                         @if ($wallet->user->avatar_url)
-                                            <img src="{{ $wallet->user->avatar_url }}" alt="{{ $wallet->user->username }}" class="rounded-circle border border-white-05" width="42" height="42" style="object-fit: cover;">
+                                            <img src="{{ $wallet->user->avatar_url }}" alt="{{ $wallet->user->username }}" class="rounded-circle border border-white-05 flex-shrink-0" width="42" height="42" style="object-fit: cover;">
                                         @else
-                                            <div class="rounded-circle border border-white-05 d-flex align-items-center justify-content-center text-muted" style="width:42px;height:42px;">
+                                            <div class="rounded-circle border border-white-05 d-flex align-items-center justify-content-center text-muted flex-shrink-0" style="width:42px;height:42px;">
                                                 <i class="bi bi-person"></i>
                                             </div>
                                         @endif
-                                        <div>
-                                            <div class="small fw-semibold">{{ $wallet->user->full_name ?: '@'.$wallet->user->username }}</div>
-                                            <div class="text-muted extra-small">{{ '@'.$wallet->user->username }}</div>
+                                        <div class="min-w-0">
+                                            <div class="small fw-semibold text-truncate">{{ $wallet->user->full_name ?: '@'.$wallet->user->username }}</div>
+                                            <div class="text-muted extra-small text-truncate">{{ '@'.$wallet->user->username }}</div>
                                         </div>
                                     </a>
                                 @else
@@ -108,8 +108,8 @@
                                 <div class="text-muted extra-small">Withdrawn {{ number_format((float) $wallet->lifetime_withdrawn, 2) }}</div>
                             </td>
                             <td>
-                                <div class="small">{{ number_format($wallet->transactions_count) }} transactions</div>
-                                <div class="text-muted extra-small">{{ number_format($wallet->withdrawal_requests_count) }} withdrawals</div>
+                                <div class="small">{{ number_format($wallet->transactions_count) }} {{ \Illuminate\Support\Str::plural('transaction', $wallet->transactions_count) }}</div>
+                                <div class="text-muted extra-small">{{ number_format($wallet->withdrawal_requests_count) }} {{ \Illuminate\Support\Str::plural('withdrawal', $wallet->withdrawal_requests_count) }}</div>
                             </td>
                             <td><span class="text-muted small">{{ $wallet->updated_balance_at?->format('M d, Y H:i') ?? '-' }}</span></td>
                             <td class="text-end">

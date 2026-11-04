@@ -135,9 +135,21 @@
                             </td>
                             <td>
                                 @if ($withdrawal->user)
-                                    <a href="{{ route('admin.users.show', $withdrawal->user) }}" class="text-decoration-none">
-                                        <div class="small fw-semibold">{{ $withdrawal->user->full_name ?: '@'.$withdrawal->user->username }}</div>
-                                        <div class="text-muted extra-small">{{ '@'.$withdrawal->user->username }}</div>
+                                    <a href="{{ route('admin.users.show', $withdrawal->user) }}" class="text-decoration-none d-flex align-items-center gap-3 py-1">
+                                        @if ($withdrawal->user->avatar_url)
+                                            <img src="{{ $withdrawal->user->avatar_url }}" alt="{{ $withdrawal->user->username }}" class="rounded-circle border border-white-05 flex-shrink-0" width="42" height="42" style="object-fit: cover;">
+                                        @else
+                                            <div class="rounded-circle border border-white-05 d-flex align-items-center justify-content-center text-muted flex-shrink-0" style="width:42px;height:42px;">
+                                                <i class="bi bi-person"></i>
+                                            </div>
+                                        @endif
+                                        <div class="min-w-0">
+                                            <div class="small fw-semibold text-truncate">{{ $withdrawal->user->full_name ?: '@'.$withdrawal->user->username }}</div>
+                                            <div class="text-muted extra-small text-truncate">{{ '@'.$withdrawal->user->username }}</div>
+                                            @if ($withdrawal->wallet_id)
+                                                <div class="text-muted extra-small">Wallet #{{ $withdrawal->wallet_id }}</div>
+                                            @endif
+                                        </div>
                                     </a>
                                 @else
                                     <span class="text-muted small">Missing user</span>

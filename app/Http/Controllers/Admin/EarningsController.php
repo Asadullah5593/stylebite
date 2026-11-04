@@ -150,10 +150,12 @@ class EarningsController extends Controller
 
     public function contestPrizes(Request $request): View
     {
-        // Default to pending prizes so admins land on items that need Approve.
+        // Default to all prize credits so the table matches the summary cards.
+        // (Sidebar used to deep-link status=pending and looked "empty" while
+        // 9 completed rewards already existed.)
         $statusFilter = $request->has('status')
             ? $request->string('status')->toString()
-            : 'completed';
+            : '';
 
         $prizes = EarningTransaction::query()
             ->with('user:id,username,full_name,email,avatar_url', 'wallet:id,currency_code')
@@ -262,7 +264,7 @@ class EarningsController extends Controller
     public function withdrawals(Request $request): View
     {
         $withdrawals = WithdrawalRequest::query()
-            ->with('user:id,username,full_name,email', 'wallet:id,currency_code,available_balance,pending_balance', 'payoutTransaction:id,source_id,status,amount,currency_code,processed_at')
+            ->with('user:id,username,full_name,email,avatar_url', 'wallet:id,currency_code,available_balance,pending_balance', 'payoutTransaction:id,source_id,status,amount,currency_code,processed_at')
             ->when($request->filled('q'), function ($query) use ($request) {
                 $search = $request->string('q')->toString();
 
@@ -762,8 +764,10 @@ class EarningsController extends Controller
 
                 if ($transaction->transaction_type === 'credit') {
                     $wallet->available_balance = round((float) $wallet->available_balance - $amount, 2);
+                    $wallet->lifetime_earned = max(0, round((float) $wallet->lifetime_earned - $amount, 2));
                 } else {
                     $wallet->available_balance = round((float) $wallet->available_balance + $amount, 2);
+                    $wallet->lifetime_earned = round((float) $wallet->lifetime_earned + $amount, 2);
                 }
 
                 $wallet->updated_balance_at = now();
@@ -787,7 +791,14 @@ class EarningsController extends Controller
     {
         return [
             'wallets' => EarningsWallet::count(),
+            // Show all contest prize credits (available + legacy pending), not
+            // pending-only — otherwise the tab looks empty while wallets grew.
             'contest_prizes' => EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('transaction_type', 'credit')
+                ->whereIn('status', ['completed', 'pending'])
+                ->count(),
+            'contest_prizes_pending' => EarningTransaction::query()
                 ->where('source_type', 'contest_reward')
                 ->where('transaction_type', 'credit')
                 ->where('status', 'pending')

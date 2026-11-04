@@ -14,6 +14,7 @@ use App\Models\ContestSubmission;
 use App\Models\ContestTeam;
 use App\Models\ContestTeamMember;
 use App\Models\ContestVote;
+use App\Models\EarningTransaction;
 use App\Models\User;
 use App\Support\ContestNotifications;
 use App\Support\ContestResults;
@@ -297,16 +298,34 @@ class ContestController extends Controller
             'winnerUser:id,username,full_name',
             'winnerTeam:id,name',
             'places.winnerUser:id,username,full_name',
-            'participants.user:id,username,full_name,email',
+            'participants.user:id,username,full_name,email,avatar_url,status',
             'submissions.votes.voter:id,username,full_name',
         ]);
 
+        // Sort by leaderboard place (1st first). Multi-callback sortBy is unreliable
+        // here and was leaving the roster in insert order (9th before 4th, etc.).
         $participants = $contest->participants
-            ->sortBy([
-                fn (ContestParticipant $participant) => $participant->rank_position === null ? 1 : 0,
-                fn (ContestParticipant $participant) => (int) ($participant->rank_position ?? 0),
-                fn (ContestParticipant $participant) => $participant->joined_at?->timestamp ?? PHP_INT_MAX,
-            ])
+            ->sort(function (ContestParticipant $left, ContestParticipant $right): int {
+                $leftRank = $left->rank_position;
+                $rightRank = $right->rank_position;
+
+                if ($leftRank === null && $rightRank === null) {
+                    return ((int) $left->id) <=> ((int) $right->id);
+                }
+                if ($leftRank === null) {
+                    return 1;
+                }
+                if ($rightRank === null) {
+                    return -1;
+                }
+
+                $byRank = ((int) $leftRank) <=> ((int) $rightRank);
+                if ($byRank !== 0) {
+                    return $byRank;
+                }
+
+                return ((float) ($right->total_score ?? 0)) <=> ((float) ($left->total_score ?? 0));
+            })
             ->values();
 
         $placeByUserId = $contest->places
@@ -1168,30 +1187,61 @@ class ContestController extends Controller
 
     private function syncContestPlaces(Contest $contest, $placeRows, bool $clearWinners = false): void
     {
-        $existingWinners = $clearWinners
-            ? collect()
-            : ContestPlace::query()
-                ->where('contest_id', $contest->id)
-                ->get()
-                ->keyBy('place');
+        // Update places in-place. Deleting + recreating changes place ids and
+        // breaks/duplicates contest_reward ledger rows keyed by source_id.
+        $existing = ContestPlace::query()
+            ->where('contest_id', $contest->id)
+            ->orderBy('place')
+            ->get()
+            ->keyBy('place');
 
-        ContestPlace::query()->where('contest_id', $contest->id)->delete();
-
+        $keptIds = [];
         $total = 0.0;
 
         foreach ($placeRows->values() as $index => $row) {
-            $place = $index + 1;
+            $placeNumber = $index + 1;
             $amount = round((float) ($row['prize_amount'] ?? 0), 2);
             $title = trim((string) ($row['prize_title'] ?? ''));
             $total += $amount;
+            $prizeTitle = $title !== '' ? $title : ContestPlace::ordinal($placeNumber).' place';
 
-            ContestPlace::create([
-                'contest_id' => $contest->id,
-                'place' => $place,
-                'prize_title' => $title !== '' ? $title : ContestPlace::ordinal($place).' place',
-                'prize_amount' => $amount,
-                'winner_user_id' => $existingWinners->get($place)?->winner_user_id,
-            ]);
+            $place = $existing->get($placeNumber);
+            if ($place) {
+                $place->forceFill([
+                    'prize_title' => $prizeTitle,
+                    'prize_amount' => $amount,
+                    'winner_user_id' => $clearWinners ? null : $place->winner_user_id,
+                ])->save();
+                $keptIds[] = (int) $place->id;
+            } else {
+                $created = ContestPlace::create([
+                    'contest_id' => $contest->id,
+                    'place' => $placeNumber,
+                    'prize_title' => $prizeTitle,
+                    'prize_amount' => $amount,
+                    'winner_user_id' => null,
+                ]);
+                $keptIds[] = (int) $created->id;
+            }
+        }
+
+        $removed = ContestPlace::query()
+            ->where('contest_id', $contest->id)
+            ->when($keptIds !== [], fn ($query) => $query->whereNotIn('id', $keptIds))
+            ->when($keptIds === [], fn ($query) => $query)
+            ->get();
+
+        foreach ($removed as $place) {
+            $reward = EarningTransaction::query()
+                ->where('source_type', 'contest_reward')
+                ->where('source_id', $place->id)
+                ->where('transaction_type', 'credit')
+                ->whereIn('status', ['completed', 'pending'])
+                ->first();
+            if ($reward) {
+                ContestResults::reverseContestReward($reward);
+            }
+            $place->delete();
         }
 
         $firstWinner = ContestPlace::query()
@@ -1202,7 +1252,7 @@ class ContestController extends Controller
 
         $contest->forceFill([
             'prize_pool' => $total,
-            'winner_user_id' => $firstWinner,
+            'winner_user_id' => $clearWinners ? null : $firstWinner,
         ])->save();
     }
 

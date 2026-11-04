@@ -40,6 +40,9 @@ class ContestResults
      */
     public static function reopen(Contest $contest): void
     {
+        // Claw back any contest_reward credits before clearing winners so an
+        // extension cannot leave stale prize money (or double-pay later).
+        self::clawBackContestRewards($contest);
         self::clearPlaceWinners($contest);
         $contest->result_at = null;
 
@@ -56,6 +59,35 @@ class ContestResults
         self::refreshScores($contest);
         $contest->save();
         self::syncProfiles($contest);
+    }
+
+    /**
+     * Reverse completed/pending contest_reward rows for this contest
+     * (current place ids + orphaned rows tagged with contest_id in metadata).
+     */
+    public static function clawBackContestRewards(Contest $contest): void
+    {
+        $placeIds = ContestPlace::query()
+            ->where('contest_id', $contest->id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $transactions = EarningTransaction::query()
+            ->where('source_type', 'contest_reward')
+            ->where('transaction_type', 'credit')
+            ->whereIn('status', ['completed', 'pending'])
+            ->where(function ($query) use ($placeIds, $contest): void {
+                if ($placeIds !== []) {
+                    $query->whereIn('source_id', $placeIds);
+                }
+                $query->orWhere('metadata_json->contest_id', $contest->id);
+            })
+            ->get();
+
+        foreach ($transactions as $transaction) {
+            self::reverseContestReward($transaction);
+        }
     }
 
     /**
@@ -460,7 +492,7 @@ class ContestResults
         }
     }
 
-    private static function reverseContestReward(EarningTransaction $transaction): void
+    public static function reverseContestReward(EarningTransaction $transaction): void
     {
         if (
             $transaction->source_type !== 'contest_reward'
@@ -496,15 +528,10 @@ class ContestResults
                 $wallet->pending_balance = max(0, round((float) $wallet->pending_balance - $amount, 2));
             } else {
                 $wallet->available_balance = max(0, round((float) $wallet->available_balance - $amount, 2));
-                $wallet->lifetime_earned = max(0, round((float) $wallet->lifetime_earned - $amount, 2));
             }
+            $wallet->lifetime_earned = max(0, round((float) $wallet->lifetime_earned - $amount, 2));
             $wallet->updated_balance_at = now();
             $wallet->save();
-
-            $metadata = is_array($locked->metadata_json) ? $locked->metadata_json : [];
-            $metadata['prize_status'] = 'reversed';
-            $metadata['reversed_at'] = now()->toDateTimeString();
-            $metadata['reversed_reason'] = 'Contest place winner reassigned from current ranks';
 
             // Remove the row so a new contest_reward can reuse source_id
             // (unique on source_type + source_id) for the corrected winner.
