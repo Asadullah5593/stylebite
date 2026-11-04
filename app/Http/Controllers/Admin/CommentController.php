@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Comment;
 use App\Models\CommentReply;
+use App\Models\Post;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -49,7 +50,27 @@ class CommentController extends Controller
         $comment->is_reported = $data['moderation_status'] !== 'clean';
         $comment->save();
 
+        // App reads posts.comment_count; admin used to change status only and
+        // leave the counter stale (e.g. shows 2 after one comment is deleted).
+        $this->syncPostCommentCount((int) $comment->post_id);
+
         return back()->with('status', "Comment #{$comment->id} updated successfully.");
+    }
+
+    private function syncPostCommentCount(int $postId): void
+    {
+        if ($postId <= 0) {
+            return;
+        }
+
+        $count = Comment::query()
+            ->where('post_id', $postId)
+            ->where('status', 'active')
+            ->count();
+
+        Post::query()->whereKey($postId)->update([
+            'comment_count' => $count,
+        ]);
     }
 
     public function replies(Request $request): View
